@@ -51,7 +51,7 @@ jobs:
         run: touch wie-web/dist/.nojekyll
 
       - name: Enable GitHub Pages (no manual settings needed)
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         with:
           enablement: true
 
