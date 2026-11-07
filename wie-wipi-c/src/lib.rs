@@ -1,0 +1,16 @@
+#![no_std]
+extern crate alloc;
+
+pub mod api;
+mod context;
+mod globals;
+mod method;
+
+pub use self::context::{WIPICContext, WIPICResult};
+pub use self::method::{MethodBody, MethodImpl};
+
+use alloc::boxed::Box;
+
+use wie_util::WieError;
+
+pub type WIPICMethodBody = Box<dyn MethodBody<WieError>>;

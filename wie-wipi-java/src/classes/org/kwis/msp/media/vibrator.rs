@@ -1,0 +1,47 @@
+use alloc::vec;
+
+use jvm::{Jvm, Result as JvmResult};
+use jvm_class_proto::JavaMethodProto;
+use jvm_types::{ClassAccessFlags, MethodAccessFlags};
+
+use wie_jvm_support::{WieJavaClassProto, WieJvmContext};
+
+// class org.kwis.msp.media.Vibrator
+pub struct Vibrator;
+
+impl Vibrator {
+    pub fn as_proto() -> WieJavaClassProto {
+        WieJavaClassProto {
+            name: "org/kwis/msp/media/Vibrator",
+            parent_class: Some("java/lang/Object"),
+            interfaces: vec![],
+            methods: vec![
+                JavaMethodProto::new(
+                    "on",
+                    "(II)V",
+                    Self::on,
+                    MethodAccessFlags::PUBLIC | MethodAccessFlags::NATIVE | MethodAccessFlags::STATIC,
+                ),
+                JavaMethodProto::new("off", "()V", Self::off, MethodAccessFlags::PUBLIC | MethodAccessFlags::STATIC),
+            ],
+            fields: vec![],
+            access_flags: ClassAccessFlags::PUBLIC,
+        }
+    }
+
+    async fn on(_: &Jvm, context: &mut WieJvmContext, level: i32, duration: i32) -> JvmResult<()> {
+        tracing::debug!("org.kwis.msp.media.Vibrator::on({level}, {duration})");
+
+        let duration_ms = duration.max(0) as u64;
+        let intensity = (level.clamp(0, 10) * 10) as u8;
+        context.system().platform().vibrate(duration_ms, intensity);
+
+        Ok(())
+    }
+
+    async fn off(_: &Jvm, _: &mut WieJvmContext) -> JvmResult<()> {
+        tracing::warn!("stub org.kwis.msp.media.Vibrator::off()");
+
+        Ok(())
+    }
+}

@@ -1,0 +1,48 @@
+use alloc::vec;
+
+use jvm::{Jvm, Result as JvmResult};
+use jvm_class_proto::JavaMethodProto;
+use jvm_types::{ClassAccessFlags, MethodAccessFlags};
+
+use wie_jvm_support::{WieJavaClassProto, WieJvmContext};
+
+// class org.kwis.msf.io.Network
+pub struct Network;
+
+impl Network {
+    pub fn as_proto() -> WieJavaClassProto {
+        WieJavaClassProto {
+            name: "org/kwis/msf/io/Network",
+            parent_class: Some("java/lang/Object"),
+            interfaces: vec![],
+            methods: vec![
+                JavaMethodProto::new(
+                    "connect",
+                    "()I",
+                    Self::connect,
+                    MethodAccessFlags::PUBLIC | MethodAccessFlags::NATIVE | MethodAccessFlags::STATIC,
+                ),
+                JavaMethodProto::new(
+                    "disconnect",
+                    "()V",
+                    Self::disconnect,
+                    MethodAccessFlags::PUBLIC | MethodAccessFlags::NATIVE | MethodAccessFlags::STATIC,
+                ),
+            ],
+            fields: vec![],
+            access_flags: ClassAccessFlags::PUBLIC,
+        }
+    }
+
+    async fn connect(_: &Jvm, _: &mut WieJvmContext) -> JvmResult<i32> {
+        tracing::warn!("stub org.kwis.msf.io.Network::connect()");
+
+        Ok(-1)
+    }
+
+    async fn disconnect(_: &Jvm, _: &mut WieJvmContext) -> JvmResult<()> {
+        tracing::warn!("stub org.kwis.msf.io.Network::disconnect()");
+
+        Ok(())
+    }
+}

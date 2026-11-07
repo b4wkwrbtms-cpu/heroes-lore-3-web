@@ -1,0 +1,31 @@
+import path from "path";
+
+import webpack from "webpack";
+import { merge } from "webpack-merge";
+
+import "webpack-dev-server";
+
+// @ts-ignore: allowImportingTsExtensions
+import commonConfig from "./webpack.config.common.ts";
+
+const config: webpack.Configuration = merge(commonConfig, {
+  mode: "development",
+  devtool: "eval-source-map",
+  devServer: {
+    open: false,
+    host: process.env.TAURI_DEV_HOST ?? "localhost",
+    port: 8080,
+    static: [
+      path.join(import.meta.dirname, "dist"),
+      path.join(import.meta.dirname, "public"),
+    ],
+    watchFiles: {
+      paths: ["src/**/*.*"],
+      options: {
+        usePolling: true,
+      },
+    },
+  },
+});
+
+export default config;

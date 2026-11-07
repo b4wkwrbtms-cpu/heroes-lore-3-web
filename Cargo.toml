@@ -1,0 +1,144 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "wie-app",
+    "wie-backend",
+    "wie-util",
+    "wie-core-arm",
+    "wie-core-arm-aot",
+    "wie-core-arm-wasm",
+    "wie-core-arm-native",
+    "wie-jvm-support",
+    "wie-wipi-java",
+    "wie-wipi-c",
+    "wie-j2me",
+    "wie-ktf",
+    "wie-ktf-dump",
+    "wie-lgt",
+    "wie-skt",
+    "wie-web",
+]
+
+default-members = ["."]
+
+[profile.dev.package.wie-core-arm]
+opt-level = 1
+
+[profile.dev.package.arm32_cpu]
+opt-level = 1
+
+[profile.release]
+debug = 2
+lto = "thin"
+
+[workspace.package]
+version = "0.2.21"
+edition = "2024"
+license = "MIT"
+description = "WIPI and J2ME emulator components"
+repository = "https://github.com/dlunch/wie"
+
+[workspace.dependencies]
+anyhow = { version = "^1.0" }
+async-recursion = { version = "^1.1", default-features = false }
+async-trait = { version = "^0.1", default-features = false }
+bitflags = { version = "^2.13", default-features = false }
+bytemuck = { version = "^1.25", default-features = false, features = ["derive"] }
+clap = { version = "^4.6", features = ["derive"] }
+dyn-clone = { version = "^1.0", default-features = false }
+encoding_rs = { version = "^0.8", default-features = false, features = ["alloc"] }
+futures = { version = "^0.3", default-features = false, features = ["alloc"] }
+jvm = { version = "^0.4.1" }
+jvm-bytecode = { version = "^0.4.1" }
+jvm-class-proto = { version = "^0.4.1" }
+jvm-types = { version = "^0.4.1" }
+lazy_static = { version = "^1.5", default-features = false }
+rustjava-runtime = { version = "^0.4.1" }
+serde = { version = "^1", default-features = false, features = ["derive", "alloc"] }
+# Use Rustls with ureq to support Android without OpenSSL or JVM certificate-verifier setup.
+sentry = { version = "^0.49", default-features = false, features = [
+    "anyhow",
+    "backtrace",
+    "contexts",
+    "debug-images",
+    "metrics",
+    "panic",
+    "release-health",
+    "rustls",
+    "tracing",
+    "ureq",
+] }
+spin = { version = "^0.12", features = ["spin_mutex", "rwlock"], default-features = false }
+toml = { version = "^1", default-features = false, features = ["parse", "serde"] }
+tracing = { version = "^0.1", default-features = false, features = ["attributes"] }
+tracing-subscriber = { version = "^0.3", features = ["env-filter", "time"] }
+wipi-types = { version = "^0.0.4" }
+zip = { version = "^9.0", features = ["deflate"], default-features = false }
+
+wie = { version = "0.2.21", path = ".", default-features = false }
+wie-backend = { version = "0.2.21", path = "wie-backend" }
+wie-j2me = { version = "0.2.21", path = "wie-j2me" }
+wie-ktf = { version = "0.2.21", path = "wie-ktf" }
+wie-lgt = { version = "0.2.21", path = "wie-lgt" }
+wie-midp = { version = "0.2.21", path = "wie-midp" }
+wie-skt = { version = "0.2.21", path = "wie-skt" }
+wie-util = { version = "0.2.21", path = "wie-util" }
+wie-core-arm = { version = "0.2.21", path = "wie-core-arm" }
+wie-core-arm-aot = { version = "0.2.21", path = "wie-core-arm-aot" }
+wie-core-arm-wasm = { version = "0.2.21", path = "wie-core-arm-wasm" }
+wie-core-arm-native = { version = "0.2.21", path = "wie-core-arm-native" }
+wie-jvm-support = { version = "0.2.21", path = "wie-jvm-support" }
+wie-skvm = { version = "0.2.21", path = "wie-skvm" }
+wie-wipi-c = { version = "0.2.21", path = "wie-wipi-c" }
+wie-wipi-java = { version = "0.2.21", path = "wie-wipi-java" }
+
+# dev-dependencies
+futures-test = { version = "^0.3" }
+
+test-utils = { path = "test-utils" }
+
+[package]
+name = "wie"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "WIPI and J2ME emulator"
+repository.workspace = true
+exclude = ["docs"]
+
+[[bin]]
+name = "wie"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["dep:clap", "dep:directories", "dep:fast_image_resize", "dep:midir", "dep:rodio", "dep:sentry", "dep:softbuffer", "dep:tempfile", "dep:tracing-subscriber", "dep:winit", "dep:wie-core-arm-native"]
+
+[dependencies]
+anyhow = { workspace = true, features = ["backtrace"] }
+wie-backend = { workspace = true }
+wie-j2me = { workspace = true }
+wie-ktf = { workspace = true }
+wie-lgt = { workspace = true }
+wie-skt = { workspace = true }
+wie-util = { workspace = true }
+
+async-trait = { workspace = true }
+clap = { workspace = true, optional = true }
+sentry = { workspace = true, optional = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
+
+directories = { version = "^6.0", optional = true }
+fast_image_resize = { version = "6.0.0", optional = true }
+midir = { version = "^0.11", optional = true }
+rodio = { version = "^0.22", features = ["playback"], optional = true }
+softbuffer = { version = "^0.4", optional = true }
+tempfile = { version = "3", optional = true }
+winit = { version = "^0.30", features = ["x11", "wayland"], optional = true }
+wie-core-arm-native = { workspace = true, optional = true }
+
+[dev-dependencies]
+futures-test = { workspace = true }

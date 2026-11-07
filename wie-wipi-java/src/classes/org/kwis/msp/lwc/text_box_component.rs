@@ -1,0 +1,64 @@
+use alloc::vec;
+
+use jvm::{ClassInstanceRef, Jvm, Result as JvmResult};
+use jvm_class_proto::JavaMethodProto;
+use jvm_types::{ClassAccessFlags, MethodAccessFlags};
+use rustjava_runtime::classes::java::lang::String;
+
+use wie_jvm_support::{WieJavaClassProto, WieJvmContext};
+
+// class org.kwis.msp.lwc.TextBoxComponent
+pub struct TextBoxComponent;
+
+impl TextBoxComponent {
+    pub fn as_proto() -> WieJavaClassProto {
+        WieJavaClassProto {
+            name: "org/kwis/msp/lwc/TextBoxComponent",
+            parent_class: Some("org/kwis/msp/lwc/TextComponent"),
+            interfaces: vec![],
+            methods: vec![
+                JavaMethodProto::new("<init>", "(Ljava/lang/String;I)V", Self::init, MethodAccessFlags::PUBLIC),
+                JavaMethodProto::new("<init>", "(Ljava/lang/String;II)V", Self::init_with_height, MethodAccessFlags::PUBLIC),
+            ],
+            fields: vec![],
+            access_flags: ClassAccessFlags::PUBLIC,
+        }
+    }
+
+    async fn init(
+        jvm: &Jvm,
+        _: &mut WieJvmContext,
+        this: ClassInstanceRef<TextBoxComponent>,
+        data: ClassInstanceRef<String>,
+        constraint: i32,
+    ) -> JvmResult<()> {
+        tracing::warn!("stub org.kwis.msp.lwc.TextBoxComponent::<init>({this:?}, {data:?}, {constraint:?})");
+
+        let _: () = jvm.invoke_special(&this, "org/kwis/msp/lwc/TextComponent", "<init>", "()V", ()).await?;
+
+        Ok(())
+    }
+
+    async fn init_with_height(
+        jvm: &Jvm,
+        _: &mut WieJvmContext,
+        this: ClassInstanceRef<TextBoxComponent>,
+        data: ClassInstanceRef<String>,
+        constraint: i32,
+        height: i32,
+    ) -> JvmResult<()> {
+        tracing::warn!("stub org.kwis.msp.lwc.TextBoxComponent::<init>({this:?}, {data:?}, {constraint}, {height})");
+
+        let _: () = jvm
+            .invoke_special(
+                &this,
+                "org/kwis/msp/lwc/TextBoxComponent",
+                "<init>",
+                "(Ljava/lang/String;I)V",
+                (data, constraint),
+            )
+            .await?;
+
+        Ok(())
+    }
+}

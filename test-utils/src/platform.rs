@@ -1,0 +1,298 @@
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    sync::Arc,
+    vec::Vec,
+};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+use hashbrown::HashMap;
+use spin::Mutex;
+use wie_backend::{AudioCommand, AudioSink, Database, DatabaseRepository, Filesystem, Font, Instant, Platform, RecordId, Screen, canvas::Image};
+use wie_util::Result;
+
+use crate::filesystem::MemoryFilesystem;
+
+static TEST_EPOCH: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Default)]
+pub struct TestClock {
+    epoch_millis: Arc<AtomicU64>,
+}
+
+impl TestClock {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set(&self, epoch_millis: u64) {
+        self.epoch_millis.store(epoch_millis, Ordering::SeqCst);
+    }
+
+    pub fn advance(&self, millis: u64) {
+        self.epoch_millis.fetch_add(millis, Ordering::SeqCst);
+    }
+}
+
+pub enum TestPlatformEvent {
+    Stdout(Vec<u8>),
+    Exit,
+}
+
+pub struct TestPlatform {
+    screen: TestScreen,
+    event_handler: Option<Box<dyn Fn(TestPlatformEvent) + Sync + Send>>,
+    audio_handler: Option<Arc<dyn Fn(AudioCommand) + Sync + Send>>,
+    fs: Arc<MemoryFilesystem>,
+    db: Arc<MemoryDatabaseRepository>,
+    font: Font,
+    clock: Option<TestClock>,
+}
+
+impl Default for TestPlatform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TestPlatform {
+    pub fn new() -> Self {
+        Self {
+            screen: TestScreen::default(),
+            event_handler: None,
+            audio_handler: None,
+            fs: Arc::new(MemoryFilesystem::default()),
+            db: Arc::new(MemoryDatabaseRepository::default()),
+            font: Font::try_from_static(include_bytes!("../../assets/neodgm.ttf")).unwrap(),
+            clock: None,
+        }
+    }
+
+    pub fn with_event_handler<T>(event_handler: T) -> Self
+    where
+        T: Fn(TestPlatformEvent) + Sync + Send + 'static,
+    {
+        Self {
+            screen: TestScreen::default(),
+            event_handler: Some(Box::new(event_handler)),
+            audio_handler: None,
+            fs: Arc::new(MemoryFilesystem::default()),
+            db: Arc::new(MemoryDatabaseRepository::default()),
+            font: Font::try_from_static(include_bytes!("../../assets/neodgm.ttf")).unwrap(),
+            clock: None,
+        }
+    }
+
+    pub fn with_clock(clock: TestClock) -> Self {
+        Self {
+            screen: TestScreen::default(),
+            event_handler: None,
+            audio_handler: None,
+            fs: Arc::new(MemoryFilesystem::default()),
+            db: Arc::new(MemoryDatabaseRepository::default()),
+            font: Font::try_from_static(include_bytes!("../../assets/neodgm.ttf")).unwrap(),
+            clock: Some(clock),
+        }
+    }
+
+    pub fn with_audio_handler<T>(audio_handler: T) -> Self
+    where
+        T: Fn(AudioCommand) + Sync + Send + 'static,
+    {
+        Self {
+            audio_handler: Some(Arc::new(audio_handler)),
+            ..Self::new()
+        }
+    }
+
+    pub fn with_paint_handler<T>(paint_handler: T) -> Self
+    where
+        T: Fn(&dyn Image) + Sync + Send + 'static,
+    {
+        Self {
+            screen: TestScreen {
+                paint_handler: Some(Box::new(paint_handler)),
+                ..TestScreen::default()
+            },
+            ..Self::new()
+        }
+    }
+}
+
+impl Platform for TestPlatform {
+    fn font(&self) -> &Font {
+        &self.font
+    }
+
+    fn screen(&self) -> &dyn Screen {
+        &self.screen
+    }
+
+    fn now(&self) -> Instant {
+        if let Some(clock) = &self.clock {
+            return Instant::from_epoch_millis(clock.epoch_millis.load(Ordering::SeqCst));
+        }
+
+        let epoch = TEST_EPOCH.fetch_add(8, Ordering::SeqCst);
+        Instant::from_epoch_millis(epoch) // TODO
+    }
+
+    fn database_repository(&self) -> &dyn DatabaseRepository {
+        self.db.as_ref()
+    }
+
+    fn filesystem(&self) -> &dyn Filesystem {
+        self.fs.as_ref()
+    }
+
+    fn audio_sink(&self) -> Box<dyn AudioSink> {
+        Box::new(TestAudioSink(self.audio_handler.clone()))
+    }
+
+    fn write_stdout(&self, buf: &[u8]) {
+        if let Some(event_handler) = &self.event_handler {
+            (event_handler)(TestPlatformEvent::Stdout(buf.to_vec()))
+        }
+    }
+
+    fn write_stderr(&self, _buf: &[u8]) {}
+
+    fn exit(&self) {
+        if let Some(event_handler) = &self.event_handler {
+            (event_handler)(TestPlatformEvent::Exit);
+        }
+    }
+
+    fn vibrate(&self, _duration_ms: u64, _intensity: u8) {}
+}
+
+type DatabaseKey = (String, String);
+type DatabaseStore = HashMap<DatabaseKey, HashMap<RecordId, Vec<u8>>>;
+
+#[derive(Default)]
+struct MemoryDatabaseRepository {
+    store: Arc<Mutex<DatabaseStore>>,
+}
+
+#[async_trait::async_trait]
+impl DatabaseRepository for MemoryDatabaseRepository {
+    async fn create(&self, name: &str, app_id: &str) {
+        self.store.lock().entry((app_id.to_string(), name.to_string())).or_default();
+    }
+
+    async fn open(&self, name: &str, app_id: &str) -> Box<dyn Database> {
+        Box::new(MemoryDatabase {
+            store: self.store.clone(),
+            key: (app_id.to_string(), name.to_string()),
+        })
+    }
+
+    async fn exists(&self, name: &str, app_id: &str) -> bool {
+        self.store.lock().contains_key(&(app_id.to_string(), name.to_string()))
+    }
+
+    async fn delete(&self, name: &str, app_id: &str) -> bool {
+        self.store.lock().remove(&(app_id.to_string(), name.to_string())).is_some()
+    }
+}
+
+struct MemoryDatabase {
+    store: Arc<Mutex<DatabaseStore>>,
+    key: DatabaseKey,
+}
+
+#[async_trait::async_trait]
+impl Database for MemoryDatabase {
+    async fn next_id(&self) -> RecordId {
+        let store = self.store.lock();
+        let records = store.get(&self.key);
+        let mut id = 1;
+        while records.is_some_and(|records| records.contains_key(&id)) {
+            id += 1;
+        }
+        id
+    }
+
+    async fn add(&mut self, data: &[u8]) -> RecordId {
+        let id = self.next_id().await;
+        self.set(id, data).await;
+        id
+    }
+
+    async fn get(&self, id: RecordId) -> Option<Vec<u8>> {
+        self.store.lock().get(&self.key)?.get(&id).cloned()
+    }
+
+    async fn set(&mut self, id: RecordId, data: &[u8]) -> bool {
+        let mut store = self.store.lock();
+        store.entry(self.key.clone()).or_default().insert(id, data.to_vec());
+        true
+    }
+
+    async fn delete(&mut self, id: RecordId) -> bool {
+        self.store.lock().get_mut(&self.key).is_some_and(|records| records.remove(&id).is_some())
+    }
+
+    async fn get_record_ids(&self) -> Vec<RecordId> {
+        self.store
+            .lock()
+            .get(&self.key)
+            .map(|records| records.keys().copied().collect())
+            .unwrap_or_default()
+    }
+}
+
+pub struct TestAudioSink(Option<Arc<dyn Fn(AudioCommand) + Sync + Send>>);
+
+impl AudioSink for TestAudioSink {
+    fn send(&self, command: AudioCommand) {
+        if let Some(handler) = &self.0 {
+            handler(command);
+        }
+    }
+}
+
+type PaintHandler = dyn Fn(&dyn Image) + Sync + Send;
+
+pub struct TestScreen {
+    width: AtomicU32,
+    height: AtomicU32,
+    paint_handler: Option<Box<PaintHandler>>,
+}
+
+impl Default for TestScreen {
+    fn default() -> Self {
+        Self {
+            width: AtomicU32::new(320),
+            height: AtomicU32::new(240),
+            paint_handler: None,
+        }
+    }
+}
+
+impl Screen for TestScreen {
+    fn resize(&self, width: u32, height: u32) -> Result<()> {
+        self.width.store(width, Ordering::SeqCst);
+        self.height.store(height, Ordering::SeqCst);
+
+        Ok(())
+    }
+
+    fn request_redraw(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn paint(&self, image: &dyn Image) {
+        if let Some(handler) = &self.paint_handler {
+            handler(image);
+        }
+    }
+
+    fn width(&self) -> u32 {
+        self.width.load(Ordering::SeqCst)
+    }
+
+    fn height(&self) -> u32 {
+        self.height.load(Ordering::SeqCst)
+    }
+}

@@ -1,0 +1,11 @@
+[package]
+name = "wie-core-arm-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+
+[dependencies]
+wasm-encoder = { version = "^0.259", default-features = false }
+wie-core-arm-aot = { workspace = true }

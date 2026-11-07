@@ -1,0 +1,52 @@
+use alloc::vec;
+
+use jvm::{Jvm, Result as JvmResult};
+use jvm_class_proto::JavaMethodProto;
+use jvm_types::{ClassAccessFlags, MethodAccessFlags};
+
+use wie_jvm_support::{WieJavaClassProto, WieJvmContext};
+
+// class org.kwis.msp.handset.BackLight
+pub struct BackLight;
+
+impl BackLight {
+    pub fn as_proto() -> WieJavaClassProto {
+        WieJavaClassProto {
+            name: "org/kwis/msp/handset/BackLight",
+            parent_class: Some("java/lang/Object"),
+            interfaces: vec![],
+            methods: vec![
+                JavaMethodProto::new("alwaysOn", "()V", Self::always_on, MethodAccessFlags::PUBLIC | MethodAccessFlags::STATIC),
+                JavaMethodProto::new("on", "(III)V", Self::on, MethodAccessFlags::PUBLIC | MethodAccessFlags::STATIC),
+                JavaMethodProto::new("off", "()V", Self::off, MethodAccessFlags::PUBLIC | MethodAccessFlags::STATIC),
+                JavaMethodProto::new("before", "()V", Self::before, MethodAccessFlags::PUBLIC | MethodAccessFlags::STATIC),
+            ],
+            fields: vec![],
+            access_flags: ClassAccessFlags::PUBLIC,
+        }
+    }
+
+    async fn always_on(_: &Jvm, _: &mut WieJvmContext) -> JvmResult<()> {
+        tracing::warn!("stub org.kwis.msp.handset.BackLight::alwaysOn()");
+
+        Ok(())
+    }
+
+    async fn on(_: &Jvm, _: &mut WieJvmContext, id: i32, color: i32, duration: i32) -> JvmResult<()> {
+        tracing::warn!("stub org.kwis.msp.handset.BackLight::on({id}, {color}, {duration})");
+
+        Ok(())
+    }
+
+    async fn off(_: &Jvm, _: &mut WieJvmContext) -> JvmResult<()> {
+        tracing::warn!("stub org.kwis.msp.handset.BackLight::off()");
+
+        Ok(())
+    }
+
+    async fn before(_: &Jvm, _: &mut WieJvmContext) -> JvmResult<()> {
+        tracing::warn!("stub org.kwis.msp.handset.BackLight::before()");
+
+        Ok(())
+    }
+}

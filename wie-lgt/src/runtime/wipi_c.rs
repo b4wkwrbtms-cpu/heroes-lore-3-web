@@ -1,0 +1,360 @@
+use alloc::{boxed::Box, string::ToString, vec};
+
+mod context;
+pub(super) mod graphics;
+
+use jvm::{Jvm, Result as JvmResult, runtime::JavaLangString};
+use wipi_types::lgt::CletFunctions;
+
+use wie_backend::System;
+use wie_core_arm::{ArmCore, EmulatedFunction, EmulatedFunctionParam, ResultWriter, SvcId};
+use wie_jvm_support::JvmSupport;
+use wie_util::{Result, read_generic, write_null_terminated_string_bytes};
+use wie_wipi_c::{
+    MethodImpl, WIPICContext, WIPICMethodBody, WIPICResult,
+    api::{fs, graphics as shared_graphics, im, kernel, media, misc, net, serial, term_res, uic, util},
+};
+
+use context::LgtWIPICContext;
+
+use crate::runtime::{SVC_CATEGORY_WIPIC, svc_ids::WIPICSvcId};
+
+struct WIPICMethodResult {
+    result: WIPICResult,
+}
+
+impl ResultWriter<WIPICMethodResult> for WIPICMethodResult {
+    fn write(self, core: &mut ArmCore, next_pc: u32) -> Result<()> {
+        core.write_return_value(&self.result.results)?;
+        core.set_next_pc(next_pc)?;
+
+        Ok(())
+    }
+}
+
+struct CMethodProxy {
+    context: LgtWIPICContext,
+    body: WIPICMethodBody,
+}
+
+async fn handle_wipic_svc(core: &mut ArmCore, (system, jvm): &mut (System, Jvm), id: SvcId) -> Result<()> {
+    let _frame = jvm.push_native_frame(&[]);
+    let wipic_context = LgtWIPICContext::new(core.clone(), system.clone(), jvm.clone());
+    let (_, lr) = core.read_pc_lr()?;
+    let method = match WIPICSvcId::try_from(id)? {
+        WIPICSvcId::CletRegister => {
+            return EmulatedFunction::call(&clet_register, core, &mut (system.clone(), jvm.clone()))
+                .await?
+                .write(core, lr);
+        }
+        WIPICSvcId::GetFramebufferPointer => graphics::get_framebuffer_pointer.into_body(),
+        WIPICSvcId::GetFramebufferWidth => graphics::get_framebuffer_width.into_body(),
+        WIPICSvcId::GetFramebufferHeight => graphics::get_framebuffer_height.into_body(),
+        WIPICSvcId::GetFramebufferBpl => graphics::get_framebuffer_bpl.into_body(),
+        WIPICSvcId::GetFramebufferBpp => graphics::get_framebuffer_bpp.into_body(),
+        WIPICSvcId::Printk => kernel::printk.into_body(),
+        WIPICSvcId::Sprintk => kernel::sprintk.into_body(),
+        WIPICSvcId::Execute => kernel::execute.into_body(),
+        WIPICSvcId::Exit => kernel::exit.into_body(),
+        WIPICSvcId::GetCurProgramId => kernel::get_cur_program_id.into_body(),
+        WIPICSvcId::GetProgramName => kernel::get_program_name.into_body(),
+        WIPICSvcId::Alloc => kernel::alloc.into_body(),
+        WIPICSvcId::Calloc => kernel::calloc.into_body(),
+        WIPICSvcId::Free => kernel::free.into_body(),
+        WIPICSvcId::GetTotalMemory => kernel::get_total_memory.into_body(),
+        WIPICSvcId::GetFreeMemory => kernel::get_free_memory.into_body(),
+        WIPICSvcId::DefTimer => kernel::def_timer.into_body(),
+        WIPICSvcId::SetTimer => kernel::set_timer.into_body(),
+        WIPICSvcId::UnsetTimer => kernel::unset_timer.into_body(),
+        WIPICSvcId::CurrentTime => kernel::current_time.into_body(),
+        WIPICSvcId::GetSystemProperty => kernel::get_system_property.into_body(),
+        WIPICSvcId::SetSystemProperty => kernel::set_system_property.into_body(),
+        WIPICSvcId::GetResourceId => kernel::get_resource_id.into_body(),
+        WIPICSvcId::GetResource => kernel::get_resource.into_body(),
+        WIPICSvcId::Unk2 => unk2.into_body(),
+        WIPICSvcId::GetImageProperty => graphics::get_image_property.into_body(),
+        WIPICSvcId::GetImageFramebuffer => graphics::get_image_framebuffer.into_body(),
+        WIPICSvcId::GetScreenFramebuffer => graphics::get_screen_framebuffer.into_body(),
+        WIPICSvcId::DestroyOffscreenFramebuffer => graphics::destroy_offscreen_framebuffer.into_body(),
+        WIPICSvcId::CreateOffscreenFramebuffer => graphics::create_offscreen_framebuffer.into_body(),
+        WIPICSvcId::InitContext => graphics::init_context.into_body(),
+        WIPICSvcId::SetContext => graphics::set_context.into_body(),
+        WIPICSvcId::GetContext => graphics::get_context.into_body(),
+        WIPICSvcId::PutPixel => graphics::put_pixel.into_body(),
+        WIPICSvcId::DrawLine => graphics::draw_line.into_body(),
+        WIPICSvcId::DrawRect => graphics::draw_rect.into_body(),
+        WIPICSvcId::FillRect => graphics::fill_rect.into_body(),
+        WIPICSvcId::CopyFrameBuffer => graphics::copy_frame_buffer.into_body(),
+        WIPICSvcId::DrawImage => graphics::draw_image.into_body(),
+        WIPICSvcId::CopyArea => graphics::copy_area.into_body(),
+        WIPICSvcId::DrawArc => graphics::draw_arc.into_body(),
+        WIPICSvcId::FillArc => graphics::fill_arc.into_body(),
+        WIPICSvcId::DrawString => graphics::draw_string.into_body(),
+        WIPICSvcId::GetRgbPixels => graphics::get_rgb_pixels.into_body(),
+        WIPICSvcId::SetRgbPixels => graphics::set_rgb_pixels.into_body(),
+        WIPICSvcId::FlushLcd => graphics::flush_lcd.into_body(),
+        WIPICSvcId::GetPixelFromRgb => shared_graphics::get_pixel_from_rgb.into_body(),
+        WIPICSvcId::GetRgbFromPixel => shared_graphics::get_rgb_from_pixel.into_body(),
+        WIPICSvcId::GetDisplayInfo => graphics::get_display_info.into_body(),
+        WIPICSvcId::Repaint => shared_graphics::repaint.into_body(),
+        WIPICSvcId::GetFont => shared_graphics::get_font.into_body(),
+        WIPICSvcId::GetFontHeight => shared_graphics::get_font_height.into_body(),
+        WIPICSvcId::GetFontAscent => shared_graphics::get_font_ascent.into_body(),
+        WIPICSvcId::GetFontDescent => shared_graphics::get_font_descent.into_body(),
+        WIPICSvcId::GetStringWidth => shared_graphics::get_string_width.into_body(),
+        WIPICSvcId::CreateImage => graphics::create_image.into_body(),
+        WIPICSvcId::DestroyImage => graphics::destroy_image.into_body(),
+        WIPICSvcId::EncodeImage => shared_graphics::encode_image.into_body(),
+        WIPICSvcId::PostEvent => shared_graphics::post_event.into_body(),
+        WIPICSvcId::FillPolygon => shared_graphics::fill_polygon.into_body(),
+        WIPICSvcId::GetSupportModeCount => im::get_support_mode_count.into_body(),
+        WIPICSvcId::GetSupportedModes => im::get_supported_modes.into_body(),
+        WIPICSvcId::SetCurrentMode => im::set_current_mode.into_body(),
+        WIPICSvcId::GetCurrentMode => im::get_current_mode.into_body(),
+        WIPICSvcId::HandleInput => im::handle_input.into_body(),
+        WIPICSvcId::UicCreateApplicationContext => uic::create_application_context.into_body(),
+        WIPICSvcId::UicGetClass => uic::get_class.into_body(),
+        WIPICSvcId::UicCreate => uic::create.into_body(),
+        WIPICSvcId::UicDestroy => uic::destroy.into_body(),
+        WIPICSvcId::UicPaint => uic::paint.into_body(),
+        WIPICSvcId::UicHandleEvent => uic::handle_event.into_body(),
+        WIPICSvcId::UicConfigure => uic::configure.into_body(),
+        WIPICSvcId::UicSetEnable => uic::set_enable.into_body(),
+        WIPICSvcId::UicSetFgColor => uic::set_fg_color.into_body(),
+        WIPICSvcId::UicSetBgColor => uic::set_bg_color.into_body(),
+        WIPICSvcId::UicSetLabelAlignment => uic::set_label_alignment.into_body(),
+        WIPICSvcId::UicGetTime => uic::get_time.into_body(),
+        WIPICSvcId::UicInsertText => uic::insert_text.into_body(),
+        WIPICSvcId::UicDeleteText => uic::delete_text.into_body(),
+        WIPICSvcId::UicSetMaxTextSize => uic::set_max_text_size.into_body(),
+        WIPICSvcId::UicGetTextSize => uic::get_text_size.into_body(),
+        WIPICSvcId::UicGetText => uic::get_text.into_body(),
+        WIPICSvcId::FsOpen => fs::open.into_body(),
+        WIPICSvcId::FsRead => fs::read.into_body(),
+        WIPICSvcId::FsWrite => fs::write.into_body(),
+        WIPICSvcId::FsClose => fs::close.into_body(),
+        WIPICSvcId::FsSeek => fs::seek.into_body(),
+        WIPICSvcId::FsFileAttribute => fs::file_attribute.into_body(),
+        WIPICSvcId::FsRemove => fs::remove.into_body(),
+        WIPICSvcId::FsRename => fs::rename.into_body(),
+        WIPICSvcId::FsMkDir => fs::make_directory.into_body(),
+        WIPICSvcId::FsRmDir => fs::remove_directory.into_body(),
+        WIPICSvcId::FsList => fs::list.into_body(),
+        WIPICSvcId::FsAvailable => fs::available.into_body(),
+        WIPICSvcId::FsTell => fs::tell.into_body(),
+        WIPICSvcId::FsExists => fs::exists.into_body(),
+        WIPICSvcId::Connect => net::connect.into_body(),
+        WIPICSvcId::Close => net::close.into_body(),
+        WIPICSvcId::SocketClose => net::socket_close.into_body(),
+        WIPICSvcId::Socket => net::socket.into_body(),
+        WIPICSvcId::UnkSocket => unk_socket.into_body(),
+        WIPICSvcId::SocketConnect => net::socket_connect.into_body(),
+        WIPICSvcId::SocketWrite => net::socket_write.into_body(),
+        WIPICSvcId::SocketRead => net::socket_read.into_body(),
+        WIPICSvcId::SetReadCallback => net::set_read_callback.into_body(),
+        WIPICSvcId::SetWriteCallback => net::set_write_callback.into_body(),
+        WIPICSvcId::SerialOpen => serial::open.into_body(),
+        WIPICSvcId::SerialWrite => serial::write.into_body(),
+        WIPICSvcId::SerialSetWriteCallback => serial::set_write_callback.into_body(),
+        WIPICSvcId::SerialClose => serial::close.into_body(),
+        WIPICSvcId::Htonl => util::htonl.into_body(),
+        WIPICSvcId::Htons => util::htons.into_body(),
+        WIPICSvcId::Ntohs => util::ntohs.into_body(),
+        WIPICSvcId::InetAddr => util::inet_addr.into_body(),
+        WIPICSvcId::TermResGetSupportedGroups => term_res::get_supported_groups.into_body(),
+        WIPICSvcId::TermResGetCount => term_res::get_count.into_body(),
+        WIPICSvcId::TermResGetList => term_res::get_list.into_body(),
+        WIPICSvcId::TermResGetFormat => term_res::get_format.into_body(),
+        WIPICSvcId::TermResGetSize => term_res::get_size.into_body(),
+        WIPICSvcId::TermResGetUiName => term_res::get_ui_name.into_body(),
+        WIPICSvcId::ClipCreate => media::clip_create.into_body(),
+        WIPICSvcId::ClipFree => media::clip_free.into_body(),
+        WIPICSvcId::ClipPutData => media::clip_put_data.into_body(),
+        WIPICSvcId::ClipClearData => media::clip_clear_data.into_body(),
+        WIPICSvcId::ClipGetVolume => media::clip_get_volume.into_body(),
+        WIPICSvcId::ClipSetVolume => media::clip_set_volume.into_body(),
+        WIPICSvcId::Play => media::play.into_body(),
+        WIPICSvcId::Pause => media::pause.into_body(),
+        WIPICSvcId::Resume => media::resume.into_body(),
+        WIPICSvcId::Stop => media::stop.into_body(),
+        WIPICSvcId::GetVolume => media::get_volume.into_body(),
+        WIPICSvcId::SetVolume => media::set_volume.into_body(),
+        WIPICSvcId::Vibrator => media::vibrator.into_body(),
+        WIPICSvcId::Unk14 => unk14.into_body(),
+        WIPICSvcId::ClipAllocPlayer => media::clip_alloc_player.into_body(),
+        WIPICSvcId::ClipFreePlayer => media::clip_free_player.into_body(),
+        WIPICSvcId::GetDefaultVolume => media::get_default_volume.into_body(),
+        WIPICSvcId::SetMuteState => media::set_mute_state.into_body(),
+        WIPICSvcId::GetMuteState => media::get_mute_state.into_body(),
+        WIPICSvcId::BackLight => misc::back_light.into_body(),
+        WIPICSvcId::Unk16 => unk16.into_body(),
+    };
+
+    EmulatedFunction::call(
+        &CMethodProxy {
+            context: wipic_context,
+            body: method,
+        },
+        core,
+        &mut (),
+    )
+    .await?
+    .write(core, lr)
+}
+
+#[async_trait::async_trait]
+impl EmulatedFunction<(), WIPICMethodResult, ()> for CMethodProxy {
+    async fn call(&self, core: &mut ArmCore, _: &mut ()) -> Result<WIPICMethodResult> {
+        let a0 = u32::get(core, 0);
+        let a1 = u32::get(core, 1);
+        let a2 = u32::get(core, 2);
+        let a3 = u32::get(core, 3);
+        let a4 = u32::get(core, 4);
+        let a5 = u32::get(core, 5);
+        let a6 = u32::get(core, 6);
+        let a7 = u32::get(core, 7);
+        let a8 = u32::get(core, 8);
+
+        let result = self
+            .body
+            .call(&mut self.context.clone(), vec![a0, a1, a2, a3, a4, a5, a6, a7, a8].into_boxed_slice())
+            .await?;
+
+        Ok(WIPICMethodResult { result })
+    }
+}
+
+pub fn register_wipic_svc_handler(core: &mut ArmCore, system: &System, jvm: &Jvm) -> Result<()> {
+    core.register_svc_handler(SVC_CATEGORY_WIPIC, handle_wipic_svc, &(system.clone(), jvm.clone()))
+}
+
+async fn clet_register(core: &mut ArmCore, (system, jvm): &mut (System, Jvm), function_table: u32, a1: u32) -> Result<()> {
+    tracing::debug!("clet_register({function_table:#x}, {a1:#x})");
+
+    let (screen_width, screen_height) = {
+        let screen = system.platform().screen();
+        (screen.width(), screen.height())
+    };
+    graphics::init_process_state(core, screen_width, screen_height)?;
+    graphics::set_use_annunciator(core, a1)?;
+    let functions: CletFunctions = read_generic(core, function_table)?;
+
+    jvm.put_static_field("net/wie/CletWrapper", "startClet", "I", functions.start_clet as i32)
+        .await
+        .unwrap();
+    jvm.put_static_field("net/wie/CletWrapper", "pauseClet", "I", functions.pause_clet as i32)
+        .await
+        .unwrap();
+    jvm.put_static_field("net/wie/CletWrapper", "resumeClet", "I", functions.resume_clet as i32)
+        .await
+        .unwrap();
+    jvm.put_static_field("net/wie/CletWrapper", "destroyClet", "I", functions.destroy_clet as i32)
+        .await
+        .unwrap();
+    jvm.put_static_field("net/wie/CletWrapper", "paintClet", "I", functions.paint_clet as i32)
+        .await
+        .unwrap();
+    jvm.put_static_field("net/wie/CletWrapper", "handleCletEvent", "I", functions.handle_clet_event as i32)
+        .await
+        .unwrap();
+
+    let main_class_name = JavaLangString::from_rust_string(jvm, "net/wie/CletWrapper").await.unwrap();
+    let mut args_array = jvm.instantiate_array("Ljava/lang/String;", 1).await.unwrap();
+    jvm.store_array(&mut args_array, 0, vec![main_class_name]).await.unwrap();
+
+    let result: JvmResult<()> = jvm
+        .invoke_static("org/kwis/msp/lcdui/Main", "main", "([Ljava/lang/String;)V", (args_array,))
+        .await;
+
+    if let Err(x) = result {
+        return Err(JvmSupport::to_wie_err(jvm, x).await);
+    }
+
+    Ok(())
+}
+
+async fn unk_socket(_context: &mut dyn WIPICContext, domain: i32, socket_type: i32) -> Result<i32> {
+    tracing::warn!("stub unk_socket({domain}, {socket_type})");
+
+    Ok(-1)
+}
+
+async fn unk2(context: &mut dyn WIPICContext) -> Result<u32> {
+    tracing::warn!("stub unk2");
+
+    // OEMC_knlGetProgramInfo? get app id
+    let app_id = context.system().aid().to_string();
+    let result = context.alloc_raw((app_id.len() + 1) as u32)?;
+    write_null_terminated_string_bytes(context, result, app_id.as_bytes())?;
+
+    Ok(result)
+}
+
+async fn unk14(_context: &mut dyn WIPICContext, a0: u32, a1: u32, a2: u32, a3: u32) -> Result<u32> {
+    tracing::warn!("stub unk14({a0:#x}, {a1:#x}, {a2:#x}, {a3:#x})");
+
+    // media
+
+    Ok(0)
+}
+
+async fn unk16(_context: &mut dyn WIPICContext, a0: u32, a1: u32, a2: u32, a3: u32) -> Result<u32> {
+    tracing::warn!("stub unk16({a0:#x}, {a1:#x}, {a2:#x}, {a3:#x})");
+
+    // misc
+
+    Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{boxed::Box, sync::Arc};
+    use core::sync::atomic::{AtomicBool, Ordering};
+
+    use test_utils::TestPlatform;
+    use wie_backend::{DefaultTaskRunner, Options, System};
+    use wie_core_arm::{Allocator, ArmCore};
+    use wie_util::{Result, write_null_terminated_string_bytes};
+
+    use crate::runtime::{LgtJvmSupport, SVC_CATEGORY_WIPIC, svc_ids::WIPICSvcId};
+
+    use super::register_wipic_svc_handler;
+
+    #[test]
+    fn resource_calls_release_java_temporaries() -> Result<()> {
+        let mut system = System::new(Box::new(TestPlatform::new()), "", "", DefaultTaskRunner);
+        let task_system = system.clone();
+        let done = Arc::new(AtomicBool::new(false));
+        let task_done = done.clone();
+        system.spawn(async move || {
+            let mut core = ArmCore::new(Options {
+                enable_gdbserver: false,
+                aot: None,
+                profile: None,
+            })?;
+            Allocator::init(&mut core)?;
+            let mut registers = core.save_context();
+            registers.sp = Allocator::alloc(&mut core, 0x100)? + 0x100;
+            core.restore_context(&registers);
+            let jvm = LgtJvmSupport::init(&mut core, &task_system, None).await?;
+            register_wipic_svc_handler(&mut core, &task_system, &jvm)?;
+            let name = Allocator::alloc(&mut core, 8)?;
+            write_null_terminated_string_bytes(&mut core, name, b"missing")?;
+            let lookup = core.make_svc_stub(SVC_CATEGORY_WIPIC, WIPICSvcId::GetResourceId)?;
+            for _ in 0..8 {
+                let result: u32 = core.run_function(lookup, &[name, 0, 0, 0, 0, 0, 0, 0, 0]).await?;
+                assert_eq!(result as i32, -12);
+                assert!(
+                    jvm.collect_garbage().unwrap() >= 2,
+                    "Resource lookup strings must not accumulate in the guest frame"
+                );
+            }
+            task_done.store(true, Ordering::Relaxed);
+            Ok(())
+        });
+        while !done.load(Ordering::Relaxed) {
+            system.tick()?;
+        }
+        Ok(())
+    }
+}

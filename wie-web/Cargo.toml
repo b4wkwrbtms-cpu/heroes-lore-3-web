@@ -1,0 +1,44 @@
+[package]
+name = "wie-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+publish = false
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O", "-g", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+
+[package.metadata.wasm-pack.profile.release.wasm-bindgen]
+dwarf-debug-info = true
+
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = ["-O", "-g", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/rust/lib.rs"
+
+[dependencies]
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = "1.0"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+hashbrown = { version = "^0.17" }
+js-sys = { version = "^0.3" }
+time = { version = "^0.3", features = ["wasm-bindgen"] }
+tracing-web = { version = "^0.1" }
+wasm-bindgen = { version = "^0.2" }
+wasm-bindgen-futures = { version = "^0.4" }
+web-sys = { version = "^0.3", features = ["HtmlCanvasElement", "CanvasRenderingContext2d", "ImageData", "Window", "Navigator"] }
+
+wie = { workspace = true }
+wie-core-arm-aot = { workspace = true }
+wie-backend = { workspace = true }
+wie-core-arm-wasm = { workspace = true }
+wie-util = { workspace = true }

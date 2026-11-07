@@ -1,0 +1,29 @@
+[package]
+name = "wie-core-arm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+bytemuck = { workspace = true }
+spin = { workspace = true }
+tracing = { workspace = true }
+
+arm32_cpu = { version = "^0.1.2" }
+crossbeam = { version = "^0.8" }
+gdbstub = { version = "^0.7" }
+gdbstub_arch = { version = "^0.3" }
+hashbrown = { version = "^0.17" }
+
+wie-backend = { workspace = true }
+wie-core-arm-aot = { workspace = true }
+wie-util = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true, features = ["executor"] }
+futures-test = { workspace = true }
+test-utils = { workspace = true }
+wie-core-arm-wasm = { workspace = true }

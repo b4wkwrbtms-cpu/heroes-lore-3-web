@@ -1,0 +1,1264 @@
+use alloc::{format, vec, vec::Vec};
+
+use jvm::{ClassInstanceRef, Jvm, Result as JvmResult, runtime::JavaLangString};
+use jvm_class_proto::{JavaFieldProto, JavaMethodProto};
+use jvm_types::{ClassAccessFlags, FieldAccessFlags, MethodAccessFlags};
+use rustjava_runtime::classes::java::{lang::String, util::Vector};
+
+use wie_jvm_support::{WieJavaClassProto, WieJvmContext};
+
+use crate::classes::javax::microedition::lcdui::{Command, CommandListener, Display, Font, Graphics, Item, Ticker};
+
+use crate::classes::net::wie::{CommandEvent, EventQueue, KeyboardEventType, MIDPKeyCode};
+
+const COMMAND_BACK: i32 = 2;
+const COMMAND_CANCEL: i32 = 3;
+const COMMAND_OK: i32 = 4;
+const COMMAND_STOP: i32 = 6;
+const COMMAND_EXIT: i32 = 7;
+
+const MENU_ROW_HEIGHT: i32 = 18;
+const TITLE_HORIZONTAL_PADDING: i32 = 4;
+const SOFTKEY_BACKGROUND: i32 = 0x263746;
+const MENU_SELECTION_BACKGROUND: i32 = 0x2f6f9f;
+const WHITE: i32 = 0xffffff;
+const BLACK: i32 = 0;
+const LEFT_TOP: i32 = 4 | 16;
+const RIGHT_TOP: i32 = 8 | 16;
+
+#[derive(Clone)]
+struct CommandBinding {
+    command: ClassInstanceRef<Command>,
+    command_type: i32,
+    priority: i32,
+    effective_index: i32,
+}
+
+struct CommandLayout {
+    right: Option<CommandBinding>,
+    remaining: Vec<CommandBinding>,
+}
+
+// class javax.microedition.lcdui.Displayable
+pub struct Displayable;
+
+impl Displayable {
+    pub fn as_proto() -> WieJavaClassProto {
+        WieJavaClassProto {
+            name: "javax/microedition/lcdui/Displayable",
+            parent_class: Some("java/lang/Object"),
+            interfaces: vec![],
+            methods: vec![
+                JavaMethodProto::new("<init>", "()V", Self::init, MethodAccessFlags::empty()),
+                JavaMethodProto::new("getTitle", "()Ljava/lang/String;", Self::get_title, MethodAccessFlags::PUBLIC),
+                JavaMethodProto::new("setTitle", "(Ljava/lang/String;)V", Self::set_title, MethodAccessFlags::PUBLIC),
+                JavaMethodProto::new(
+                    "getTicker",
+                    "()Ljavax/microedition/lcdui/Ticker;",
+                    Self::get_ticker,
+                    MethodAccessFlags::PUBLIC,
+                ),
+                JavaMethodProto::new(
+                    "setTicker",
+                    "(Ljavax/microedition/lcdui/Ticker;)V",
+                    Self::set_ticker,
+                    MethodAccessFlags::PUBLIC,
+                ),
+                JavaMethodProto::new("isShown", "()Z", Self::is_shown, MethodAccessFlags::PUBLIC),
+                JavaMethodProto::new("getWidth", "()I", Self::get_width, MethodAccessFlags::PUBLIC),
+                JavaMethodProto::new("getHeight", "()I", Self::get_height, MethodAccessFlags::PUBLIC),
+                JavaMethodProto::new(
+                    "addCommand",
+                    "(Ljavax/microedition/lcdui/Command;)V",
+                    Self::add_command,
+                    MethodAccessFlags::PUBLIC,
+                ),
+                JavaMethodProto::new(
+                    "removeCommand",
+                    "(Ljavax/microedition/lcdui/Command;)V",
+                    Self::remove_command,
+                    MethodAccessFlags::PUBLIC,
+                ),
+                JavaMethodProto::new(
+                    "setCommandListener",
+                    "(Ljavax/microedition/lcdui/CommandListener;)V",
+                    Self::set_command_listener,
+                    MethodAccessFlags::PUBLIC,
+                ),
+                JavaMethodProto::new("sizeChanged", "(II)V", Self::size_changed, MethodAccessFlags::PROTECTED),
+                JavaMethodProto::new(
+                    "setDisplay",
+                    "(Ljavax/microedition/lcdui/Display;)V",
+                    Self::set_display,
+                    MethodAccessFlags::empty(),
+                ),
+                JavaMethodProto::new(
+                    "getDisplay",
+                    "()Ljavax/microedition/lcdui/Display;",
+                    Self::get_display,
+                    MethodAccessFlags::empty(),
+                ),
+                JavaMethodProto::new("isFullScreen", "()Z", Self::is_full_screen, MethodAccessFlags::empty()),
+                JavaMethodProto::new("setFullScreen", "(Z)V", Self::set_full_screen, MethodAccessFlags::empty()),
+                JavaMethodProto::new(
+                    "dispatchCommand",
+                    "(Ljavax/microedition/lcdui/Command;)Z",
+                    Self::dispatch_command,
+                    MethodAccessFlags::empty(),
+                ),
+                JavaMethodProto::new("requestRepaint", "()V", Self::request_repaint, MethodAccessFlags::empty()),
+                JavaMethodProto::new("decorationChanged", "()V", Self::decoration_changed, MethodAccessFlags::empty()),
+                JavaMethodProto::new("notifySizeChanged", "()V", Self::notify_size_changed, MethodAccessFlags::empty()),
+                JavaMethodProto::new("getCommandCount", "()I", Self::get_command_count, MethodAccessFlags::empty()),
+                JavaMethodProto::new(
+                    "getCommandAt",
+                    "(I)Ljavax/microedition/lcdui/Command;",
+                    Self::get_command_at,
+                    MethodAccessFlags::empty(),
+                ),
+                JavaMethodProto::new("dispatchCommandAt", "(I)V", Self::dispatch_command_at, MethodAccessFlags::empty()),
+                JavaMethodProto::new(
+                    "checkItemMutation",
+                    "(Ljavax/microedition/lcdui/Item;)V",
+                    Self::check_item_mutation,
+                    MethodAccessFlags::empty(),
+                ),
+                JavaMethodProto::new(
+                    "itemInvalidated",
+                    "(Ljavax/microedition/lcdui/Item;Z)V",
+                    Self::item_invalidated,
+                    MethodAccessFlags::empty(),
+                ),
+                JavaMethodProto::new(
+                    "itemStateChanged",
+                    "(Ljavax/microedition/lcdui/Item;)V",
+                    Self::item_state_changed,
+                    MethodAccessFlags::empty(),
+                ),
+                JavaMethodProto::new("routeKeyEvent", "(II)V", Self::route_key_event, MethodAccessFlags::empty()),
+                JavaMethodProto::new(
+                    "paintCommands",
+                    "(Ljavax/microedition/lcdui/Graphics;III)V",
+                    Self::paint_commands,
+                    MethodAccessFlags::empty(),
+                ),
+                JavaMethodProto::new("handleKeyEvent", "(II)V", Self::handle_key_event, MethodAccessFlags::empty()),
+                JavaMethodProto::new(
+                    "handlePaintEvent",
+                    "(Ljavax/microedition/lcdui/Graphics;)V",
+                    Self::handle_paint_event,
+                    MethodAccessFlags::empty(),
+                ),
+                JavaMethodProto::new("handleNotifyEvent", "(III)V", Self::handle_notify_event, MethodAccessFlags::PROTECTED),
+            ],
+            fields: vec![
+                JavaFieldProto::new("title", "Ljava/lang/String;", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("ticker", "Ljavax/microedition/lcdui/Ticker;", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("commands", "Ljava/util/Vector;", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("commandListener", "Ljavax/microedition/lcdui/CommandListener;", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("currentDisplay", "Ljavax/microedition/lcdui/Display;", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("notifiedWidth", "I", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("notifiedHeight", "I", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("sizeKnown", "Z", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("sizeDirty", "Z", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("sizeNotifying", "Z", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("commandMenuOpen", "Z", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("commandMenuIndex", "I", FieldAccessFlags::PRIVATE),
+                JavaFieldProto::new("isInFullScreenMode", "Z", FieldAccessFlags::PRIVATE),
+            ],
+            access_flags: ClassAccessFlags::PUBLIC | ClassAccessFlags::ABSTRACT,
+        }
+    }
+
+    async fn init(jvm: &Jvm, _context: &mut WieJvmContext, mut this: ClassInstanceRef<Self>) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::<init>({this:?})");
+
+        let _: () = jvm.invoke_special(&this, "java/lang/Object", "<init>", "()V", ()).await?;
+        let commands = jvm.new_class("java/util/Vector", "()V", ()).await?;
+        jvm.put_field(
+            &mut this,
+            "javax/microedition/lcdui/Displayable",
+            "commands",
+            "Ljava/util/Vector;",
+            commands,
+        )
+        .await?;
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeDirty", "Z", true)
+            .await?;
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I", -1)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn get_title(jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>) -> JvmResult<ClassInstanceRef<String>> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::getTitle({this:?})");
+
+        jvm.get_field(&this, "javax/microedition/lcdui/Displayable", "title", "Ljava/lang/String;")
+            .await
+    }
+
+    async fn set_title(jvm: &Jvm, _context: &mut WieJvmContext, mut this: ClassInstanceRef<Self>, title: ClassInstanceRef<String>) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::setTitle({this:?}, {title:?})");
+
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "title", "Ljava/lang/String;", title)
+            .await?;
+        jvm.invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "decorationChanged", "()V", ())
+            .await
+    }
+
+    async fn get_ticker(jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>) -> JvmResult<ClassInstanceRef<Ticker>> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::getTicker({this:?})");
+
+        jvm.get_field(
+            &this,
+            "javax/microedition/lcdui/Displayable",
+            "ticker",
+            "Ljavax/microedition/lcdui/Ticker;",
+        )
+        .await
+    }
+
+    async fn set_ticker(jvm: &Jvm, context: &mut WieJvmContext, mut this: ClassInstanceRef<Self>, ticker: ClassInstanceRef<Ticker>) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::setTicker({this:?}, {ticker:?})");
+
+        let previous: ClassInstanceRef<Ticker> = jvm
+            .get_field(
+                &this,
+                "javax/microedition/lcdui/Displayable",
+                "ticker",
+                "Ljavax/microedition/lcdui/Ticker;",
+            )
+            .await?;
+        if (previous.is_null() && ticker.is_null()) || (!previous.is_null() && !ticker.is_null() && previous.identity() == ticker.identity()) {
+            return Ok(());
+        }
+        jvm.put_field(
+            &mut this,
+            "javax/microedition/lcdui/Displayable",
+            "ticker",
+            "Ljavax/microedition/lcdui/Ticker;",
+            ticker,
+        )
+        .await?;
+        if Self::is_shown(jvm, context, this.clone()).await? {
+            let display: ClassInstanceRef<Display> = jvm
+                .get_field(
+                    &this,
+                    "javax/microedition/lcdui/Displayable",
+                    "currentDisplay",
+                    "Ljavax/microedition/lcdui/Display;",
+                )
+                .await?;
+            let _: () = jvm
+                .invoke_virtual(&display, "javax/microedition/lcdui/Display", "tickerChanged", "()V", ())
+                .await?;
+        }
+        jvm.invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "decorationChanged", "()V", ())
+            .await
+    }
+
+    async fn is_shown(jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>) -> JvmResult<bool> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::isShown({this:?})");
+
+        let display: ClassInstanceRef<Display> = jvm
+            .get_field(
+                &this,
+                "javax/microedition/lcdui/Displayable",
+                "currentDisplay",
+                "Ljavax/microedition/lcdui/Display;",
+            )
+            .await?;
+        if display.is_null() {
+            return Ok(false);
+        }
+
+        let current: ClassInstanceRef<Displayable> = jvm
+            .invoke_virtual(
+                &display,
+                "javax/microedition/lcdui/Display",
+                "getCurrent",
+                "()Ljavax/microedition/lcdui/Displayable;",
+                (),
+            )
+            .await?;
+        Ok(!current.is_null() && current.identity() == this.identity())
+    }
+
+    async fn add_command(jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>, command: ClassInstanceRef<Command>) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::addCommand({this:?}, {command:?})");
+
+        if command.is_null() {
+            return Err(jvm.exception("java/lang/NullPointerException", "Command is null").await);
+        }
+
+        let commands: ClassInstanceRef<Vector> = jvm
+            .get_field(&this, "javax/microedition/lcdui/Displayable", "commands", "Ljava/util/Vector;")
+            .await?;
+        let command_count: i32 = jvm.invoke_virtual(&commands, "java/util/Vector", "size", "()I", ()).await?;
+        let mut registered = false;
+        for index in 0..command_count {
+            let existing: ClassInstanceRef<Command> = jvm
+                .invoke_virtual(&commands, "java/util/Vector", "elementAt", "(I)Ljava/lang/Object;", (index,))
+                .await?;
+            if existing.identity() == command.identity() {
+                registered = true;
+                break;
+            }
+        }
+        if !registered {
+            let _: () = jvm
+                .invoke_virtual(&commands, "java/util/Vector", "addElement", "(Ljava/lang/Object;)V", (command,))
+                .await?;
+            let _: () = jvm
+                .invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "decorationChanged", "()V", ())
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn remove_command(
+        jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        this: ClassInstanceRef<Self>,
+        command: ClassInstanceRef<Command>,
+    ) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::removeCommand({this:?}, {command:?})");
+
+        if command.is_null() {
+            return Ok(());
+        }
+
+        let commands: ClassInstanceRef<Vector> = jvm
+            .get_field(&this, "javax/microedition/lcdui/Displayable", "commands", "Ljava/util/Vector;")
+            .await?;
+        let command_count: i32 = jvm.invoke_virtual(&commands, "java/util/Vector", "size", "()I", ()).await?;
+        for index in 0..command_count {
+            let existing: ClassInstanceRef<Command> = jvm
+                .invoke_virtual(&commands, "java/util/Vector", "elementAt", "(I)Ljava/lang/Object;", (index,))
+                .await?;
+            if existing.identity() == command.identity() {
+                let _: () = jvm
+                    .invoke_virtual(&commands, "java/util/Vector", "removeElementAt", "(I)V", (index,))
+                    .await?;
+                let _: () = jvm
+                    .invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "decorationChanged", "()V", ())
+                    .await?;
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn set_command_listener(
+        jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        mut this: ClassInstanceRef<Self>,
+        listener: ClassInstanceRef<CommandListener>,
+    ) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::setCommandListener({this:?}, {listener:?})");
+
+        jvm.put_field(
+            &mut this,
+            "javax/microedition/lcdui/Displayable",
+            "commandListener",
+            "Ljavax/microedition/lcdui/CommandListener;",
+            listener,
+        )
+        .await
+    }
+
+    async fn size_changed(_jvm: &Jvm, _context: &mut WieJvmContext, _this: ClassInstanceRef<Self>, _width: i32, _height: i32) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::sizeChanged({_this:?}, {_width}, {_height})");
+
+        Ok(())
+    }
+
+    async fn set_display(
+        jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        mut this: ClassInstanceRef<Self>,
+        display: ClassInstanceRef<Display>,
+    ) -> JvmResult<()> {
+        let log = format!("javax.microedition.lcdui.Displayable::setDisplay({this:?}, {display:?})");
+        tracing::debug!("{log}");
+
+        jvm.put_field(
+            &mut this,
+            "javax/microedition/lcdui/Displayable",
+            "currentDisplay",
+            "Ljavax/microedition/lcdui/Display;",
+            display,
+        )
+        .await?;
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeDirty", "Z", true)
+            .await?;
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuOpen", "Z", false)
+            .await?;
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I", -1)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn get_display(jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>) -> JvmResult<ClassInstanceRef<Display>> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::getDisplay({this:?})");
+
+        jvm.get_field(
+            &this,
+            "javax/microedition/lcdui/Displayable",
+            "currentDisplay",
+            "Ljavax/microedition/lcdui/Display;",
+        )
+        .await
+    }
+
+    async fn is_full_screen(jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>) -> JvmResult<bool> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::isFullScreen({this:?})");
+
+        jvm.get_field(&this, "javax/microedition/lcdui/Displayable", "isInFullScreenMode", "Z")
+            .await
+    }
+
+    async fn set_full_screen(jvm: &Jvm, _context: &mut WieJvmContext, mut this: ClassInstanceRef<Self>, mode: bool) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::setFullScreen({this:?}, {mode})");
+
+        let previous_mode: bool = jvm
+            .get_field(&this, "javax/microedition/lcdui/Displayable", "isInFullScreenMode", "Z")
+            .await?;
+        if previous_mode == mode {
+            return Ok(());
+        }
+
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "isInFullScreenMode", "Z", mode)
+            .await?;
+
+        let display: ClassInstanceRef<Display> = jvm
+            .get_field(
+                &this,
+                "javax/microedition/lcdui/Displayable",
+                "currentDisplay",
+                "Ljavax/microedition/lcdui/Display;",
+            )
+            .await?;
+        if !display.is_null() {
+            let _: () = jvm
+                .invoke_virtual(&display, "javax/microedition/lcdui/Display", "setFullscreen", "(Z)V", (mode,))
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn request_repaint(jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::requestRepaint({this:?})");
+
+        let display: ClassInstanceRef<Display> = jvm
+            .get_field(
+                &this,
+                "javax/microedition/lcdui/Displayable",
+                "currentDisplay",
+                "Ljavax/microedition/lcdui/Display;",
+            )
+            .await?;
+        if !display.is_null() {
+            let _: () = jvm
+                .invoke_virtual(&display, "javax/microedition/lcdui/Display", "repaint", "(IIII)V", (0, 0, -1, -1))
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn decoration_changed(jvm: &Jvm, _context: &mut WieJvmContext, mut this: ClassInstanceRef<Self>) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::decorationChanged({this:?})");
+
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeDirty", "Z", true)
+            .await?;
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuOpen", "Z", false)
+            .await?;
+        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I", -1)
+            .await?;
+
+        let display: ClassInstanceRef<Display> = jvm
+            .get_field(
+                &this,
+                "javax/microedition/lcdui/Displayable",
+                "currentDisplay",
+                "Ljavax/microedition/lcdui/Display;",
+            )
+            .await?;
+        if !display.is_null() {
+            let notification_result: JvmResult<()> = jvm
+                .invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "notifySizeChanged", "()V", ())
+                .await;
+            let repaint_result: JvmResult<()> = jvm
+                .invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "requestRepaint", "()V", ())
+                .await;
+            notification_result?;
+            repaint_result?;
+        }
+
+        Ok(())
+    }
+
+    async fn get_command_count(jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>) -> JvmResult<i32> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::getCommandCount({this:?})");
+
+        let commands: ClassInstanceRef<Vector> = jvm
+            .get_field(&this, "javax/microedition/lcdui/Displayable", "commands", "Ljava/util/Vector;")
+            .await?;
+        jvm.invoke_virtual(&commands, "java/util/Vector", "size", "()I", ()).await
+    }
+
+    async fn get_command_at(
+        jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        this: ClassInstanceRef<Self>,
+        index: i32,
+    ) -> JvmResult<ClassInstanceRef<Command>> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::getCommandAt({this:?}, {index})");
+
+        let commands: ClassInstanceRef<Vector> = jvm
+            .get_field(&this, "javax/microedition/lcdui/Displayable", "commands", "Ljava/util/Vector;")
+            .await?;
+        jvm.invoke_virtual(&commands, "java/util/Vector", "elementAt", "(I)Ljava/lang/Object;", (index,))
+            .await
+    }
+
+    async fn dispatch_command_at(jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>, index: i32) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::dispatchCommandAt({this:?}, {index})");
+
+        let commands: ClassInstanceRef<Vector> = jvm
+            .get_field(&this, "javax/microedition/lcdui/Displayable", "commands", "Ljava/util/Vector;")
+            .await?;
+        let command: ClassInstanceRef<Command> = jvm
+            .invoke_virtual(&commands, "java/util/Vector", "elementAt", "(I)Ljava/lang/Object;", (index,))
+            .await?;
+        let _: bool = jvm
+            .invoke_virtual(
+                &this,
+                "javax/microedition/lcdui/Displayable",
+                "dispatchCommand",
+                "(Ljavax/microedition/lcdui/Command;)Z",
+                (command,),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn dispatch_command(
+        jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        this: ClassInstanceRef<Self>,
+        command: ClassInstanceRef<Command>,
+    ) -> JvmResult<bool> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::dispatchCommand({this:?}, {command:?})");
+
+        let listener: ClassInstanceRef<CommandListener> = jvm
+            .get_field(
+                &this,
+                "javax/microedition/lcdui/Displayable",
+                "commandListener",
+                "Ljavax/microedition/lcdui/CommandListener;",
+            )
+            .await?;
+        if !listener.is_null() {
+            let event: ClassInstanceRef<CommandEvent> = jvm
+                .new_class(
+                    "net/wie/CommandEvent",
+                    "(Ljavax/microedition/lcdui/CommandListener;Ljavax/microedition/lcdui/Command;Ljavax/microedition/lcdui/Displayable;)V",
+                    (listener.clone(), command, this),
+                )
+                .await?
+                .into();
+            let queue: ClassInstanceRef<EventQueue> = jvm
+                .invoke_static("net/wie/EventQueue", "getEventQueue", "()Lnet/wie/EventQueue;", ())
+                .await?;
+            let _: () = jvm
+                .invoke_virtual(&queue, "net/wie/EventQueue", "callSerially", "(Ljava/lang/Runnable;)V", (event,))
+                .await?;
+        }
+
+        Ok(!listener.is_null())
+    }
+
+    async fn check_item_mutation(
+        _jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        _this: ClassInstanceRef<Self>,
+        _item: ClassInstanceRef<Item>,
+    ) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::checkItemMutation({_this:?}, {_item:?})");
+
+        Ok(())
+    }
+
+    async fn item_invalidated(
+        _jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        _this: ClassInstanceRef<Self>,
+        _item: ClassInstanceRef<Item>,
+        _layout_changed: bool,
+    ) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::itemInvalidated({_this:?}, {_item:?}, {_layout_changed})");
+
+        Ok(())
+    }
+
+    async fn item_state_changed(
+        jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        _this: ClassInstanceRef<Self>,
+        _item: ClassInstanceRef<Item>,
+    ) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::itemStateChanged({_this:?}, {_item:?})");
+
+        Err(jvm.exception("java/lang/IllegalStateException", "Item is not owned by a Form").await)
+    }
+
+    async fn get_width(jvm: &Jvm, context: &mut WieJvmContext, this: ClassInstanceRef<Self>) -> JvmResult<i32> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::getWidth({this:?})");
+
+        let (width, _) = Self::live_viewport(jvm, context, &this).await?;
+        Ok(width)
+    }
+
+    async fn get_height(jvm: &Jvm, context: &mut WieJvmContext, this: ClassInstanceRef<Self>) -> JvmResult<i32> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::getHeight({this:?})");
+
+        let (_, height) = Self::live_viewport(jvm, context, &this).await?;
+        Ok(height)
+    }
+
+    async fn live_viewport(jvm: &Jvm, context: &mut WieJvmContext, this: &ClassInstanceRef<Self>) -> JvmResult<(i32, i32)> {
+        let display: ClassInstanceRef<Display> = jvm
+            .get_field(
+                this,
+                "javax/microedition/lcdui/Displayable",
+                "currentDisplay",
+                "Ljavax/microedition/lcdui/Display;",
+            )
+            .await?;
+        let (width, height) = if display.is_null() {
+            let screen = context.system().platform().screen();
+            (screen.width() as i32, screen.height() as i32)
+        } else {
+            (
+                jvm.invoke_virtual(&display, "javax/microedition/lcdui/Display", "getWidth", "()I", ())
+                    .await?,
+                jvm.invoke_virtual(&display, "javax/microedition/lcdui/Display", "getHeight", "()I", ())
+                    .await?,
+            )
+        };
+        let content_height: i32 = jvm
+            .invoke_static(
+                "javax/microedition/lcdui/Display",
+                "getContentHeight",
+                "(Ljavax/microedition/lcdui/Displayable;II)I",
+                (this.clone(), width, height),
+            )
+            .await?;
+
+        Ok((width.max(0), content_height))
+    }
+
+    async fn notify_size_changed(jvm: &Jvm, context: &mut WieJvmContext, mut this: ClassInstanceRef<Self>) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::notifySizeChanged({this:?})");
+
+        if jvm
+            .get_field::<bool>(&this, "javax/microedition/lcdui/Displayable", "sizeNotifying", "Z")
+            .await?
+        {
+            return Ok(());
+        }
+
+        while jvm
+            .get_field::<bool>(&this, "javax/microedition/lcdui/Displayable", "sizeDirty", "Z")
+            .await?
+        {
+            let display: ClassInstanceRef<Display> = jvm
+                .get_field(
+                    &this,
+                    "javax/microedition/lcdui/Displayable",
+                    "currentDisplay",
+                    "Ljavax/microedition/lcdui/Display;",
+                )
+                .await?;
+            if display.is_null() {
+                return Ok(());
+            }
+            let current: ClassInstanceRef<Displayable> = jvm
+                .invoke_virtual(
+                    &display,
+                    "javax/microedition/lcdui/Display",
+                    "getCurrent",
+                    "()Ljavax/microedition/lcdui/Displayable;",
+                    (),
+                )
+                .await?;
+            if current.is_null() || current.identity() != this.identity() {
+                return Ok(());
+            }
+
+            jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeDirty", "Z", false)
+                .await?;
+
+            let (width, height) = Self::live_viewport(jvm, context, &this).await?;
+            let size_known: bool = jvm.get_field(&this, "javax/microedition/lcdui/Displayable", "sizeKnown", "Z").await?;
+            let notified_width: i32 = jvm.get_field(&this, "javax/microedition/lcdui/Displayable", "notifiedWidth", "I").await?;
+            let notified_height: i32 = jvm
+                .get_field(&this, "javax/microedition/lcdui/Displayable", "notifiedHeight", "I")
+                .await?;
+            if size_known && notified_width == width && notified_height == height {
+                continue;
+            }
+
+            let callback_display: ClassInstanceRef<Display> = jvm
+                .get_field(
+                    &this,
+                    "javax/microedition/lcdui/Displayable",
+                    "currentDisplay",
+                    "Ljavax/microedition/lcdui/Display;",
+                )
+                .await?;
+            if callback_display.is_null() || callback_display.identity() != display.identity() {
+                jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeDirty", "Z", true)
+                    .await?;
+                return Ok(());
+            }
+            let callback_current: ClassInstanceRef<Displayable> = jvm
+                .invoke_virtual(
+                    &callback_display,
+                    "javax/microedition/lcdui/Display",
+                    "getCurrent",
+                    "()Ljavax/microedition/lcdui/Displayable;",
+                    (),
+                )
+                .await?;
+            if callback_current.is_null() || callback_current.identity() != this.identity() {
+                jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeDirty", "Z", true)
+                    .await?;
+                return Ok(());
+            }
+
+            jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "notifiedWidth", "I", width)
+                .await?;
+            jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "notifiedHeight", "I", height)
+                .await?;
+            jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeKnown", "Z", true)
+                .await?;
+            jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeNotifying", "Z", true)
+                .await?;
+
+            let active_display: ClassInstanceRef<Display> = jvm
+                .get_field(
+                    &this,
+                    "javax/microedition/lcdui/Displayable",
+                    "currentDisplay",
+                    "Ljavax/microedition/lcdui/Display;",
+                )
+                .await?;
+            let still_current = if active_display.is_null() || active_display.identity() != display.identity() {
+                false
+            } else {
+                let active_current: ClassInstanceRef<Displayable> = jvm
+                    .invoke_virtual(
+                        &active_display,
+                        "javax/microedition/lcdui/Display",
+                        "getCurrent",
+                        "()Ljavax/microedition/lcdui/Displayable;",
+                        (),
+                    )
+                    .await?;
+                !active_current.is_null() && active_current.identity() == this.identity()
+            };
+            if !still_current {
+                jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "notifiedWidth", "I", notified_width)
+                    .await?;
+                jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "notifiedHeight", "I", notified_height)
+                    .await?;
+                jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeKnown", "Z", size_known)
+                    .await?;
+                jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeNotifying", "Z", false)
+                    .await?;
+                jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeDirty", "Z", true)
+                    .await?;
+                return Ok(());
+            }
+
+            let result: JvmResult<()> = jvm
+                .invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "sizeChanged", "(II)V", (width, height))
+                .await;
+            jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "sizeNotifying", "Z", false)
+                .await?;
+            result?;
+        }
+
+        Ok(())
+    }
+
+    async fn command_layout(jvm: &Jvm, displayable: &ClassInstanceRef<Displayable>) -> JvmResult<CommandLayout> {
+        let count: i32 = jvm
+            .invoke_virtual(displayable, "javax/microedition/lcdui/Displayable", "getCommandCount", "()I", ())
+            .await?;
+        let mut bindings = Vec::with_capacity(count.max(0) as usize);
+        for effective_index in 0..count {
+            let command: ClassInstanceRef<Command> = jvm
+                .invoke_virtual(
+                    displayable,
+                    "javax/microedition/lcdui/Displayable",
+                    "getCommandAt",
+                    "(I)Ljavax/microedition/lcdui/Command;",
+                    (effective_index,),
+                )
+                .await?;
+            let command_type: i32 = jvm
+                .invoke_virtual(&command, "javax/microedition/lcdui/Command", "getCommandType", "()I", ())
+                .await?;
+            let priority: i32 = jvm
+                .invoke_virtual(&command, "javax/microedition/lcdui/Command", "getPriority", "()I", ())
+                .await?;
+            bindings.push(CommandBinding {
+                command,
+                command_type,
+                priority,
+                effective_index,
+            });
+        }
+
+        let right = bindings
+            .iter()
+            .filter(|binding| matches!(binding.command_type, COMMAND_BACK | COMMAND_CANCEL | COMMAND_STOP | COMMAND_EXIT))
+            .min_by_key(|binding| (binding.priority, binding.effective_index))
+            .cloned();
+        let mut remaining = bindings
+            .into_iter()
+            .filter(|binding| right.as_ref().is_none_or(|right| binding.effective_index != right.effective_index))
+            .collect::<Vec<_>>();
+        remaining.sort_by_key(|binding| {
+            (
+                if matches!(binding.command_type, COMMAND_BACK | COMMAND_CANCEL | COMMAND_STOP | COMMAND_EXIT) {
+                    1
+                } else {
+                    0
+                },
+                binding.priority,
+                binding.effective_index,
+            )
+        });
+
+        Ok(CommandLayout { right, remaining })
+    }
+
+    async fn route_key_event(jvm: &Jvm, _context: &mut WieJvmContext, mut this: ClassInstanceRef<Self>, event_type: i32, code: i32) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::routeKeyEvent({this:?}, {event_type}, {code})");
+
+        let command_layout = Self::command_layout(jvm, &this).await?;
+        let mut menu_open: bool = jvm
+            .get_field(&this, "javax/microedition/lcdui/Displayable", "commandMenuOpen", "Z")
+            .await?;
+
+        if menu_open && command_layout.remaining.len() < 2 {
+            jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuOpen", "Z", false)
+                .await?;
+            jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I", -1)
+                .await?;
+            menu_open = false;
+        }
+
+        if menu_open {
+            let pressed = event_type == KeyboardEventType::KeyPressed as i32;
+            let repeated = event_type == KeyboardEventType::KeyRepeated as i32;
+            if code == MIDPKeyCode::UP as i32 || code == MIDPKeyCode::DOWN as i32 {
+                if pressed || repeated {
+                    let index: i32 = jvm
+                        .get_field(&this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I")
+                        .await?;
+                    let maximum = command_layout.remaining.len() as i32 - 1;
+                    let new_index = if code == MIDPKeyCode::UP as i32 {
+                        (index - 1).max(0)
+                    } else {
+                        (index + 1).min(maximum)
+                    };
+                    if new_index != index {
+                        jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I", new_index)
+                            .await?;
+                        let _: () = jvm
+                            .invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "requestRepaint", "()V", ())
+                            .await?;
+                    }
+                }
+                return Ok(());
+            }
+
+            if code == MIDPKeyCode::FIRE as i32 || code == MIDPKeyCode::LEFT_SOFT_KEY as i32 {
+                if pressed {
+                    let index: i32 = jvm
+                        .get_field(&this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I")
+                        .await?;
+                    let command_index = command_layout.remaining[index.clamp(0, command_layout.remaining.len() as i32 - 1) as usize].effective_index;
+                    jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuOpen", "Z", false)
+                        .await?;
+                    jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I", -1)
+                        .await?;
+                    let _: () = jvm
+                        .invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "requestRepaint", "()V", ())
+                        .await?;
+                    return jvm
+                        .invoke_virtual(
+                            &this,
+                            "javax/microedition/lcdui/Displayable",
+                            "dispatchCommandAt",
+                            "(I)V",
+                            (command_index,),
+                        )
+                        .await;
+                }
+                return Ok(());
+            }
+
+            if code == MIDPKeyCode::RIGHT_SOFT_KEY as i32 {
+                if pressed {
+                    jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuOpen", "Z", false)
+                        .await?;
+                    jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I", -1)
+                        .await?;
+                    let _: () = jvm
+                        .invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "requestRepaint", "()V", ())
+                        .await?;
+                }
+                return Ok(());
+            }
+        } else {
+            if code == MIDPKeyCode::RIGHT_SOFT_KEY as i32 {
+                if let Some(binding) = command_layout.right {
+                    if event_type == KeyboardEventType::KeyPressed as i32 {
+                        return jvm
+                            .invoke_virtual(
+                                &this,
+                                "javax/microedition/lcdui/Displayable",
+                                "dispatchCommandAt",
+                                "(I)V",
+                                (binding.effective_index,),
+                            )
+                            .await;
+                    }
+                    return Ok(());
+                }
+            } else if code == MIDPKeyCode::LEFT_SOFT_KEY as i32 && !command_layout.remaining.is_empty() {
+                if event_type == KeyboardEventType::KeyPressed as i32 {
+                    if command_layout.remaining.len() == 1 {
+                        return jvm
+                            .invoke_virtual(
+                                &this,
+                                "javax/microedition/lcdui/Displayable",
+                                "dispatchCommandAt",
+                                "(I)V",
+                                (command_layout.remaining[0].effective_index,),
+                            )
+                            .await;
+                    }
+                    jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuOpen", "Z", true)
+                        .await?;
+                    jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I", 0)
+                        .await?;
+                    let _: () = jvm
+                        .invoke_virtual(&this, "javax/microedition/lcdui/Displayable", "requestRepaint", "()V", ())
+                        .await?;
+                }
+                return Ok(());
+            }
+        }
+
+        jvm.invoke_virtual(
+            &this,
+            "javax/microedition/lcdui/Displayable",
+            "handleKeyEvent",
+            "(II)V",
+            (event_type, code),
+        )
+        .await
+    }
+
+    async fn paint_commands(
+        jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        mut this: ClassInstanceRef<Self>,
+        graphics: ClassInstanceRef<Graphics>,
+        width: i32,
+        y: i32,
+        height: i32,
+    ) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::paintCommands({this:?}, {graphics:?}, {width}, {y}, {height})");
+
+        let command_layout = Self::command_layout(jvm, &this).await?;
+        let menu_open: bool = jvm
+            .get_field(&this, "javax/microedition/lcdui/Displayable", "commandMenuOpen", "Z")
+            .await?;
+        if menu_open && command_layout.remaining.len() > 1 && y > 0 && width > 0 {
+            let index: i32 = jvm
+                .get_field(&this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I")
+                .await?;
+            let index = index.clamp(0, command_layout.remaining.len() as i32 - 1);
+            jvm.put_field(&mut this, "javax/microedition/lcdui/Displayable", "commandMenuIndex", "I", index)
+                .await?;
+
+            let menu_height = y.min((command_layout.remaining.len() as i32).saturating_mul(MENU_ROW_HEIGHT));
+            let visible_rows = ((menu_height + MENU_ROW_HEIGHT - 1) / MENU_ROW_HEIGHT).min(command_layout.remaining.len() as i32);
+            let first_row = (index - visible_rows + 1)
+                .max(0)
+                .min(command_layout.remaining.len() as i32 - visible_rows);
+            let menu_width = width.min(180);
+            let menu_y = y - menu_height;
+            let first_row_height = menu_height - (visible_rows - 1) * MENU_ROW_HEIGHT;
+
+            let _: () = jvm
+                .invoke_virtual(
+                    &graphics,
+                    "javax/microedition/lcdui/Graphics",
+                    "setClip",
+                    "(IIII)V",
+                    (0, menu_y, menu_width, menu_height),
+                )
+                .await?;
+            let _: () = jvm
+                .invoke_virtual(&graphics, "javax/microedition/lcdui/Graphics", "setColor", "(I)V", (WHITE,))
+                .await?;
+            let _: () = jvm
+                .invoke_virtual(
+                    &graphics,
+                    "javax/microedition/lcdui/Graphics",
+                    "fillRect",
+                    "(IIII)V",
+                    (0, menu_y, menu_width, menu_height),
+                )
+                .await?;
+
+            for visible_index in 0..visible_rows {
+                let command_index = first_row + visible_index;
+                let (row_y, row_height) = if visible_index == 0 {
+                    (menu_y, first_row_height)
+                } else {
+                    (menu_y + first_row_height + (visible_index - 1) * MENU_ROW_HEIGHT, MENU_ROW_HEIGHT)
+                };
+                let _: () = jvm
+                    .invoke_virtual(
+                        &graphics,
+                        "javax/microedition/lcdui/Graphics",
+                        "setClip",
+                        "(IIII)V",
+                        (0, row_y, menu_width, row_height),
+                    )
+                    .await?;
+                if command_index == index {
+                    let _: () = jvm
+                        .invoke_virtual(
+                            &graphics,
+                            "javax/microedition/lcdui/Graphics",
+                            "setColor",
+                            "(I)V",
+                            (MENU_SELECTION_BACKGROUND,),
+                        )
+                        .await?;
+                    let _: () = jvm
+                        .invoke_virtual(
+                            &graphics,
+                            "javax/microedition/lcdui/Graphics",
+                            "fillRect",
+                            "(IIII)V",
+                            (0, row_y, menu_width, row_height),
+                        )
+                        .await?;
+                    let _: () = jvm
+                        .invoke_virtual(&graphics, "javax/microedition/lcdui/Graphics", "setColor", "(I)V", (WHITE,))
+                        .await?;
+                } else {
+                    let _: () = jvm
+                        .invoke_virtual(&graphics, "javax/microedition/lcdui/Graphics", "setColor", "(I)V", (BLACK,))
+                        .await?;
+                }
+
+                let label: ClassInstanceRef<String> = jvm
+                    .invoke_virtual(
+                        &command_layout.remaining[command_index as usize].command,
+                        "javax/microedition/lcdui/Command",
+                        "getLabel",
+                        "()Ljava/lang/String;",
+                        (),
+                    )
+                    .await?;
+                let _: () = jvm
+                    .invoke_virtual(
+                        &graphics,
+                        "javax/microedition/lcdui/Graphics",
+                        "drawString",
+                        "(Ljava/lang/String;III)V",
+                        (
+                            label,
+                            TITLE_HORIZONTAL_PADDING.min((menu_width - 1).max(0)),
+                            row_y + ((row_height - Font::HEIGHT) / 2).max(0),
+                            LEFT_TOP,
+                        ),
+                    )
+                    .await?;
+            }
+
+            let _: () = jvm
+                .invoke_virtual(
+                    &graphics,
+                    "javax/microedition/lcdui/Graphics",
+                    "setClip",
+                    "(IIII)V",
+                    (0, menu_y, menu_width, menu_height),
+                )
+                .await?;
+            let _: () = jvm
+                .invoke_virtual(&graphics, "javax/microedition/lcdui/Graphics", "setColor", "(I)V", (BLACK,))
+                .await?;
+            let _: () = jvm
+                .invoke_virtual(
+                    &graphics,
+                    "javax/microedition/lcdui/Graphics",
+                    "drawRect",
+                    "(IIII)V",
+                    (0, menu_y, menu_width - 1, menu_height - 1),
+                )
+                .await?;
+        }
+
+        let _: () = jvm
+            .invoke_virtual(
+                &graphics,
+                "javax/microedition/lcdui/Graphics",
+                "setClip",
+                "(IIII)V",
+                (0, y, width, height),
+            )
+            .await?;
+        let _: () = jvm
+            .invoke_virtual(&graphics, "javax/microedition/lcdui/Graphics", "setColor", "(I)V", (SOFTKEY_BACKGROUND,))
+            .await?;
+        let _: () = jvm
+            .invoke_virtual(
+                &graphics,
+                "javax/microedition/lcdui/Graphics",
+                "fillRect",
+                "(IIII)V",
+                (0, y, width, height),
+            )
+            .await?;
+        let _: () = jvm
+            .invoke_virtual(&graphics, "javax/microedition/lcdui/Graphics", "setColor", "(I)V", (WHITE,))
+            .await?;
+
+        let middle = width / 2;
+        let left_clip_width = (middle - 1).max(0);
+        let right_clip_x = (middle + 1).min(width);
+        let right_clip_width = width - right_clip_x;
+        if let Some(binding) = command_layout.right {
+            let label: ClassInstanceRef<String> = jvm
+                .invoke_virtual(
+                    &binding.command,
+                    "javax/microedition/lcdui/Command",
+                    "getLabel",
+                    "()Ljava/lang/String;",
+                    (),
+                )
+                .await?;
+            if right_clip_width > 0 {
+                let _: () = jvm
+                    .invoke_virtual(
+                        &graphics,
+                        "javax/microedition/lcdui/Graphics",
+                        "setClip",
+                        "(IIII)V",
+                        (right_clip_x, y, right_clip_width, height),
+                    )
+                    .await?;
+                let _: () = jvm
+                    .invoke_virtual(
+                        &graphics,
+                        "javax/microedition/lcdui/Graphics",
+                        "drawString",
+                        "(Ljava/lang/String;III)V",
+                        (label, (width - TITLE_HORIZONTAL_PADDING).max(right_clip_x), y + 2, RIGHT_TOP),
+                    )
+                    .await?;
+            }
+        }
+
+        if !command_layout.remaining.is_empty() && left_clip_width > 0 {
+            let label: ClassInstanceRef<String> = if command_layout.remaining.len() == 1 {
+                let label: ClassInstanceRef<String> = jvm
+                    .invoke_virtual(
+                        &command_layout.remaining[0].command,
+                        "javax/microedition/lcdui/Command",
+                        "getLabel",
+                        "()Ljava/lang/String;",
+                        (),
+                    )
+                    .await?;
+                if command_layout.remaining[0].command_type == COMMAND_OK && JavaLangString::to_rust_string(jvm, &label).await?.is_empty() {
+                    JavaLangString::from_rust_string(jvm, "OK").await?.into()
+                } else {
+                    label
+                }
+            } else {
+                JavaLangString::from_rust_string(jvm, "Options").await?.into()
+            };
+            let _: () = jvm
+                .invoke_virtual(
+                    &graphics,
+                    "javax/microedition/lcdui/Graphics",
+                    "setClip",
+                    "(IIII)V",
+                    (0, y, left_clip_width, height),
+                )
+                .await?;
+            let _: () = jvm
+                .invoke_virtual(
+                    &graphics,
+                    "javax/microedition/lcdui/Graphics",
+                    "drawString",
+                    "(Ljava/lang/String;III)V",
+                    (label, TITLE_HORIZONTAL_PADDING.min((left_clip_width - 1).max(0)), y + 2, LEFT_TOP),
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn handle_key_event(_jvm: &Jvm, _context: &mut WieJvmContext, this: ClassInstanceRef<Self>, event_type: i32, code: i32) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::handleKeyEvent({this:?}, {event_type}, {code})");
+        Ok(())
+    }
+
+    async fn handle_paint_event(
+        _jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        this: ClassInstanceRef<Self>,
+        graphics: ClassInstanceRef<Graphics>,
+    ) -> JvmResult<()> {
+        tracing::debug!("javax.microedition.lcdui.Displayable::handlePaintEvent({this:?}, {graphics:?})");
+        Ok(())
+    }
+
+    async fn handle_notify_event(
+        _jvm: &Jvm,
+        _context: &mut WieJvmContext,
+        this: ClassInstanceRef<Self>,
+        r#type: i32,
+        param1: i32,
+        param2: i32,
+    ) -> JvmResult<()> {
+        tracing::debug!(
+            "javax.microedition.lcdui.Displayable::handleNotifyEvent({this:?}, {}, {param1}, {param2})",
+            r#type
+        );
+        Ok(())
+    }
+}

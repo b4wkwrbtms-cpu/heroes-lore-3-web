@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "wie",
+  "identifier": "net.dlunch.wie",
+  "build": {
+    "frontendDist": "https://wie.dlunch.net/",
+    "devUrl": "http://localhost:8080",
+    "beforeDevCommand": "npm start"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "wie",
+        "width": 800,
+        "height": 960,
+        "dragDropEnabled": false,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "capabilities": [
+        {
+          "identifier": "default",
+          "description": "Native library access for the hosted frontend and local development",
+          "webviews": ["main"],
+          "remote": { "urls": ["https://wie.dlunch.net/*"] },
+          "permissions": [
+            "core:default",
+            "allow-runtime",
+            {
+              "identifier": "opener:allow-open-url",
+              "allow": [
+                { "url": "https://github.com/sponsors/dlunch" },
+                { "url": "https://github.com/dlunch/wie" },
+                { "url": "https://wie-site.dlunch.net/" }
+              ]
+            }
+          ]
+        }
+      ],
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "android": {
+      "minSdkVersion": 26
+    },
+    "targets": "all",
+    "icon": [
+      "icons/icon.png",
+      "icons/Square310x310Logo.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
