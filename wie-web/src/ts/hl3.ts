@@ -70,6 +70,8 @@ export const HL3 = {
   FINAL: 0x01503c18,
   /** second copy: ATT1 @+0, ATT2 @+2, ACC? @+4, CRI @+6, PDEF @+8, RES @+10, MDEF @+12, ... */
   FINAL2: 0x01503b86,
+  /** 게임 모드 (u32): 4 = 필드에서 플레이 중, 5 = 메뉴(상태창·가방·스킬창) 열림, 2·3 = 타이틀/로딩. */
+  MODE: 0x01503b00,
   /** 남은 스탯 포인트 (u16). 레벨업마다 +4, 게임 자체 상한 276. */
   STAT_POINTS: 0x01503c12,
   /** 남은 스킬 포인트 (u8). 레벨업마다 +1, 게임 자체 상한 44. */
@@ -427,6 +429,10 @@ export const setItemStat = (api: CheatApi, entry: EquipEntry, stat: number): voi
 export const getLevel = (api: CheatApi): number => api.read(HL3.LEVEL, 2, false);
 /** 게임의 레벨 상한은 70 (레벨업 루틴이 0x46에서 멈춤). */
 export const setLevel = (api: CheatApi, level: number): void => api.write(HL3.LEVEL, 2, false, Math.max(1, Math.min(level, 70)));
+
+export const MODE_FIELD = 4;
+/** True while the player is actually on the field (not in a menu), where quick-slot keys mean skills/items. */
+export const isOnField = (api: CheatApi): boolean => (api.read(HL3.MODE, 4, false) >>> 0) === MODE_FIELD;
 
 export const getStatPoints = (api: CheatApi): number => api.read(HL3.STAT_POINTS, 2, false);
 export const setStatPoints = (api: CheatApi, value: number): void => api.write(HL3.STAT_POINTS, 2, false, Math.max(0, Math.min(value, 9999)));

@@ -1,5 +1,7 @@
 import type { CheatApi } from "./backend";
-import { SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, readSkills, readSlot, readVitals, registerSkill, topUpSlotItems, writeSlot } from "./hl3";
+import {
+  SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, readSkills, readSlot, readVitals, registerSkill, topUpSlotItems, writeSlot,
+} from "./hl3";
 
 /** Quick-slot keys of 영웅서기3 (회복 아이템·스킬 등록 칸). */
 export const SLOT_KEYS = ["1", "3", "9", "0", "#"] as const;
@@ -244,15 +246,27 @@ class Automation {
     const api = context.getCheats();
     if (!api) return;
     const now = performance.now();
+    // In menus the quick-slot keys page through screens (◀1 STATUS 3▶, 7/9 tabs), so never press them there.
+    let onField = false;
+    try {
+      onField = isOnField(api);
+    } catch {
+      onField = false;
+    }
+    if (!onField) {
+      this.macroQueue = [];
+      this.attackHeld = false;
+      this.attackUntil = 0;
+    }
     if (this.config.potionOn) {
       try {
-        this.tickPotion(api, context, now);
+        this.tickPotion(api, context, now, onField);
       } catch {
         // player not in game yet
       }
     }
     this.tickMacro(api, context, now);
-    if (this.config.skillOn && (this.attackHeld || now < this.attackUntil)) this.tickSkill(api, context, now);
+    if (onField && this.config.skillOn && (this.attackHeld || now < this.attackUntil)) this.tickSkill(api, context, now);
   }
 
   private borrowedSlot(): number {
@@ -291,7 +305,7 @@ class Automation {
     }
   }
 
-  private tickPotion(api: CheatApi, context: AutoContext, now: number) {
+  private tickPotion(api: CheatApi, context: AutoContext, now: number, onField: boolean) {
     const vitals = readVitals(api);
     if (vitals.hpMax <= 0 || vitals.hpMax > 100_000 || vitals.hp <= 0) return;
 
@@ -301,8 +315,10 @@ class Automation {
     this.level = level;
     if (vitals.sp < 1_000_000 && vitals.sp > this.spPeak) this.spPeak = vitals.sp;
 
-    this.drink(context, now, this.hp, vitals.hp, vitals.hpMax, this.config.hpPercent, this.config.hpKey);
-    if (this.spPeak > 0) this.drink(context, now, this.sp, vitals.sp, this.spPeak, this.config.spPercent, this.config.spKey);
+    if (onField) {
+      this.drink(context, now, this.hp, vitals.hp, vitals.hpMax, this.config.hpPercent, this.config.hpKey);
+      if (this.spPeak > 0) this.drink(context, now, this.sp, vitals.sp, this.spPeak, this.config.spPercent, this.config.spKey);
+    }
 
     if (this.config.infinitePotions && now - this.lastTopUp > 2000) {
       this.lastTopUp = now;
