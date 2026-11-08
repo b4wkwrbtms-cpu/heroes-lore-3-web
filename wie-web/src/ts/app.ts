@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Settings, Sparkles, createIcons } from "lucide";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard, Settings, Sparkles, X, createIcons } from "lucide";
 
 import { recordPageView } from "./analytics";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
@@ -34,8 +34,10 @@ const icons = {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Keyboard,
   Settings,
   Sparkles,
+  X,
 };
 
 export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsController): Promise<boolean> => new Promise((resolve, reject) => {
@@ -46,6 +48,9 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   const backToLibrary = document.getElementById("back-to-library") as HTMLButtonElement;
   const appSettings = document.getElementById("app-settings") as HTMLButtonElement;
   const appCheats = document.getElementById("app-cheats") as HTMLButtonElement | null;
+  const keypadToggle = document.getElementById("keypad-toggle") as HTMLButtonElement | null;
+  const keypadSheet = document.getElementById("keypad-sheet") as HTMLElement | null;
+  const keypadSheetClose = document.getElementById("keypad-sheet-close") as HTMLButtonElement | null;
   const buttons = playerView.querySelectorAll<HTMLButtonElement>("button[data-key]");
 
   const abortController = new AbortController();
@@ -121,6 +126,20 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     releaseKeys();
     getCheatPanel().open(cheatContext);
   }, { signal: abortController.signal });
+  if (keypadSheet) {
+    keypadSheet.hidden = true;
+    keypadToggle?.addEventListener("click", () => {
+      releaseKeys();
+      keypadSheet.hidden = !keypadSheet.hidden;
+    }, { signal: abortController.signal });
+    keypadSheetClose?.addEventListener("click", () => {
+      releaseKeys();
+      keypadSheet.hidden = true;
+    }, { signal: abortController.signal });
+    abortController.signal.addEventListener("abort", () => {
+      keypadSheet.hidden = true;
+    });
+  }
   window.addEventListener("blur", releaseKeys, { signal: abortController.signal });
   window.addEventListener("pagehide", () => { void finish(); }, { signal: abortController.signal });
   document.addEventListener("visibilitychange", () => {

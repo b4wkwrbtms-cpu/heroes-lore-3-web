@@ -643,6 +643,57 @@ html[data-screen-fit="contain"] #canvas {
   height: 18px;
 }
 
+.quickpad {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.key-quick {
+  font-size: 1.5rem;
+}
+
+/* Full keypad: a bottom sheet for the keys that are rarely needed. */
+.keypad-sheet {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  height: min(330px, 46dvh);
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: rgba(9, 9, 12, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.6);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.keypad-sheet-head {
+  display: flex;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.keypad-sheet-head .pad-tool {
+  width: 30px;
+  height: 30px;
+}
+
+.keypad-sheet .numpad {
+  min-height: 0;
+  flex: 1;
+}
+
 .numpad {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

@@ -153,13 +153,31 @@
               <button id="app-cheats" class="icon-button pad-tool pad-tool-cheat" type="button" title="치트" aria-label="치트">
                 <i data-lucide="sparkles"></i>
               </button>
+              <button id="keypad-toggle" class="icon-button pad-tool" type="button" title="전체 키패드" aria-label="전체 키패드">
+                <i data-lucide="keyboard"></i>
+              </button>
             </p>
             <button class="key key-ok" data-key="OK">OK</button>
             <button class="key key-clr" data-key="CLR">CLR</button>
           </div>
-          <div class="pad-right numpad">
+          <div class="pad-right quickpad">
+            <button class="key key-quick" data-key="1">1</button>
+            <button class="key key-quick" data-key="2">2</button>
+            <button class="key key-quick" data-key="3">3</button>
+            <button class="key key-quick" data-key="4">4</button>
+          </div>
+        </div>
+
+        <div id="keypad-sheet" class="keypad-sheet" hidden>
+          <div class="keypad-sheet-head">
+            <span>전체 키패드</span>
+            <button id="keypad-sheet-close" class="icon-button pad-tool" type="button" title="닫기" aria-label="전체 키패드 닫기">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="numpad">
             <button class="key key-soft" data-key="SOFT1">메뉴 (L)</button>
-            <button class="key key-soft key-soft-right" data-key="SOFT2">취소 (R)</button>
+            <button class="key key-soft" data-key="SOFT2">취소 (R)</button>
             <button class="key" data-key="1">1</button>
             <button class="key" data-key="2">2</button>
             <button class="key" data-key="3">3</button>
