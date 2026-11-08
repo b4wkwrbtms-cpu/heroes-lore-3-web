@@ -185,7 +185,10 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       caption.textContent = text;
     }
   };
+  // Set once the joystick exists: forgets its thumb so a stale touch can never keep it pinned.
+  let resetJoystickState = () => {};
   const releaseKeys = () => {
+    resetJoystickState();
     inputs.clear();
     if (session && !ending) void session.releaseKeys().catch(finish);
   };
@@ -355,7 +358,16 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     joystick.addEventListener(
       "pointerdown",
       (event) => {
-        if (activePointer !== undefined) return;
+        // A new touch always wins: iOS sometimes never delivers the previous touch's end event,
+        // which used to leave the knob pinned and every later touch ignored.
+        if (activePointer !== undefined && activePointer !== event.pointerId) {
+          try {
+            joystick.releasePointerCapture(activePointer);
+          } catch {
+            // already released
+          }
+          resetJoystick();
+        }
         event.preventDefault();
         const rect = joystick.getBoundingClientRect();
         centerX = rect.left + rect.width / 2;
@@ -395,6 +407,18 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     joystick.addEventListener("pointerup", endJoystick, { signal: abortController.signal });
     joystick.addEventListener("pointercancel", endJoystick, { signal: abortController.signal });
     joystick.addEventListener("lostpointercapture", endJoystick, { signal: abortController.signal });
+    // Ends that escape the joystick (finger lifted after sliding onto another control).
+    window.addEventListener("pointerup", endJoystick, { signal: abortController.signal, capture: true });
+    window.addEventListener("pointercancel", endJoystick, { signal: abortController.signal, capture: true });
+    // No finger left on the screen at all: whatever the joystick believes, nothing is held.
+    window.addEventListener(
+      "touchend",
+      (event) => {
+        if (activePointer !== undefined && event.touches.length === 0) resetJoystick();
+      },
+      { signal: abortController.signal, capture: true },
+    );
+    resetJoystickState = resetJoystick;
     abortController.signal.addEventListener("abort", resetJoystick);
   }
 
