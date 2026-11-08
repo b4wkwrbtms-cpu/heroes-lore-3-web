@@ -1020,6 +1020,15 @@ html[data-screen-fit="contain"] #canvas {
   gap: 6px;
 }
 
+.cheat-row select {
+  min-width: 0;
+  flex: 1;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.95rem;
+}
+
 .cheat-row input[type="text"] {
   min-width: 0;
   flex: 1;

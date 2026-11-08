@@ -28,6 +28,7 @@ export interface CheatApi {
   /** Flattened [start, size, start, size, ...] of mapped guest memory. */
   memoryRanges(): Uint32Array;
   dump(address: number, size: number): Uint8Array;
+  writeBytes(address: number, data: Uint8Array): void;
   search(value: number, width: number, bigEndian: boolean, previous?: Uint32Array): Uint32Array;
   read(address: number, width: number, bigEndian: boolean): number;
   write(address: number, width: number, bigEndian: boolean, value: number): void;

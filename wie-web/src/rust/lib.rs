@@ -289,7 +289,10 @@ impl WieWeb {
 
     /// Total mapped guest memory in bytes (what `cheat_search` scans).
     pub fn cheat_memory_size(&self) -> u32 {
-        self.emulator.memory_ranges().iter().fold(0u32, |acc, (_, size)| acc.saturating_add(*size))
+        self.emulator
+            .memory_ranges()
+            .iter()
+            .fold(0u32, |acc, (_, size)| acc.saturating_add(*size))
     }
 
     /// Search guest memory for `value` stored in `width` bytes (2 or 4), at every byte offset.
@@ -345,7 +348,11 @@ impl WieWeb {
 
     /// Mapped guest memory ranges, flattened as [start0, size0, start1, size1, ...].
     pub fn cheat_memory_ranges(&self) -> Vec<u32> {
-        self.emulator.memory_ranges().into_iter().flat_map(|(start, size)| [start, size]).collect()
+        self.emulator
+            .memory_ranges()
+            .into_iter()
+            .flat_map(|(start, size)| [start, size])
+            .collect()
     }
 
     /// Copy `size` bytes of guest memory starting at `address` (unmapped tail is truncated).
@@ -354,7 +361,11 @@ impl WieWeb {
         let mut done = 0usize;
         while done < data.len() {
             let len = core::cmp::min(0x10000, data.len() - done);
-            if self.emulator.read_memory(address.wrapping_add(done as u32), &mut data[done..done + len]).is_err() {
+            if self
+                .emulator
+                .read_memory(address.wrapping_add(done as u32), &mut data[done..done + len])
+                .is_err()
+            {
                 data.truncate(done);
                 break;
             }
@@ -362,6 +373,11 @@ impl WieWeb {
         }
 
         Ok(data)
+    }
+
+    /// Write raw bytes into guest memory.
+    pub fn cheat_write_bytes(&mut self, address: u32, data: &[u8]) -> Result<(), JsError> {
+        self.emulator.write_memory(address, data).map_err(|e| JsError::new(&e.to_string()))
     }
 
     pub fn cheat_read(&self, address: u32, width: u32, big_endian: bool) -> Result<u32, JsError> {

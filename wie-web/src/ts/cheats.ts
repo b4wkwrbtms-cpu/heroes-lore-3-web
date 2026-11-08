@@ -1,6 +1,8 @@
 import { X, createIcons } from "lucide";
 
 import type { CheatApi } from "./backend";
+import { HL3, QUICK_ITEMS, freezeGold, getGold, giveItem, isHeroesLore3, readBag, setGold } from "./hl3";
+import { HL3_ITEMS } from "./hl3_items";
 
 export interface CheatContext {
   appId: string;
@@ -326,8 +328,155 @@ export const getCheatPanel = (): CheatPanel => {
     }
   };
 
+  let hl3Category = 18;
+  let hl3Index = 7;
+  let hl3Count = 99;
+  let hl3ShowBag = false;
+
+  const renderHl3 = (live: CheatApi) => {
+    body.append(el("p", "cheat-lead", "⚔️ 영웅서기3 전용 치트"));
+    body.append(el("p", "cheat-muted", "게임 메모리 구조를 분석해서 만든 전용 기능이에요. 캐릭터로 필드에 나온 상태에서 쓰세요."));
+
+    // 소지금
+    let goldText = "";
+    try {
+      goldText = ` (지금 ${formatNumber(getGold(live))})`;
+    } catch {
+      goldText = "";
+    }
+    const goldRow = el("div", "cheat-item-actions");
+    goldRow.append(
+      button(`💰 소지금 1천만${goldText}`, "primary-command", () => {
+        try {
+          setGold(live, 10_000_000);
+          setStatus("소지금을 10,000,000으로 바꿨어요. 메뉴를 열면 바로 보여요.");
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+      button("무제한(항상 1천만 유지)", "secondary-command", () => {
+        try {
+          freezeGold(live, 10_000_000);
+          saved = saved.filter(cheat => cheat.address !== HL3.GOLD);
+          saved.push({ name: "소지금", address: HL3.GOLD, width: 4, bigEndian: false, value: 10_000_000, freeze: true });
+          persist();
+          setStatus("소지금을 항상 1천만으로 유지해요. 게임을 다시 켜도 자동 적용됩니다.");
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+    );
+    body.append(goldRow);
+
+    // 빠른 지급
+    body.append(el("p", "cheat-lead", "🎒 아이템 바로 넣기 (99개)"));
+    const quick = el("div", "cheat-item-actions");
+    for (const [category, index, label] of QUICK_ITEMS) {
+      quick.append(button(label, "secondary-command", () => {
+        try {
+          const result = giveItem(live, category, index, 99);
+          setStatus(`${label} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸${result.stacked ? "에 합쳤어요" : "에 넣었어요"}. 가방을 열어 확인하세요.`);
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }));
+    }
+    body.append(quick);
+
+    // 아이템 선택 지급
+    body.append(el("p", "cheat-lead", "🗡️ 아이템 골라서 넣기 (무기·방어구·장신구·오브·재료 전부)"));
+    const pickRow = el("div", "cheat-row");
+    const categorySelect = el("select") as HTMLSelectElement;
+    for (const key of Object.keys(HL3_ITEMS).map(Number).sort((a, b) => a - b)) {
+      const option = el("option", undefined, HL3_ITEMS[key].label);
+      option.value = String(key);
+      categorySelect.append(option);
+    }
+    categorySelect.value = String(hl3Category);
+    const itemSelect = el("select") as HTMLSelectElement;
+    const fillItems = () => {
+      itemSelect.replaceChildren();
+      const table = HL3_ITEMS[hl3Category];
+      for (const item of table.items) {
+        const extra = item.s !== undefined && item.s > 0 ? ` · ${table.kind === "equip" ? (hl3Category <= 3 || hl3Category === 11 ? "방" : "공") + item.s : ""}` : "";
+        const level = item.l !== undefined && item.l > 0 && item.l < 200 ? ` · Lv${item.l}` : "";
+        const option = el("option", undefined, `${item.n}${level}${extra}`);
+        option.value = String(item.i);
+        itemSelect.append(option);
+      }
+      if (!table.items[hl3Index]) hl3Index = 0;
+      itemSelect.value = String(hl3Index);
+    };
+    fillItems();
+    categorySelect.addEventListener("change", () => {
+      hl3Category = Number(categorySelect.value);
+      hl3Index = 0;
+      fillItems();
+    });
+    itemSelect.addEventListener("change", () => {
+      hl3Index = Number(itemSelect.value);
+    });
+    pickRow.append(categorySelect);
+    body.append(pickRow);
+    const pickRow2 = el("div", "cheat-row");
+    pickRow2.append(itemSelect);
+    body.append(pickRow2);
+    const countRow = el("div", "cheat-row");
+    const countInput = el("input") as HTMLInputElement;
+    countInput.type = "text";
+    countInput.inputMode = "numeric";
+    countInput.value = String(hl3Count);
+    countInput.addEventListener("change", () => {
+      hl3Count = parseNumber(countInput.value) ?? 1;
+    });
+    countRow.append(el("span", undefined, "개수"), countInput, button("넣기", "primary-command", () => {
+      const count = parseNumber(countInput.value) ?? 1;
+      hl3Count = count;
+      try {
+        const table = HL3_ITEMS[hl3Category];
+        const item = table.items[hl3Index];
+        const result = giveItem(live, hl3Category, hl3Index, count);
+        setStatus(`${item.n} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸에 넣었어요.${table.kind === "equip" ? " 장비는 가방에서 선택해 장착하세요 (요구 레벨 미달이면 장착 불가)." : ""}`);
+      } catch (error) {
+        setStatus(String(error), true);
+      }
+    }));
+    body.append(countRow);
+
+    // 가방 보기
+    const bagRow = el("div", "cheat-item-actions");
+    bagRow.append(button(hl3ShowBag ? "가방 내용 숨기기" : "가방 내용 보기", "secondary-command", () => {
+      hl3ShowBag = !hl3ShowBag;
+      render();
+    }));
+    body.append(bagRow);
+    if (hl3ShowBag) {
+      try {
+        const bag = readBag(live).filter(entry => entry.count > 0 || entry.name);
+        const list = el("ul", "cheat-saved");
+        for (const entry of bag) {
+          const item = el("li", "cheat-item");
+          const info = el("div", "cheat-item-info");
+          info.append(
+            el("strong", undefined, `${entry.slot + 1}. ${entry.name}${entry.equipped ? " (장착 중)" : ""}`),
+            el("span", undefined, `${HL3_ITEMS[entry.category]?.label ?? `분류 ${entry.category}`} · ${formatNumber(entry.count)}개`),
+          );
+          item.append(info);
+          list.append(item);
+        }
+        body.append(el("p", "cheat-muted", `가방 ${bag.length}/${HL3.SLOTS}칸 사용 중`), list);
+      } catch (error) {
+        body.append(el("p", "cheat-status error", String(error)));
+      }
+    }
+    body.append(el("div", "cheat-divider"));
+  };
+
   const renderHome = (live: CheatApi) => {
     title.textContent = "치트";
+    if (context && isHeroesLore3(context.appTitle)) {
+      renderHl3(live);
+    }
 
     if (saved.length > 0) {
       body.append(el("p", "cheat-lead", "저장된 치트"));
