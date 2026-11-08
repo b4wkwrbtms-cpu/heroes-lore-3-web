@@ -464,6 +464,26 @@ export const removeDuplicateEquipment = (api: CheatApi): number => {
   return removed;
 };
 
+/**
+ * Takes off every piece of worn equipment the way the game stores an empty outfit: worn records become all 0xff
+ * and bag records lose their worn flag. Use when the game refuses to unequip (e.g. duplicate copies). The player
+ * then re-equips from the bag, which also makes the game recompute the stats. Returns how many pieces came off.
+ */
+export const unequipAll = (api: CheatApi): number => {
+  let removed = 0;
+  for (let slot = 0; slot < HL3.EQUIP_SLOTS; slot += 1) {
+    const address = HL3.EQUIP + slot * HL3.RECORD;
+    const record = api.dump(address, HL3.RECORD);
+    if (record.length < HL3.RECORD || sameBytes(record, EMPTY_WORN_RECORD)) continue;
+    api.writeBytes(address, EMPTY_WORN_RECORD);
+    removed += 1;
+  }
+  for (const entry of readBag(api)) {
+    if (entry.equipped) api.write(entry.address + 0x1e, 1, false, 0);
+  }
+  return removed;
+};
+
 export const getGold = (api: CheatApi): number => api.read(HL3.GOLD, 4, false) >>> 0;
 export const setGold = (api: CheatApi, value: number): void => api.write(HL3.GOLD, 4, false, Math.max(0, Math.min(value, 99_999_999)));
 export const freezeGold = (api: CheatApi, value: number): void => api.freeze(HL3.GOLD, 4, false, Math.max(0, Math.min(value, 99_999_999)));

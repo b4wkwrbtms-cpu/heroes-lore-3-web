@@ -4,7 +4,7 @@ import { type AutoConfig, MACRO_NAMES, SLOT_KEYS, type SkillRef, type SlotKey, a
 import type { CheatApi } from "./backend";
 import {
   CASH_ITEMS, HL3, HL3_SKILL_LABELS, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel,
-  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, removeDuplicateEquipment, readEquipment, readSkills, readVitals,
+  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, removeDuplicateEquipment, unequipAll, readEquipment, readSkills, readVitals,
   setAllSkillLevels, setGold, setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
@@ -851,6 +851,15 @@ export const getCheatPanel = (): CheatPanel => {
     bagRow.append(button(hl3ShowBag ? "가방 내용 숨기기" : "가방 내용 보기", "secondary-command", () => {
       hl3ShowBag = !hl3ShowBag;
       render();
+    }));
+    bagRow.append(button("🧥 장비 전부 해제", "secondary-command", () => {
+      try {
+        const removed = removeDuplicateEquipment(live);
+        const off = unequipAll(live);
+        setStatus(`장비 ${off}칸을 해제했어요${removed > 0 ? ` (같은 장비 ${removed}개 정리)` : ""}. 메뉴 → EQUIPMENT에서 다시 하나씩 장착하세요. 장착해야 능력치가 다시 계산돼요. 이상하면 저장하지 말고 껐다 켜세요.`);
+      } catch (error) {
+        setStatus(String(error), true);
+      }
     }));
     bagRow.append(button("🧹 같은 장비 중복 정리", "secondary-command", () => {
       try {
