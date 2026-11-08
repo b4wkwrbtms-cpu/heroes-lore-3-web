@@ -97,7 +97,7 @@ svg {
 
 .library-view {
   display: flex;
-  height: calc(100dvh + var(--viewport-extra, 0px));
+  height: 100dvh;
   flex-direction: column;
 }
 
@@ -460,7 +460,7 @@ svg {
   --safe-right: env(safe-area-inset-right, 0px);
   --pad-bg: #0b0b10;
   display: flex;
-  height: calc(100dvh + var(--viewport-extra, 0px));
+  height: 100dvh;
   flex-direction: column;
   padding-top: var(--safe-top);
   color: #e5e7eb;
@@ -796,7 +796,7 @@ html[data-screen-fit="contain"] #canvas {
 
   .player-main {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) calc((100dvh + var(--viewport-extra, 0px) - var(--safe-top) - var(--safe-bottom)) * 3 / 4) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) calc((100dvh - var(--safe-top) - var(--safe-bottom)) * 3 / 4) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) 60px;
     column-gap: 8px;
   }

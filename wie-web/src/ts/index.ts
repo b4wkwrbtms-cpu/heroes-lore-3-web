@@ -18,7 +18,6 @@ const main = async () => {
     integrations: [wasmIntegration()],
   });
   const native = isTauri();
-  installViewportFix();
   const backend = await initializeWie();
   document.documentElement.classList.add(backend.rendering === "native" ? "native" : "browser");
   const output = document.getElementById("player-output") as HTMLDivElement;
@@ -162,36 +161,4 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", start);
 } else {
   start();
-}
-
-/**
- * iOS home-screen (standalone) apps with a translucent status bar lay the page out
- * `safe-area-inset-top` pixels shorter than the screen, leaving a blank strip at the
- * bottom. Measure the difference and expose it as --viewport-extra so full-height
- * views can stretch over it. Does nothing in regular browser tabs.
- */
-function installViewportFix() {
-  const update = () => {
-    const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
-      || window.matchMedia("(display-mode: standalone)").matches
-      || window.matchMedia("(display-mode: fullscreen)").matches;
-    let extra = 0;
-    if (standalone) {
-      const probe = document.createElement("div");
-      probe.style.cssText = "position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none";
-      document.body.append(probe);
-      const safeTop = probe.getBoundingClientRect().height;
-      probe.remove();
-      const portrait = window.matchMedia("(orientation: portrait)").matches;
-      const expected = portrait
-        ? Math.max(window.screen.width, window.screen.height)
-        : Math.min(window.screen.width, window.screen.height);
-      const gap = expected - window.innerHeight;
-      extra = Math.max(0, Math.min(gap, safeTop));
-    }
-    document.documentElement.style.setProperty("--viewport-extra", `${Math.round(extra)}px`);
-  };
-  update();
-  window.addEventListener("resize", update);
-  window.addEventListener("orientationchange", () => window.setTimeout(update, 120));
 }
