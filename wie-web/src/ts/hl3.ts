@@ -287,7 +287,8 @@ export const giveItem = (api: CheatApi, category: number, index: number, count: 
       return { slot: existing.slot, stacked: true, count: total };
     }
   }
-  const pieces = table.kind === "equip" ? Math.max(1, Math.min(count, 10)) : 1;
+  // The game matches worn gear to bag records by item, so identical copies all show as worn: give one piece.
+  const pieces = 1;
   let slot = -1;
   for (let n = 0; n < pieces; n += 1) {
     const empty = bag.find(entry => entry.count === 0 && entry.name === "" && entry.slot > (slot === -1 ? -1 : slot));
@@ -298,7 +299,7 @@ export const giveItem = (api: CheatApi, category: number, index: number, count: 
     api.writeBytes(empty.address, buildRecord(category, item, table.kind === "equip" ? 1 : Math.min(count, 99)));
     slot = empty.slot;
   }
-  return { slot, stacked: false, count: table.kind === "equip" ? pieces : Math.min(count, 99) };
+  return { slot, stacked: false, count: table.kind === "equip" ? 1 : Math.min(count, 99) };
 };
 
 /** Register a bag item to a quick slot (unregistering whatever was there). */
@@ -435,6 +436,32 @@ export const sanitizeInventory = (api: CheatApi): number => {
     repaired += 1;
   }
   return repaired;
+};
+
+/**
+ * Removes extra copies of the same equipment from the bag, keeping the worn copy (or the first one). The game
+ * matches worn gear to bag records by item, so duplicates all show up as equipped. Returns how many were removed.
+ */
+export const removeDuplicateEquipment = (api: CheatApi): number => {
+  const base = bagBase(api);
+  const groups = new Map<string, BagEntry[]>();
+  for (const entry of readBag(api)) {
+    if (entry.count <= 0 || HL3_ITEMS[entry.category]?.kind !== "equip") continue;
+    const key = `${entry.category}:${entry.index}`;
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  }
+  let removed = 0;
+  for (const entries of groups.values()) {
+    if (entries.length < 2) continue;
+    const keep = entries.find(entry => entry.equipped) ?? entries[0];
+    for (const entry of entries) {
+      if (entry === keep) continue;
+      api.writeBytes(recordAddress(base, entry.slot), EMPTY_BAG_RECORD);
+      removed += 1;
+    }
+  }
+  if (removed > 0) sanitizeInventory(api);
+  return removed;
 };
 
 export const getGold = (api: CheatApi): number => api.read(HL3.GOLD, 4, false) >>> 0;

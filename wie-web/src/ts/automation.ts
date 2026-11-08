@@ -152,6 +152,7 @@ const ATTACK_GRACE_MS = 1500;
 /** How long after a replaced press we wait for SP to drop before calling the skill dropped, and how often to retry it. */
 const SKILL_CONFIRM_MS = 350;
 const SKILL_MAX_RETRIES = 2;
+const SKILL_SKIP_MS = 3000;
 /** Attack presses needed within ATTACK_BURST_MS to count as fighting; single taps talk to NPCs and confirm dialogs. */
 const ATTACK_BURST_COUNT = 3;
 const SANITIZE_INTERVAL_MS = 1000;
@@ -176,6 +177,8 @@ class Automation {
   private pendingSkill: { key: string; spBefore: number; at: number; retries: number } | undefined;
   private lastSkillAt = 0;
   private roundRobin = 0;
+  /** Keys whose skill did not go out (cooldown, not enough SP): skipped until the given time. */
+  private skipUntil = new Map<string, number>();
 
   private hp = newPotionState();
   private sp = newPotionState();
@@ -288,7 +291,10 @@ class Automation {
         pending.spBefore = sp;
         this.lastSkillAt = now;
         return pending.key;
-      } else this.pendingSkill = undefined;
+      } else {
+        this.skipUntil.set(pending.key, now + SKILL_SKIP_MS);
+        this.pendingSkill = undefined;
+      }
     }
     if (now - this.lastSkillAt < this.config.skillGap) return undefined;
 
@@ -306,7 +312,8 @@ class Automation {
     for (let offset = 0; offset < candidates.length; offset += 1) {
       const position = (this.roundRobin + offset) % candidates.length;
       const candidate = candidates[position];
-      if (candidate.cost * 10 > sp) continue;
+      // The game decides whether the skill can go out (SP, cooldown); one that keeps failing sits out a while.
+      if ((this.skipUntil.get(candidate.key) ?? 0) > now && !candidate.ref) continue;
       if (candidate.ref) {
         try {
           if (!this.prepareMacroSkill(api, candidate.ref)) continue;
@@ -370,6 +377,7 @@ class Automation {
     this.attackPresses = [];
     this.attackUntil = 0;
     this.pendingSkill = undefined;
+    this.skipUntil.clear();
   }
 
   private lastSanitize = -Infinity;

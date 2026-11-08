@@ -4,7 +4,7 @@ import { type AutoConfig, MACRO_NAMES, SLOT_KEYS, type SkillRef, type SlotKey, a
 import type { CheatApi } from "./backend";
 import {
   CASH_ITEMS, HL3, HL3_SKILL_LABELS, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel,
-  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, readEquipment, readSkills, readVitals,
+  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, removeDuplicateEquipment, readEquipment, readSkills, readVitals,
   setAllSkillLevels, setGold, setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
@@ -493,7 +493,7 @@ export const getCheatPanel = (): CheatPanel => {
         const table = HL3_ITEMS[hl3Category];
         const item = table.items[hl3Index];
         const result = giveItem(live, hl3Category, hl3Index, count);
-        setStatus(`${item.n} ${formatNumber(result.count)}개 — ${bagPlace(result.slot)}${result.stacked ? "에 합쳤어요" : "에 넣었어요"}.${table.kind === "equip" ? " 장비는 가방에서 선택해 장착하세요 (요구 레벨 미달이면 장착 불가)." : ""}`);
+        setStatus(`${item.n} ${formatNumber(result.count)}개 — ${bagPlace(result.slot)}${result.stacked ? "에 합쳤어요" : "에 넣었어요"}.${table.kind === "equip" ? " 장비는 한 번에 1개씩만 넣어요. 가방에서 선택해 장착하세요 (요구 레벨 미달이면 장착 불가)." : ""}`);
       } catch (error) {
         setStatus(String(error), true);
       }
@@ -851,6 +851,14 @@ export const getCheatPanel = (): CheatPanel => {
     bagRow.append(button(hl3ShowBag ? "가방 내용 숨기기" : "가방 내용 보기", "secondary-command", () => {
       hl3ShowBag = !hl3ShowBag;
       render();
+    }));
+    bagRow.append(button("🧹 같은 장비 중복 정리", "secondary-command", () => {
+      try {
+        const removed = removeDuplicateEquipment(live);
+        setStatus(removed > 0 ? `같은 장비 ${removed}개를 정리했어요. 장착 중인 것 하나만 남겼어요.` : "중복된 장비가 없어요.");
+      } catch (error) {
+        setStatus(String(error), true);
+      }
     }));
     body.append(bagRow);
     if (hl3ShowBag) {
