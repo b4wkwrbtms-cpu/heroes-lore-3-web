@@ -1,4 +1,4 @@
-import { Languages, Music2, Volume2, X, createIcons } from "lucide";
+import { Languages, Maximize, Music2, Volume2, X, createIcons } from "lucide";
 
 import type { Settings, Wie } from "./backend";
 import { getLocale, setLanguagePreference, t, type LanguagePreference } from "./i18n";
@@ -59,7 +59,31 @@ export const initializeSettings = async (backend: Wie): Promise<SettingsControll
       }
     });
   }
-  createIcons({ icons: { Languages, Music2, Volume2, X }, root: dialog });
+  // Screen fit (fill the phone screen vs. keep the 3:4 ratio). Stored locally; applied via <html data-screen-fit>.
+  const screenFit = document.getElementById("screen-fit") as HTMLSelectElement | null;
+  if (screenFit) {
+    const SCREEN_FIT_KEY = "wie_screen_fit";
+    const applyScreenFit = (value: string) => {
+      document.documentElement.dataset.screenFit = value === "contain" ? "contain" : "fill";
+    };
+    let stored = "fill";
+    try {
+      stored = window.localStorage.getItem(SCREEN_FIT_KEY) ?? "fill";
+    } catch {
+      // storage unavailable; keep default
+    }
+    screenFit.value = stored === "contain" ? "contain" : "fill";
+    applyScreenFit(screenFit.value);
+    screenFit.addEventListener("change", () => {
+      applyScreenFit(screenFit.value);
+      try {
+        window.localStorage.setItem(SCREEN_FIT_KEY, screenFit.value);
+      } catch {
+        // ignore
+      }
+    });
+  }
+  createIcons({ icons: { Languages, Maximize, Music2, Volume2, X }, root: dialog });
 
   return settings;
 };

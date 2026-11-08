@@ -454,17 +454,17 @@ svg {
 }
 
 .player-view {
-  --pad-min: 190px;
-  --pad-max: 260px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --pad-bg: #0b0b10;
   display: flex;
   height: 100dvh;
   flex-direction: column;
   padding-top: var(--safe-top);
-  padding-bottom: var(--safe-bottom);
   color: #e5e7eb;
-  background: #09090c;
+  background: #000;
 }
 
 /* The toolbar is folded into the keypad on this build; keep the title element for scripts. */
@@ -486,31 +486,37 @@ svg {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  align-items: center;
 }
 
-/* Game screen: as wide as the phone allows while leaving room for the keypad below. */
+/* Game screen fills everything the keypad doesn't use. */
 .canvas-wrapper {
   position: relative;
-  width: min(100%, calc((100dvh - var(--safe-top) - var(--safe-bottom) - var(--pad-min)) * 3 / 4));
-  flex: 0 0 auto;
-  aspect-ratio: 3 / 4;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
   background: #000;
 }
 
 #canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: fill;
   background: #000;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
+html[data-screen-fit="contain"] #canvas {
+  object-fit: contain;
+}
+
 .player-status {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: grid;
   place-items: center;
   align-content: center;
@@ -518,7 +524,7 @@ svg {
   margin: 0;
   padding: 24px;
   color: #e5e7eb;
-  background: #09090c;
+  background: #000;
   font-size: 1rem;
   text-align: center;
 }
@@ -563,16 +569,16 @@ svg {
   padding: 16px;
 }
 
-/* ---- Keypad: joystick (left) / OK·CLR (middle) / numpad (right) ---- */
+/* ---- Keypad (portrait): joystick (left) / OK·CLR (middle) / numpad (right) ---- */
 .pad {
   display: grid;
   width: 100%;
-  min-height: var(--pad-min);
-  max-height: var(--pad-max);
-  flex: 1 1 auto;
+  height: calc(clamp(190px, 27dvh, 260px) + var(--safe-bottom));
+  flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
   gap: 10px;
-  padding: 10px 12px 8px;
+  padding: 8px 12px calc(6px + var(--safe-bottom));
+  background: var(--pad-bg);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -590,11 +596,12 @@ svg {
   display: flex;
   align-items: center;
   justify-content: center;
+  container-type: size;
 }
 
 .pad-mid {
   display: grid;
-  grid-template-rows: 36px minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-rows: 34px minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -603,6 +610,7 @@ svg {
   margin: 0;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
 }
 
 .pad-tool {
@@ -668,7 +676,8 @@ svg {
   font-size: 1rem;
 }
 
-.key-ok:active {
+.key-ok:active,
+.key-ok.pressed {
   background: linear-gradient(180deg, #fbbf24, #d97706);
 }
 
@@ -682,11 +691,9 @@ svg {
 /* 360° joystick */
 .joystick {
   position: relative;
-  width: min(100%, 100cqh, 180px);
-  height: auto;
+  width: min(100%, 100cqh, 190px);
   aspect-ratio: 1 / 1;
-  background:
-    radial-gradient(circle at 50% 42%, #2b2b34 0%, #1a1a20 62%, #121216 100%);
+  background: radial-gradient(circle at 50% 42%, #2b2b34 0%, #1a1a20 62%, #121216 100%);
   border: 2px solid rgba(255, 255, 255, 0.1);
   border-radius: 50%;
   box-shadow:
@@ -694,10 +701,6 @@ svg {
     inset 0 -2px 6px rgba(255, 255, 255, 0.05),
     0 4px 14px rgba(0, 0, 0, 0.55);
   touch-action: none;
-}
-
-.pad-left {
-  container-type: size;
 }
 
 .joystick-arrow {
@@ -770,6 +773,60 @@ svg {
 
 .pad:has(button:disabled) .joystick {
   opacity: 0.35;
+}
+
+/* ---- Landscape: joystick + OK/CLR on the left, screen in the middle, numpad on the right ---- */
+@media (orientation: landscape) and (max-height: 600px) {
+  .player-view {
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+    background: var(--pad-bg);
+  }
+
+  .player-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) calc((100dvh - var(--safe-top) - var(--safe-bottom)) * 3 / 4) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 60px;
+    column-gap: 8px;
+  }
+
+  .canvas-wrapper {
+    width: 100%;
+    height: 100%;
+    flex: none;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .pad {
+    display: contents;
+  }
+
+  .pad-left {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 8px 8px 0;
+  }
+
+  .pad-mid {
+    grid-column: 1;
+    grid-row: 2;
+    grid-template-columns: 72px minmax(0, 1.3fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    padding: 0 8px 8px;
+  }
+
+  .pad-tools {
+    justify-content: flex-start;
+  }
+
+  .pad-right {
+    align-self: center;
+    max-height: 100%;
+    height: min(100%, 360px);
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    padding: 8px;
+  }
 }
 
 .native .player-toolbar {
