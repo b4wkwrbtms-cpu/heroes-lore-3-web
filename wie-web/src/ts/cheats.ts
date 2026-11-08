@@ -586,35 +586,22 @@ export const getCheatPanel = (): CheatPanel => {
     skillRow.append(button(auto.skillOn ? "✨ 자동 스킬 끄기" : "✨ 자동 스킬 켜기", auto.skillOn ? "primary-command" : "secondary-command", () => {
       saveAuto({ ...auto, skillOn: !auto.skillOn });
       setStatus(!auto.skillOn
-        ? "공격 버튼을 누르고 있으면 체크한 칸의 스킬을 쿨타임 도는 대로 돌아가며 자동으로 써요."
+        ? "공격 버튼을 누르고 있으면 체크한 칸의 스킬을 돌아가며 자동으로 써요. 쿨타임 중인 스킬은 게임이 알아서 넘겨요."
         : "자동 스킬을 껐어요.");
     }));
     body.append(skillRow);
-    body.append(el("p", "cheat-muted", "게임에서 스킬을 등록한 칸을 체크하고, 칸마다 쿨타임(초)을 적어 주세요. 여러 칸을 체크하면 순서대로 돌아가며 써요."));
+    body.append(el("p", "cheat-muted", "게임에서 스킬을 등록해 둔 칸을 체크하세요. 쿨타임은 게임이 알아서 판단해요 — 체크한 칸을 차례로 눌러 주니까 쿨타임이 끝난 스킬부터 바로 나가요."));
+    const slotRow = el("div", "cheat-row cheat-wrap");
     for (const key of skillSlotKeys(auto)) {
-      const slot = auto.slots[key];
-      const row = el("div", "cheat-row");
       const check = el("label", "cheat-check");
       const box = el("input") as HTMLInputElement;
       box.type = "checkbox";
-      box.checked = slot.on;
-      box.addEventListener("change", () => saveAuto({ ...auto, slots: { ...auto.slots, [key]: { ...slot, on: box.checked } } }));
-      check.append(box, el("span", undefined, `${key}번 칸`));
-      const cooldown = el("input", "cheat-short") as HTMLInputElement;
-      cooldown.type = "text";
-      cooldown.inputMode = "decimal";
-      cooldown.value = String(slot.cooldown);
-      cooldown.addEventListener("change", () => {
-        const seconds = Number(cooldown.value.replace(/[^0-9.]/g, ""));
-        if (!Number.isFinite(seconds) || seconds < 0.5 || seconds > 120) {
-          setStatus("쿨타임은 0.5~120초 사이로 적어 주세요.", true);
-          return;
-        }
-        saveAuto({ ...auto, slots: { ...auto.slots, [key]: { ...slot, cooldown: seconds } } });
-      });
-      row.append(check, el("span", undefined, "쿨타임"), cooldown, el("span", undefined, "초"));
-      body.append(row);
+      box.checked = auto.skillSlots.includes(key);
+      box.addEventListener("change", () => saveAuto({ ...auto, skillSlots: SLOT_KEYS.filter(slot => (slot === key ? box.checked : auto.skillSlots.includes(slot))) }));
+      check.append(box, el("span", undefined, `${key}번`));
+      slotRow.append(check);
     }
+    body.append(slotRow);
 
     // 치트 회복 (메모리 방식)
     const autoOn = saved.some(cheat => cheat.name === AUTO_HEAL_KEY) && autoHealTimer !== undefined;

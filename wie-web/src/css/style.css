@@ -1054,6 +1054,15 @@ html[data-screen-fit="contain"] #canvas {
   margin: 0;
 }
 
+.cheat-row.cheat-wrap {
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.cheat-row.cheat-wrap .cheat-check {
+  flex: 0 0 auto;
+}
+
 .cheat-row input.cheat-short {
   flex: 0 1 5.5em;
   text-align: center;

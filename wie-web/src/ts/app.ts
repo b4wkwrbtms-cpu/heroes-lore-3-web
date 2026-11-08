@@ -137,7 +137,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       let text = slotCaptions.get(button) ?? "";
       if (config.potionOn && slot === config.hpKey) text = "HP 물약";
       else if (config.potionOn && slot === config.spKey) text = "SP 물약";
-      else if (config.skillOn && skillSlotKeys(config).includes(slot) && config.slots[slot].on) text = "자동 스킬";
+      else if (config.skillOn && skillSlotKeys(config).includes(slot) && config.skillSlots.includes(slot)) text = "자동 스킬";
       caption.textContent = text;
     }
   };

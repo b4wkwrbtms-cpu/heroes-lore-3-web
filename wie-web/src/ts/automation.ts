@@ -7,12 +7,6 @@ export type SlotKey = (typeof SLOT_KEYS)[number];
 /** 주무기 콤보(기본 공격) 키. */
 export const ATTACK_KEY = "OK";
 
-export interface SlotConfig {
-  on: boolean;
-  /** 쿨타임(초) – 이 시간이 지나야 같은 칸을 다시 눌러요. */
-  cooldown: number;
-}
-
 export interface AutoConfig {
   potionOn: boolean;
   hpKey: SlotKey;
@@ -20,8 +14,9 @@ export interface AutoConfig {
   spKey: SlotKey;
   spPercent: number;
   skillOn: boolean;
-  slots: Record<SlotKey, SlotConfig>;
-  /** 스킬 키를 연달아 누를 때 최소 간격(ms). */
+  /** 자동 스킬로 돌릴 단축키 칸. 쿨타임은 게임이 판단하므로 칸을 차례로 눌러 주기만 해요. */
+  skillSlots: SlotKey[];
+  /** 스킬 키를 연달아 누를 때 간격(ms). */
   skillGap: number;
 }
 
@@ -39,14 +34,8 @@ export const defaultAutoConfig = (): AutoConfig => ({
   spKey: "0",
   spPercent: 30,
   skillOn: false,
-  slots: {
-    "1": { on: true, cooldown: 3 },
-    "3": { on: true, cooldown: 3 },
-    "9": { on: false, cooldown: 3 },
-    "0": { on: false, cooldown: 3 },
-    "#": { on: false, cooldown: 3 },
-  },
-  skillGap: 400,
+  skillSlots: ["1", "3"],
+  skillGap: 500,
 });
 
 const storageKey = (appId: string) => `wie_auto_${appId}`;
@@ -74,18 +63,7 @@ export const loadAutoConfig = (appId: string): AutoConfig => {
     config.spPercent = clampNumber(data.spPercent, 5, 95, config.spPercent);
     config.skillOn = data.skillOn === true;
     config.skillGap = clampNumber(data.skillGap, 150, 3000, config.skillGap);
-    if (typeof data.slots === "object" && data.slots !== null) {
-      const slots = data.slots as Record<string, unknown>;
-      for (const key of SLOT_KEYS) {
-        const slot = slots[key];
-        if (typeof slot !== "object" || slot === null) continue;
-        const entry = slot as Record<string, unknown>;
-        config.slots[key] = {
-          on: entry.on === true,
-          cooldown: clampNumber(entry.cooldown, 0.5, 120, config.slots[key].cooldown),
-        };
-      }
-    }
+    if (Array.isArray(data.skillSlots)) config.skillSlots = SLOT_KEYS.filter(key => data.skillSlots.includes(key));
   } catch {
     // ignore corrupt settings
   }
@@ -131,7 +109,6 @@ class Automation {
   private attackHeld = false;
   private attackUntil = 0;
   private lastSkillAt = 0;
-  private slotLastFire: Record<string, number> = {};
   private roundRobin = 0;
 
   private hp = newPotionState();
@@ -190,7 +167,6 @@ class Automation {
     this.sp = newPotionState();
     this.spPeak = 0;
     this.level = 0;
-    this.slotLastFire = {};
     this.roundRobin = 0;
     this.lastSkillAt = 0;
     this.attackHeld = false;
@@ -244,20 +220,15 @@ class Automation {
     context.pressKey(key, POTION_HOLD_MS);
   }
 
+  /** Presses the checked slots in turn; the game itself ignores a slot whose skill is still cooling down. */
   private tickSkill(context: AutoContext, now: number) {
     if (now - this.lastSkillAt < this.config.skillGap) return;
-    const keys = skillSlotKeys(this.config).filter(key => this.config.slots[key].on);
+    const keys = skillSlotKeys(this.config).filter(key => this.config.skillSlots.includes(key));
     if (keys.length === 0) return;
-    for (let offset = 0; offset < keys.length; offset++) {
-      const key = keys[(this.roundRobin + offset) % keys.length];
-      const last = this.slotLastFire[key] ?? -Infinity;
-      if (now - last < this.config.slots[key].cooldown * 1000) continue;
-      this.slotLastFire[key] = now;
-      this.lastSkillAt = now;
-      this.roundRobin = (this.roundRobin + offset + 1) % keys.length;
-      context.pressKey(key, SKILL_HOLD_MS);
-      return;
-    }
+    const key = keys[this.roundRobin % keys.length];
+    this.roundRobin = (this.roundRobin + 1) % keys.length;
+    this.lastSkillAt = now;
+    context.pressKey(key, SKILL_HOLD_MS);
   }
 }
 
