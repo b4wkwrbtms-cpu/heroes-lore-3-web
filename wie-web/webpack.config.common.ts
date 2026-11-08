@@ -105,6 +105,13 @@ const commonConfig: webpack.Configuration = {
         },
       },
       {
+        test: /\.webmanifest$/,
+        type: "asset/resource",
+        generator: {
+          filename: "manifest.webmanifest",
+        },
+      },
+      {
         test: /\.ttf$/,
         type: "asset/resource",
         generator: {
