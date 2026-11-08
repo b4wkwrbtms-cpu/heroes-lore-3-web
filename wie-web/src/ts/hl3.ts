@@ -53,6 +53,12 @@ export const HL3 = {
   /** 10 worn-equipment records (same 60-byte layout) */
   EQUIP: 0x01503e14,
   EQUIP_SLOTS: 10,
+  /** u32 current HP, u16 max HP, u32 current SP (×10) */
+  /** 현재 HP (u16). 상태창 왼쪽 숫자·HUD 게이지 기준. */
+  HP: 0x01503b7a,
+  /** 최대 HP (u32). */
+  HP_MAX: 0x01503b74,
+  SP: 0x01503b80,
   /** u16 level, u32 exp */
   LEVEL: 0x01503b6a,
   EXP: 0x01503b6c,
@@ -314,4 +320,33 @@ export const freezeBattleStats = (api: CheatApi, on: boolean): void => {
     if (on) api.freeze(address, 2, false, value);
     else api.unfreeze(address);
   }
+};
+
+export interface Vitals {
+  hp: number;
+  hpMax: number;
+  sp: number;
+}
+
+export const readVitals = (api: CheatApi): Vitals => ({
+  hp: api.read(HL3.HP, 2, false),
+  hpMax: api.read(HL3.HP_MAX, 4, false) >>> 0,
+  /** SP는 내부적으로 10배 값으로 저장돼요 (표시 100 = 1000). */
+  sp: api.read(HL3.SP, 4, false) >>> 0,
+});
+
+/** Auto-heal tick: refill HP when it drops under `ratio` of max; SP is restored to the highest value seen. */
+export const autoHealTick = (api: CheatApi, state: { spPeak: number }, ratio = 0.35): boolean => {
+  const vitals = readVitals(api);
+  let healed = false;
+  if (vitals.hpMax > 0 && vitals.hpMax < 60_000 && vitals.hp > 0 && vitals.hp < vitals.hpMax * ratio) {
+    api.write(HL3.HP, 2, false, vitals.hpMax);
+    healed = true;
+  }
+  if (vitals.sp < 1_000_000 && vitals.sp > state.spPeak) state.spPeak = vitals.sp;
+  if (state.spPeak > 0 && vitals.sp < state.spPeak * ratio) {
+    api.write(HL3.SP, 4, false, state.spPeak);
+    healed = true;
+  }
+  return healed;
 };

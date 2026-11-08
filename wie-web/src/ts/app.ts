@@ -1,8 +1,10 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard, Map as MapIcon, Save, Settings, Sparkles, X, createIcons } from "lucide";
 
 import { recordPageView } from "./analytics";
+import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, skillSlotKeys } from "./automation";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
+import { isHeroesLore3 } from "./hl3";
 import type { SettingsController } from "./settings";
 
 const KEY_MAP: Record<string, string> = {
@@ -79,6 +81,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     ending = true;
     clearTimeout(warningTimer);
     abortController.abort();
+    automation.detach();
+    unsubscribeAuto();
     inputs.clear();
     updateControls();
     try {
@@ -101,12 +105,40 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     if (previous === key) return;
     if (previous) {
       inputs.delete(source);
-      if (![...inputs.values()].includes(previous)) void session.key(previous, false).catch(finish);
+      if (![...inputs.values()].includes(previous)) {
+        automation.notifyKey(previous, false);
+        void session.key(previous, false).catch(finish);
+      }
     }
     if (key) {
       const pressed = [...inputs.values()].includes(key);
       inputs.set(source, key);
-      if (!pressed) void session.key(key, true).catch(finish);
+      if (!pressed) {
+        automation.notifyKey(key, true);
+        void session.key(key, true).catch(finish);
+      }
+    }
+  };
+  let autoPressId = 0;
+  const pressKey = (key: string, holdMs = 90) => {
+    const source = `auto:${key}:${autoPressId++}`;
+    setKey(source, key);
+    window.setTimeout(() => setKey(source), holdMs);
+  };
+  const slotCaptions = new Map<HTMLButtonElement, string>();
+  const applyPadLabels = (config: AutoConfig) => {
+    for (const button of buttons) {
+      const key = button.dataset.key;
+      if (!key || !button.classList.contains("key-slot") || !(SLOT_KEYS as readonly string[]).includes(key)) continue;
+      const slot = key as SlotKey;
+      const caption = button.querySelector("span");
+      if (!caption) continue;
+      if (!slotCaptions.has(button)) slotCaptions.set(button, caption.textContent ?? "");
+      let text = slotCaptions.get(button) ?? "";
+      if (config.potionOn && slot === config.hpKey) text = "HP 물약";
+      else if (config.potionOn && slot === config.spKey) text = "SP 물약";
+      else if (config.skillOn && skillSlotKeys(config).includes(slot) && config.slots[slot].on) text = "자동 스킬";
+      caption.textContent = text;
     }
   };
   const releaseKeys = () => {
@@ -123,6 +155,11 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     appId: app.id,
     appTitle: app.title,
     getCheats: () => (session && !ending ? session.cheats : undefined),
+  };
+  const unsubscribeAuto = automation.onChange(applyPadLabels);
+  const attachAutomation = () => {
+    if (!isHeroesLore3(app.title) || automation.appId === app.id) return;
+    automation.attach({ appId: app.id, getCheats: cheatContext.getCheats, pressKey });
   };
   appCheats?.addEventListener("click", () => {
     releaseKeys();
@@ -304,6 +341,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         preparing = false;
         updateControls();
         getCheatPanel().restore(cheatContext);
+        attachAutomation();
         break;
       case "suspended":
         suspended = event.suspended;
@@ -327,6 +365,9 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   void start.then(started => {
     session = started;
     updateControls();
-    if (!preparing) getCheatPanel().restore(cheatContext);
+    if (!preparing) {
+      getCheatPanel().restore(cheatContext);
+      attachAutomation();
+    }
   }).catch(finish);
 });

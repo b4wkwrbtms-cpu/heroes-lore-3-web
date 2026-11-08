@@ -1043,6 +1043,22 @@ html[data-screen-fit="contain"] #canvas {
   white-space: nowrap;
 }
 
+.cheat-row > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.cheat-row .cheat-check {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.cheat-row input.cheat-short {
+  flex: 0 1 5.5em;
+  text-align: center;
+}
+
 .cheat-check {
   display: flex;
   align-items: center;

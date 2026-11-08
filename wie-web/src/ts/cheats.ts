@@ -1,9 +1,10 @@
 import { X, createIcons } from "lucide";
 
+import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, loadAutoConfig, skillSlotKeys, storeAutoConfig } from "./automation";
 import type { CheatApi } from "./backend";
 import {
-  HL3, ORBS, QUICK_ITEMS, displayName, freezeBattleStats, freezeGold, getGold, getLevel, giveItem, gradeLabel,
-  isHeroesLore3, readBag, readEquipment, setBaseStats, setGold, setItemStat, setLevel, setOrb,
+  HL3, ORBS, QUICK_ITEMS, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel, giveItem, gradeLabel,
+  isHeroesLore3, readBag, readEquipment, readVitals, setBaseStats, setGold, setItemStat, setLevel, setOrb,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
 
@@ -61,6 +62,34 @@ type Step =
 
 const storageKey = (appId: string) => `wie_cheats_${appId}`;
 const BATTLE_KEY = "전투 능력치 최대 고정";
+const AUTO_HEAL_KEY = "자동 회복";
+
+let autoHealTimer: number | undefined;
+let autoHealContextId: string | undefined;
+
+const stopAutoHeal = () => {
+  if (autoHealTimer !== undefined) window.clearInterval(autoHealTimer);
+  autoHealTimer = undefined;
+  autoHealContextId = undefined;
+};
+
+const startAutoHeal = (context: CheatContext) => {
+  stopAutoHeal();
+  autoHealContextId = context.appId;
+  const state = { spPeak: 0 };
+  autoHealTimer = window.setInterval(() => {
+    const api = context.getCheats();
+    if (!api) {
+      stopAutoHeal();
+      return;
+    }
+    try {
+      autoHealTick(api, state);
+    } catch {
+      // game not in a playable state yet
+    }
+  }, 150);
+};
 
 const loadSaved = (appId: string): SavedCheat[] => {
   try {
@@ -490,6 +519,120 @@ export const getCheatPanel = (): CheatPanel => {
     );
     body.append(charRow);
 
+    // 자동화 (자동 물약 · 자동 스킬 · 치트 회복)
+    body.append(el("p", "cheat-lead", "🤖 자동화"));
+    const auto = context && automation.appId === context.appId ? automation.current : loadAutoConfig(context?.appId ?? "");
+    const saveAuto = (next: AutoConfig) => {
+      if (context && automation.appId === context.appId) automation.update(next);
+      else if (context) storeAutoConfig(context.appId, next);
+      render();
+    };
+    let vitalsText = "";
+    try {
+      const vitals = readVitals(live);
+      if (vitals.hpMax > 0) vitalsText = `지금 HP ${formatNumber(vitals.hp)}/${formatNumber(vitals.hpMax)} · SP ${formatNumber(Math.floor(vitals.sp / 10))}`;
+    } catch {
+      vitalsText = "";
+    }
+
+    // 자동 물약
+    const potionRow = el("div", "cheat-item-actions");
+    potionRow.append(button(auto.potionOn ? "🧪 자동 물약 끄기" : "🧪 자동 물약 켜기", auto.potionOn ? "primary-command" : "secondary-command", () => {
+      saveAuto({ ...auto, potionOn: !auto.potionOn });
+      setStatus(!auto.potionOn
+        ? `HP ${auto.hpPercent}% 아래면 ${auto.hpKey}번, SP ${auto.spPercent}% 아래면 ${auto.spKey}번 칸을 자동으로 눌러요. 게임에서 그 칸에 물약을 등록해 두세요.`
+        : "자동 물약을 껐어요.");
+    }));
+    body.append(potionRow);
+    body.append(el("p", "cheat-muted", `게임 단축키 칸에 등록한 물약을 대신 눌러 주는 방식이에요 (물약은 실제로 줄어요).${vitalsText ? ` ${vitalsText}` : ""}`));
+    const slotSelect = (value: SlotKey, onChange: (key: SlotKey) => void): HTMLSelectElement => {
+      const select = el("select") as HTMLSelectElement;
+      for (const key of SLOT_KEYS) {
+        const option = el("option", undefined, `${key}번 칸`);
+        option.value = key;
+        select.append(option);
+      }
+      select.value = value;
+      select.addEventListener("change", () => {
+        const key = select.value;
+        if (key === "1" || key === "3" || key === "9" || key === "0" || key === "#") onChange(key);
+      });
+      return select;
+    };
+    const percentInput = (value: number, onChange: (percent: number) => void): HTMLInputElement => {
+      const input = el("input", "cheat-short") as HTMLInputElement;
+      input.type = "text";
+      input.inputMode = "numeric";
+      input.value = String(value);
+      input.addEventListener("change", () => {
+        const percent = parseNumber(input.value);
+        if (percent === undefined || percent < 5 || percent > 95) {
+          setStatus("5~95 사이 숫자로 입력해 주세요.", true);
+          return;
+        }
+        onChange(percent);
+      });
+      return input;
+    };
+    const hpRow = el("div", "cheat-row");
+    hpRow.append(el("span", undefined, "HP 물약"), slotSelect(auto.hpKey, key => saveAuto({ ...auto, hpKey: key })), percentInput(auto.hpPercent, percent => saveAuto({ ...auto, hpPercent: percent })), el("span", undefined, "% 아래면"));
+    body.append(hpRow);
+    const spRow = el("div", "cheat-row");
+    spRow.append(el("span", undefined, "SP 물약"), slotSelect(auto.spKey, key => saveAuto({ ...auto, spKey: key })), percentInput(auto.spPercent, percent => saveAuto({ ...auto, spPercent: percent })), el("span", undefined, "% 아래면"));
+    body.append(spRow);
+
+    // 자동 스킬
+    const skillRow = el("div", "cheat-item-actions");
+    skillRow.append(button(auto.skillOn ? "✨ 자동 스킬 끄기" : "✨ 자동 스킬 켜기", auto.skillOn ? "primary-command" : "secondary-command", () => {
+      saveAuto({ ...auto, skillOn: !auto.skillOn });
+      setStatus(!auto.skillOn
+        ? "공격 버튼을 누르고 있으면 체크한 칸의 스킬을 쿨타임 도는 대로 돌아가며 자동으로 써요."
+        : "자동 스킬을 껐어요.");
+    }));
+    body.append(skillRow);
+    body.append(el("p", "cheat-muted", "게임에서 스킬을 등록한 칸을 체크하고, 칸마다 쿨타임(초)을 적어 주세요. 여러 칸을 체크하면 순서대로 돌아가며 써요."));
+    for (const key of skillSlotKeys(auto)) {
+      const slot = auto.slots[key];
+      const row = el("div", "cheat-row");
+      const check = el("label", "cheat-check");
+      const box = el("input") as HTMLInputElement;
+      box.type = "checkbox";
+      box.checked = slot.on;
+      box.addEventListener("change", () => saveAuto({ ...auto, slots: { ...auto.slots, [key]: { ...slot, on: box.checked } } }));
+      check.append(box, el("span", undefined, `${key}번 칸`));
+      const cooldown = el("input", "cheat-short") as HTMLInputElement;
+      cooldown.type = "text";
+      cooldown.inputMode = "decimal";
+      cooldown.value = String(slot.cooldown);
+      cooldown.addEventListener("change", () => {
+        const seconds = Number(cooldown.value.replace(/[^0-9.]/g, ""));
+        if (!Number.isFinite(seconds) || seconds < 0.5 || seconds > 120) {
+          setStatus("쿨타임은 0.5~120초 사이로 적어 주세요.", true);
+          return;
+        }
+        saveAuto({ ...auto, slots: { ...auto.slots, [key]: { ...slot, cooldown: seconds } } });
+      });
+      row.append(check, el("span", undefined, "쿨타임"), cooldown, el("span", undefined, "초"));
+      body.append(row);
+    }
+
+    // 치트 회복 (메모리 방식)
+    const autoOn = saved.some(cheat => cheat.name === AUTO_HEAL_KEY) && autoHealTimer !== undefined;
+    const healRow = el("div", "cheat-item-actions");
+    healRow.append(button(autoOn ? "💊 치트 회복 끄기" : "💊 치트 회복 켜기 (물약 없이 HP/SP 채움)", autoOn ? "primary-command" : "secondary-command", () => {
+      saved = saved.filter(cheat => cheat.name !== AUTO_HEAL_KEY);
+      if (autoOn) {
+        stopAutoHeal();
+        setStatus("치트 회복을 껐어요.");
+      } else {
+        if (context) startAutoHeal(context);
+        saved.push({ name: AUTO_HEAL_KEY, address: HL3.HP, width: 2, bigEndian: false, value: 0, freeze: false });
+        setStatus("HP가 35% 아래로 떨어지면 메모리로 바로 가득 채워요 (SP도). 물약은 안 줄어요. 게임을 켤 때마다 자동 적용.");
+      }
+      persist();
+    }));
+    body.append(healRow);
+
     // 장착 장비 강화
     body.append(el("p", "cheat-lead", "🔨 장착 장비 강화 (오브 결합 · 공/방 수치)"));
     body.append(el("p", "cheat-muted", "오브 효과는 바로 표시돼요. 공/방 수치는 장비를 한 번 해제했다가 다시 장착해야 전투에 반영됩니다."));
@@ -613,7 +756,7 @@ export const getCheatPanel = (): CheatPanel => {
       renderHl3(live);
     }
 
-    const generic = saved.filter(cheat => cheat.name !== BATTLE_KEY);
+    const generic = saved.filter(cheat => cheat.name !== BATTLE_KEY && cheat.name !== AUTO_HEAL_KEY);
     if (generic.length > 0) {
       body.append(el("p", "cheat-lead", "저장된 치트"));
       const list = el("ul", "cheat-saved");
@@ -953,8 +1096,13 @@ export const getCheatPanel = (): CheatPanel => {
           // ignore
         }
       }
+      if (isHeroesLore3(next.appTitle) && cheatsForApp.some(cheat => cheat.name === AUTO_HEAL_KEY)) {
+        startAutoHeal(next);
+      } else if (autoHealContextId !== undefined && autoHealContextId !== next.appId) {
+        stopAutoHeal();
+      }
       for (const cheat of cheatsForApp) {
-        if (cheat.name === BATTLE_KEY) continue;
+        if (cheat.name === BATTLE_KEY || cheat.name === AUTO_HEAL_KEY) continue;
         if (!cheat.freeze) continue;
         try {
           live.freeze(cheat.address, cheat.width, cheat.bigEndian, cheat.value);
