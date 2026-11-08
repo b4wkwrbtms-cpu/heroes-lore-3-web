@@ -845,7 +845,8 @@ export const getCheatPanel = (): CheatPanel => {
     body.append(bagRow);
     if (hl3ShowBag) {
       try {
-        const bag = readBag(live).filter(entry => entry.count > 0 || entry.name);
+        const allEntries = readBag(live);
+        const bag = allEntries.filter(entry => entry.count > 0 || entry.name);
         const list = el("ul", "cheat-saved");
         for (const entry of bag) {
           const item = el("li", "cheat-item");
@@ -857,7 +858,7 @@ export const getCheatPanel = (): CheatPanel => {
           item.append(info);
           list.append(item);
         }
-        body.append(el("p", "cheat-muted", `가방 ${bag.length}/${HL3.SLOTS}칸 사용 중`), list);
+        body.append(el("p", "cheat-muted", `가방 ${bag.length}/${allEntries.length}칸 사용 중`), list);
       } catch (error) {
         body.append(el("p", "cheat-status error", String(error)));
       }

@@ -1,7 +1,7 @@
 import type { CheatApi } from "./backend";
 import {
-  HL3, SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, readSkills, readSlot, readVitals, registerSkill, topUpSlotItems,
-  writeSlot,
+  HL3, SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, readSkills, readSlot, readVitals, registerSkill, sanitizeInventory,
+  topUpSlotItems, writeSlot,
 } from "./hl3";
 import { HL3_SKILLS } from "./hl3_skills";
 
@@ -150,6 +150,7 @@ const SKILL_CONFIRM_MS = 350;
 const SKILL_MAX_RETRIES = 2;
 /** Attack presses needed within ATTACK_BURST_MS to count as fighting; single taps talk to NPCs and confirm dialogs. */
 const ATTACK_BURST_COUNT = 3;
+const SANITIZE_INTERVAL_MS = 1000;
 const ATTACK_BURST_MS = 1500;
 const MAX_BACKOFF_MS = 12_000;
 
@@ -364,12 +365,27 @@ class Automation {
     this.pendingSkill = undefined;
   }
 
+  private lastSanitize = -Infinity;
+
   private tick() {
     const context = this.context;
     if (!context) return;
     const api = context.getCheats();
     if (!api) return;
     const now = performance.now();
+    // Records pointing at items the game has no data for crash it; clear them once a save has finished loading.
+    if (now - this.lastSanitize >= SANITIZE_INTERVAL_MS) {
+      this.lastSanitize = now;
+      try {
+        const mode = api.read(HL3.MODE, 4, false) >>> 0;
+        if (mode === 4 || mode === 5) {
+          const cleared = sanitizeInventory(api);
+          if (cleared > 0) console.warn(`[hl3] cleared ${cleared} broken inventory record(s)`);
+        }
+      } catch {
+        // game state not loaded yet
+      }
+    }
     // In menus the quick-slot keys page through screens (◀1 STATUS 3▶, 7/9 tabs), so never press them there.
     let onField = false;
     try {

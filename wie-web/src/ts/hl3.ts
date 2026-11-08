@@ -46,11 +46,17 @@ export const displayName = (name: string): string => name.replace(/^[|${}@]/, ""
 export const HL3 = {
   /** u32 소지금 */
   GOLD: 0x01503b54,
-  /** u32 pointer to the game-state block; the bag array starts BAG_OFFSET bytes in. */
+  /** u32 pointer to the game-state block; the bags start BAG_OFFSET bytes in. */
   BAG_PTR: 0x0150d8b0,
   BAG_OFFSET: 0x394,
   RECORD: 60,
-  SLOTS: 90,
+  /** Each bag holds BAG_SLOTS records and occupies BAG_STRIDE bytes (16 × 60 + 4 bytes of padding). */
+  BAG_SLOTS: 16,
+  BAG_STRIDE: 0x3c4,
+  /** s8 number of bags the player owns (1–5; 여행가방 adds one), right after the last bag. */
+  BAG_COUNT_OFFSET: 0x1668,
+  MAX_BAGS: 5,
+  SLOTS: 80,
   /** 10 worn-equipment records (same 60-byte layout) */
   EQUIP: 0x01503e14,
   EQUIP_SLOTS: 10,
@@ -158,19 +164,39 @@ const decodeName = (bytes: Uint8Array): string => {
 
 const u16 = (bytes: Uint8Array, offset: number) => bytes[offset] | (bytes[offset + 1] << 8);
 
-export const bagBase = (api: CheatApi): number => {
+/** Pointer to the game-state block, or 0 before a game has been loaded. */
+export const statePointer = (api: CheatApi): number => {
   const pointer = api.read(HL3.BAG_PTR, 4, false) >>> 0;
-  if (pointer < HL3.HEAP_LO || pointer >= HL3.HEAP_HI) {
+  return pointer < HL3.HEAP_LO || pointer >= HL3.HEAP_HI ? 0 : pointer;
+};
+
+export const bagBase = (api: CheatApi): number => {
+  const pointer = statePointer(api);
+  if (pointer === 0) {
     throw new Error("게임이 아직 시작되지 않았어요. 캐릭터로 필드에 나온 뒤 다시 시도하세요.");
   }
   return pointer + HL3.BAG_OFFSET;
 };
 
+/** Number of bags the player owns, clamped to the memory the game reserves for them. */
+export const bagCount = (api: CheatApi, state: number): number => {
+  const count = api.read(state + HL3.BAG_COUNT_OFFSET, 1, false);
+  return Math.max(1, Math.min(HL3.MAX_BAGS, count));
+};
+
+/** Address of bag record `slot` (bag = slot / 16, position = slot % 16) relative to the first bag. */
+export const recordAddress = (base: number, slot: number): number =>
+  base + Math.floor(slot / HL3.BAG_SLOTS) * HL3.BAG_STRIDE + (slot % HL3.BAG_SLOTS) * HL3.RECORD;
+
+/** The game's own location code for a bag record: bag in the high bits, position within the bag in the low five. */
+export const itemLocation = (slot: number): number => (Math.floor(slot / HL3.BAG_SLOTS) << 5) | slot % HL3.BAG_SLOTS;
+
 export const readBag = (api: CheatApi): BagEntry[] => {
   const base = bagBase(api);
+  const slots = bagCount(api, base - HL3.BAG_OFFSET) * HL3.BAG_SLOTS;
   const entries: BagEntry[] = [];
-  for (let slot = 0; slot < HL3.SLOTS; slot += 1) {
-    const address = base + slot * HL3.RECORD;
+  for (let slot = 0; slot < slots; slot += 1) {
+    const address = recordAddress(base, slot);
     const record = api.dump(address, HL3.RECORD);
     if (record.length < HL3.RECORD) break;
     const exists = record[0x1f] === 1;
@@ -275,7 +301,7 @@ export const registerItem = (api: CheatApi, entry: BagEntry, quickSlot: number):
   }
   api.write(entry.address + QUICK_SLOT_OFFSET, 1, false, quickSlot);
   api.write(SLOT_KIND + quickSlot, 1, false, 2);
-  api.write(SLOT_TABLES.ITEMLOC + quickSlot, 1, false, entry.slot & 0xff);
+  api.write(SLOT_TABLES.ITEMLOC + quickSlot, 1, false, itemLocation(entry.slot));
   api.write(SLOT_TABLES.SKILLX + quickSlot, 1, false, 0);
   api.write(SLOT_AUX + quickSlot, 1, false, 0xff);
 };
@@ -331,6 +357,62 @@ export const topUpSlotItems = (api: CheatApi, quickSlots: number[], count = 99):
     changed = true;
   }
   return changed;
+};
+
+/** Whether a record's item reference points at an item the game's tables actually contain. */
+const validItemReference = (category: number, index: number): boolean => {
+  if (category > 18) return false;
+  const table = HL3_ITEMS[category];
+  // Category 15 has no extracted table; the game sizes it separately, so leave it alone.
+  return table ? index < table.items.length : category === 15;
+};
+
+const EMPTY_RECORD = new Uint8Array(60);
+
+/**
+ * Removes bag and worn-equipment records that reference items the game has no data for (they make the game
+ * dereference garbage, which is fatal), and quick slots that point at such records. Returns how many were cleared.
+ * Earlier versions of these cheats wrote records with a wrong bag stride and could leave such entries behind.
+ */
+export const sanitizeInventory = (api: CheatApi): number => {
+  const state = statePointer(api);
+  if (state === 0) return 0;
+  let cleared = 0;
+  const base = state + HL3.BAG_OFFSET;
+  const wiped = new Set<number>();
+  for (let slot = 0; slot < HL3.MAX_BAGS * HL3.BAG_SLOTS; slot += 1) {
+    const address = recordAddress(base, slot);
+    const record = api.dump(address, HL3.RECORD);
+    if (record.length < HL3.RECORD) break;
+    // The loader also resolves names for empty slots, so leftovers there must reference real items too.
+    const exists = record[0x1f];
+    if (exists <= 1 && validItemReference(u16(record, 0x22), u16(record, 0x24))) continue;
+    api.writeBytes(address, EMPTY_RECORD);
+    if (exists !== 0) {
+      wiped.add(itemLocation(slot));
+      cleared += 1;
+    }
+  }
+  for (let slot = 0; slot < HL3.EQUIP_SLOTS; slot += 1) {
+    const address = HL3.EQUIP + slot * HL3.RECORD;
+    const record = api.dump(address, HL3.RECORD);
+    if (record.length < HL3.RECORD) break;
+    const exists = record[0x1f];
+    if (exists <= 1 && validItemReference(u16(record, 0x22), u16(record, 0x24))) continue;
+    api.writeBytes(address, EMPTY_RECORD);
+    if (exists !== 0) cleared += 1;
+  }
+  for (let quickSlot = 0; quickSlot < SLOT_ORDER.length; quickSlot += 1) {
+    const snapshot = readSlot(api, quickSlot);
+    if (snapshot.kind !== 2) continue;
+    const bag = snapshot.itemLoc >> 5;
+    const position = snapshot.itemLoc & 31;
+    const record = bag < HL3.MAX_BAGS && position < HL3.BAG_SLOTS ? api.dump(recordAddress(base, bag * HL3.BAG_SLOTS + position), HL3.RECORD) : new Uint8Array();
+    if (!wiped.has(snapshot.itemLoc) && record.length === HL3.RECORD && record[0x1f] === 1) continue;
+    writeSlot(api, quickSlot, { kind: 0, itemLoc: 0, skillX: 0, idx: 0 });
+    cleared += 1;
+  }
+  return cleared;
 };
 
 export const getGold = (api: CheatApi): number => api.read(HL3.GOLD, 4, false) >>> 0;

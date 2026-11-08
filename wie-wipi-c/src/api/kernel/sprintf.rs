@@ -74,7 +74,11 @@ fn format(format: &str, args: impl Iterator<Item = Result<u32>>, read_string: &m
                         break;
                     }
 
-                    result += &read_string(ptr)?;
+                    match read_string(ptr) {
+                        Ok(string) => result += &string,
+                        // A wild pointer reads as garbage on the phone; failing the whole call would take the app down.
+                        Err(error) => tracing::warn!("printf: unreadable %s argument {ptr:#x}: {error:?}"),
+                    }
                     break;
                 }
                 'c' => {
@@ -240,6 +244,9 @@ mod test {
         let expected = "안녕 세계 A -7 42 beef";
         assert_eq!(encoding_rs::EUC_KR.decode(&result).0, expected);
         assert_eq!(result, encoding_rs::EUC_KR.encode(expected).0.into_owned());
+
+        // a wild string pointer formats as empty instead of failing the call
+        assert_eq!(super::sprintf(&memory, b"[%s]", [0xa7ba_b9b7].into_iter().map(Ok))?, b"[]");
 
         Ok(())
     }
