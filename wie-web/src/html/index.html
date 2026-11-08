@@ -4,7 +4,7 @@
     <meta
       charset="UTF-8"
       name="viewport"
-      content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -118,13 +118,7 @@
 
     <section id="player-view" class="player-view" hidden>
       <header class="player-toolbar">
-        <button id="back-to-library" class="icon-button" type="button" title="라이브러리" data-i18n-title="library" aria-label="라이브러리로 돌아가기" data-i18n-aria-label="backToLibrary">
-          <i data-lucide="arrow-left"></i>
-        </button>
         <strong id="player-title" class="player-title"></strong>
-        <button id="app-settings" class="icon-button" type="button" title="설정" data-i18n-title="settings" aria-label="설정" data-i18n-aria-label="settings">
-          <i data-lucide="settings"></i>
-        </button>
       </header>
 
       <main class="player-main">
@@ -136,39 +130,42 @@
         </div>
         <p id="player-warning" class="player-warning" role="status" hidden></p>
 
-        <div class="button-container" aria-label="앱 키패드" data-i18n-aria-label="keypad">
-          <p>
-            <button data-key="UP" aria-label="위" data-i18n-aria-label="up"><i data-lucide="arrow-up"></i></button>
-          </p>
-          <p>
-            <button data-key="LEFT" aria-label="왼쪽" data-i18n-aria-label="left"><i data-lucide="arrow-left"></i></button>
-            <button data-key="OK">OK</button>
-            <button data-key="RIGHT" aria-label="오른쪽" data-i18n-aria-label="right"><i data-lucide="arrow-right"></i></button>
-          </p>
-          <p>
-            <button data-key="DOWN" aria-label="아래" data-i18n-aria-label="down"><i data-lucide="arrow-down"></i></button>
-          </p>
-          <p><button data-key="CLR">CLR</button></p>
-          <p>
-            <button data-key="1">1</button>
-            <button data-key="2">2</button>
-            <button data-key="3">3</button>
-          </p>
-          <p>
-            <button data-key="4">4</button>
-            <button data-key="5">5</button>
-            <button data-key="6">6</button>
-          </p>
-          <p>
-            <button data-key="7">7</button>
-            <button data-key="8">8</button>
-            <button data-key="9">9</button>
-          </p>
-          <p>
-            <button data-key="*">*</button>
-            <button data-key="0">0</button>
-            <button data-key="#">#</button>
-          </p>
+        <div class="button-container pad" aria-label="앱 키패드" data-i18n-aria-label="keypad">
+          <div class="pad-left">
+            <div id="joystick" class="joystick" role="application" aria-label="조이스틱">
+              <span class="joystick-arrow joystick-arrow-up" aria-hidden="true"></span>
+              <span class="joystick-arrow joystick-arrow-down" aria-hidden="true"></span>
+              <span class="joystick-arrow joystick-arrow-left" aria-hidden="true"></span>
+              <span class="joystick-arrow joystick-arrow-right" aria-hidden="true"></span>
+              <div class="joystick-knob"></div>
+            </div>
+          </div>
+          <div class="pad-mid">
+            <p class="pad-tools">
+              <button id="back-to-library" class="icon-button pad-tool" type="button" title="라이브러리" data-i18n-title="library" aria-label="라이브러리로 돌아가기" data-i18n-aria-label="backToLibrary">
+                <i data-lucide="arrow-left"></i>
+              </button>
+              <button id="app-settings" class="icon-button pad-tool" type="button" title="설정" data-i18n-title="settings" aria-label="설정" data-i18n-aria-label="settings">
+                <i data-lucide="settings"></i>
+              </button>
+            </p>
+            <button class="key key-ok" data-key="OK">OK</button>
+            <button class="key key-clr" data-key="CLR">CLR</button>
+          </div>
+          <div class="pad-right numpad">
+            <button class="key" data-key="1">1</button>
+            <button class="key" data-key="2">2</button>
+            <button class="key" data-key="3">3</button>
+            <button class="key" data-key="4">4</button>
+            <button class="key" data-key="5">5</button>
+            <button class="key" data-key="6">6</button>
+            <button class="key" data-key="7">7</button>
+            <button class="key" data-key="8">8</button>
+            <button class="key" data-key="9">9</button>
+            <button class="key" data-key="*">*</button>
+            <button class="key" data-key="0">0</button>
+            <button class="key" data-key="#">#</button>
+          </div>
         </div>
       </main>
     </section>

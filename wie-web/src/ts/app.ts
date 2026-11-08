@@ -120,17 +120,115 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       (event) => {
         event.preventDefault();
         button.setPointerCapture(event.pointerId);
+        button.classList.add("pressed");
         setKey(`pointer:${event.pointerId}`, key);
       },
       { signal: abortController.signal },
     );
     const releaseKey = (event: PointerEvent) => {
       event.preventDefault();
+      button.classList.remove("pressed");
       setKey(`pointer:${event.pointerId}`);
     };
     button.addEventListener("pointerup", releaseKey, { signal: abortController.signal });
     button.addEventListener("pointercancel", releaseKey, { signal: abortController.signal });
     button.addEventListener("lostpointercapture", releaseKey, { signal: abortController.signal });
+  }
+
+  // 360° joystick: the knob follows the finger freely; the game receives the
+  // dominant direction (4-way, with hysteresis so the stick doesn't flicker
+  // between axes near the diagonals).
+  const joystick = playerView.querySelector<HTMLElement>("#joystick");
+  if (joystick) {
+    const knob = joystick.querySelector<HTMLElement>(".joystick-knob")!;
+    const DEAD_ZONE = 0.22;
+    const AXIS_HYSTERESIS = 1.3;
+    let activePointer: number | undefined;
+    let centerX = 0;
+    let centerY = 0;
+    let radius = 1;
+    let horizontal: "LEFT" | "RIGHT" | undefined;
+    let vertical: "UP" | "DOWN" | undefined;
+
+    const applyDirection = (dx: number, dy: number) => {
+      const magnitude = Math.hypot(dx, dy);
+      if (magnitude < DEAD_ZONE) {
+        horizontal = undefined;
+        vertical = undefined;
+      } else {
+        const ax = Math.abs(dx);
+        const ay = Math.abs(dy);
+        let useHorizontal: boolean;
+        if (horizontal && !vertical) useHorizontal = ay <= ax * AXIS_HYSTERESIS;
+        else if (vertical && !horizontal) useHorizontal = ax > ay * AXIS_HYSTERESIS;
+        else useHorizontal = ax >= ay;
+        if (useHorizontal) {
+          horizontal = dx > 0 ? "RIGHT" : "LEFT";
+          vertical = undefined;
+        } else {
+          vertical = dy > 0 ? "DOWN" : "UP";
+          horizontal = undefined;
+        }
+      }
+      setKey("joystick:h", horizontal);
+      setKey("joystick:v", vertical);
+    };
+
+    const moveKnob = (dx: number, dy: number) => {
+      const magnitude = Math.hypot(dx, dy);
+      const limit = 0.58;
+      const scale = magnitude > limit ? limit / magnitude : 1;
+      knob.style.transform = `translate(${dx * scale * radius}px, ${dy * scale * radius}px)`;
+    };
+
+    const resetJoystick = () => {
+      activePointer = undefined;
+      joystick.classList.remove("active");
+      knob.style.transform = "";
+      applyDirection(0, 0);
+    };
+
+    const track = (event: PointerEvent) => {
+      const dx = (event.clientX - centerX) / radius;
+      const dy = (event.clientY - centerY) / radius;
+      moveKnob(dx, dy);
+      applyDirection(dx, dy);
+    };
+
+    joystick.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (activePointer !== undefined) return;
+        event.preventDefault();
+        const rect = joystick.getBoundingClientRect();
+        centerX = rect.left + rect.width / 2;
+        centerY = rect.top + rect.height / 2;
+        radius = Math.max(1, rect.width / 2);
+        activePointer = event.pointerId;
+        joystick.setPointerCapture(event.pointerId);
+        joystick.classList.add("active");
+        track(event);
+      },
+      { signal: abortController.signal },
+    );
+    joystick.addEventListener(
+      "pointermove",
+      (event) => {
+        if (event.pointerId !== activePointer) return;
+        event.preventDefault();
+        track(event);
+      },
+      { signal: abortController.signal },
+    );
+    const endJoystick = (event: PointerEvent) => {
+      if (event.pointerId !== activePointer) return;
+      event.preventDefault();
+      resetJoystick();
+    };
+    joystick.addEventListener("pointerup", endJoystick, { signal: abortController.signal });
+    joystick.addEventListener("pointercancel", endJoystick, { signal: abortController.signal });
+    joystick.addEventListener("lostpointercapture", endJoystick, { signal: abortController.signal });
+    abortController.signal.addEventListener("abort", resetJoystick);
   }
 
   document.addEventListener(
