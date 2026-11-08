@@ -602,7 +602,7 @@ export const getCheatPanel = (): CheatPanel => {
     prepRow.append(button(`🧴 물약 준비 (${auto.hpKey}번 엘릭서 · ${auto.spKey}번 요정수 99개 등록)`, "secondary-command", () => {
       try {
         const names = prepareAutoPotions(live, SLOT_ORDER.indexOf(auto.hpKey), SLOT_ORDER.indexOf(auto.spKey));
-        setStatus(`${auto.hpKey}번 칸에 ${names.hp}, ${auto.spKey}번 칸에 ${names.sp}를 99개씩 넣고 등록했어요. 화면 아래 단축키 칸에 바로 안 보이면 가방을 한 번 열었다 닫으세요.`);
+        setStatus(`${auto.hpKey}번 칸에 ${names.hp}, ${auto.spKey}번 칸에 ${names.sp}를 99개씩 넣고 등록했어요. 화면 아래 단축키 칸에 아이콘이 떠요.`);
       } catch (error) {
         setStatus(String(error), true);
       }

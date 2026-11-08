@@ -91,6 +91,10 @@ export interface BagEntry {
 /** Quick-slot order used by the game's 등록 menu (1키등록 … #키등록); stored per bag record at +0x21, 0xff = none. */
 export const SLOT_ORDER = ["1", "3", "9", "0", "#"] as const;
 const QUICK_SLOT_OFFSET = 0x21;
+/** Per-slot kind table (u8 × 5): 0 empty, 2 item. The HUD and the key handler read this, not the bag. */
+const SLOT_KIND = 0x01503cda;
+/** Per-slot second table (u8 × 5): 0xff when an item is registered. */
+const SLOT_AUX = 0x01503cf4;
 
 const decoder = (() => {
   try {
@@ -230,6 +234,8 @@ export const registerItem = (api: CheatApi, entry: BagEntry, quickSlot: number):
     if (other.quickSlot === quickSlot && other.address !== entry.address) api.write(other.address + QUICK_SLOT_OFFSET, 1, false, 0xff);
   }
   api.write(entry.address + QUICK_SLOT_OFFSET, 1, false, quickSlot);
+  api.write(SLOT_KIND + quickSlot, 1, false, 2);
+  api.write(SLOT_AUX + quickSlot, 1, false, 0xff);
 };
 
 export const slotItem = (api: CheatApi, quickSlot: number): BagEntry | undefined =>
