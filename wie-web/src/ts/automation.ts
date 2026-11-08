@@ -1,7 +1,9 @@
 import type { CheatApi } from "./backend";
 import {
-  SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, readSkills, readSlot, readVitals, registerSkill, topUpSlotItems, writeSlot,
+  HL3, SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, readSkills, readSlot, readVitals, registerSkill, topUpSlotItems,
+  writeSlot,
 } from "./hl3";
+import { HL3_SKILLS } from "./hl3_skills";
 
 /** Quick-slot keys of 영웅서기3 (회복 아이템·스킬 등록 칸). */
 export const SLOT_KEYS = ["1", "3", "9", "0", "#"] as const;
@@ -143,6 +145,9 @@ const POTION_HOLD_MS = 90;
 const SKILL_HOLD_MS = 140;
 /** Auto-skill keeps firing this long after the last attack press of a combo. */
 const ATTACK_GRACE_MS = 1500;
+/** How long after a replaced press we wait for SP to drop before calling the skill dropped, and how often to retry it. */
+const SKILL_CONFIRM_MS = 350;
+const SKILL_MAX_RETRIES = 2;
 /** Attack presses needed within ATTACK_BURST_MS to count as fighting; single taps talk to NPCs and confirm dialogs. */
 const ATTACK_BURST_COUNT = 3;
 const ATTACK_BURST_MS = 1500;
@@ -159,6 +164,8 @@ class Automation {
   private attackHeld = false;
   private attackPresses: number[] = [];
   private attackUntil = 0;
+  /** Last replaced attack press, until SP shows the skill went out. */
+  private pendingSkill: { key: string; spBefore: number; at: number; retries: number } | undefined;
   private lastSkillAt = 0;
   private roundRobin = 0;
 
@@ -245,26 +252,89 @@ class Automation {
     if (!onField) {
       this.attackPresses = [];
       this.attackUntil = 0;
+      this.pendingSkill = undefined;
       return undefined;
     }
     this.attackPresses = this.attackPresses.filter(time => now - time <= ATTACK_BURST_MS);
     this.attackPresses.push(now);
     if (this.attackPresses.length >= ATTACK_BURST_COUNT || now < this.attackUntil) this.attackUntil = now + ATTACK_GRACE_MS;
     if (!this.attacking(now)) return undefined;
-    if (now - this.lastSkillAt < this.config.skillGap || this.macroQueue.length > 0) return undefined;
+    if (this.macroQueue.length > 0) return undefined;
 
-    const keys = skillSlotKeys(this.config).filter(key => this.config.skillSlots.includes(key) && key !== this.config.macroSlot);
-    const macroSkills = this.config.macros.filter(macro => macro.auto).flatMap(macro => macro.skills);
-    const total = keys.length + macroSkills.length;
-    if (total === 0) return undefined;
-    const position = this.roundRobin % total;
-    this.roundRobin = (this.roundRobin + 1) % total;
-    this.lastSkillAt = now;
-    if (position < keys.length) return keys[position];
+    let sp = 0;
     try {
-      return this.prepareMacroSkill(api, macroSkills[position - keys.length]) ? this.config.macroSlot : undefined;
+      sp = readVitals(api).sp;
     } catch {
       return undefined;
+    }
+
+    // Did the previous replacement actually fire? Casting costs SP; if it did not go out (the game was
+    // still in a combo animation) repeat the same key instead of moving on.
+    const pending = this.pendingSkill;
+    if (pending) {
+      if (sp < pending.spBefore) this.pendingSkill = undefined;
+      else if (now - pending.at < SKILL_CONFIRM_MS) return undefined;
+      else if (pending.retries < SKILL_MAX_RETRIES) {
+        pending.retries += 1;
+        pending.at = now;
+        pending.spBefore = sp;
+        this.lastSkillAt = now;
+        return pending.key;
+      } else this.pendingSkill = undefined;
+    }
+    if (now - this.lastSkillAt < this.config.skillGap) return undefined;
+
+    const candidates: Array<{ key: string; ref?: SkillRef; cost: number }> = [];
+    for (const key of skillSlotKeys(this.config)) {
+      if (!this.config.skillSlots.includes(key) || key === this.config.macroSlot) continue;
+      candidates.push({ key, cost: this.slotSkillCost(api, SLOT_ORDER.indexOf(key)) });
+    }
+    for (const macro of this.config.macros) {
+      if (!macro.auto) continue;
+      for (const ref of macro.skills) candidates.push({ key: this.config.macroSlot, ref, cost: this.skillCost(ref) });
+    }
+    if (candidates.length === 0) return undefined;
+    // Round-robin, skipping skills the player cannot afford right now.
+    for (let offset = 0; offset < candidates.length; offset += 1) {
+      const position = (this.roundRobin + offset) % candidates.length;
+      const candidate = candidates[position];
+      if (candidate.cost * 10 > sp) continue;
+      if (candidate.ref) {
+        try {
+          if (!this.prepareMacroSkill(api, candidate.ref)) continue;
+        } catch {
+          continue;
+        }
+      }
+      this.roundRobin = (position + 1) % candidates.length;
+      this.lastSkillAt = now;
+      // A free skill cannot be confirmed through SP; fire it once and move on.
+      this.pendingSkill = candidate.cost > 0 ? { key: candidate.key, spBefore: sp, at: now, retries: 0 } : undefined;
+      return candidate.key;
+    }
+    return undefined;
+  }
+
+  /** SP cost (display units) of the skill registered in a quick slot, 0 when unknown. */
+  private slotSkillCost(api: CheatApi, slot: number): number {
+    try {
+      const snapshot = readSlot(api, slot);
+      if (snapshot.kind !== 1) return 0;
+      return this.skillCost({ weapon: snapshot.skillX & 0x40 ? "B" : "A", index: snapshot.idx });
+    } catch {
+      return 0;
+    }
+  }
+
+  private skillCost(ref: SkillRef): number {
+    const api = this.context?.getCheats();
+    if (!api) return 0;
+    try {
+      const category = api.read(ref.weapon === "A" ? HL3.WEAPON_A : HL3.WEAPON_B, 1, false);
+      const record = HL3_SKILLS[category]?.skills[ref.index === 0 ? 0 : ref.index + 6];
+      return record?.sp ?? 0;
+    } catch {
+      return 0;
     }
   }
 
@@ -291,6 +361,7 @@ class Automation {
     this.attackHeld = false;
     this.attackPresses = [];
     this.attackUntil = 0;
+    this.pendingSkill = undefined;
   }
 
   private tick() {
@@ -311,6 +382,7 @@ class Automation {
       this.attackHeld = false;
       this.attackPresses = [];
       this.attackUntil = 0;
+      this.pendingSkill = undefined;
     }
     if (this.config.potionOn) {
       try {
