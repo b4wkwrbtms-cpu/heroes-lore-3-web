@@ -1,6 +1,7 @@
 import { WieWeb } from "@pkg";
 
 import type { PlayerSession, SessionEvent } from "../backend";
+import { presentFrame } from "../display";
 import { AudioPlayer } from "../midi";
 import { rustPanic } from "../panic";
 import type { EmulatorHost } from "./tauri-host";
@@ -115,6 +116,7 @@ export const startWasmSession = (
     if (!running || suspended) return;
     try {
       emulator.update();
+      presentFrame();
       if (emulator.is_exited()) {
         void session.stop();
         return;

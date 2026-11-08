@@ -243,49 +243,59 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     button.addEventListener("lostpointercapture", releaseKey, { signal: abortController.signal });
   }
 
-  // 360° joystick: the knob follows the finger freely; the game receives the
-  // dominant direction (4-way, with hysteresis so the stick doesn't flicker
-  // between axes near the diagonals).
+  // 360° joystick with a floating origin: the direction is measured from where the thumb first
+  // touched and mapped to four 90° sectors with a little hysteresis so it never flickers at the
+  // borders. (The game ignores a second held direction, so diagonals would only add noise.)
   const joystick = playerView.querySelector<HTMLElement>("#joystick");
   if (joystick) {
     const knob = joystick.querySelector<HTMLElement>(".joystick-knob")!;
-    const DEAD_ZONE = 0.22;
-    const AXIS_HYSTERESIS = 1.3;
+    const DEAD_ZONE_PX = 9;
+    const HYSTERESIS_DEG = 9;
+    const KNOB_LIMIT = 0.62;
     let activePointer: number | undefined;
+    let originX = 0;
+    let originY = 0;
     let centerX = 0;
     let centerY = 0;
     let radius = 1;
+    let sector: number | undefined;
     let horizontal: "LEFT" | "RIGHT" | undefined;
     let vertical: "UP" | "DOWN" | undefined;
 
     const applyDirection = (dx: number, dy: number) => {
       const magnitude = Math.hypot(dx, dy);
-      if (magnitude < DEAD_ZONE) {
+      if (magnitude < DEAD_ZONE_PX) {
+        sector = undefined;
         horizontal = undefined;
         vertical = undefined;
       } else {
-        const ax = Math.abs(dx);
-        const ay = Math.abs(dy);
-        let useHorizontal: boolean;
-        if (horizontal && !vertical) useHorizontal = ay <= ax * AXIS_HYSTERESIS;
-        else if (vertical && !horizontal) useHorizontal = ax > ay * AXIS_HYSTERESIS;
-        else useHorizontal = ax >= ay;
-        if (useHorizontal) {
-          horizontal = dx > 0 ? "RIGHT" : "LEFT";
-          vertical = undefined;
-        } else {
-          vertical = dy > 0 ? "DOWN" : "UP";
-          horizontal = undefined;
+        const sectors = 4;
+        const width = 360 / sectors;
+        let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+        if (angle < 0) angle += 360;
+        const nearest = Math.round(angle / width) % sectors;
+        if (sector === undefined || sector >= sectors) sector = nearest;
+        else {
+          let delta = angle - sector * width;
+          if (delta > 180) delta -= 360;
+          if (delta < -180) delta += 360;
+          if (Math.abs(delta) > width / 2 + HYSTERESIS_DEG) sector = nearest;
         }
+        const heading = sector * width;
+        const cos = Math.cos((heading * Math.PI) / 180);
+        const sin = Math.sin((heading * Math.PI) / 180);
+        horizontal = cos > 0.5 ? "RIGHT" : cos < -0.5 ? "LEFT" : undefined;
+        vertical = sin > 0.5 ? "DOWN" : sin < -0.5 ? "UP" : undefined;
       }
       setKey("joystick:h", horizontal);
       setKey("joystick:v", vertical);
     };
 
-    const moveKnob = (dx: number, dy: number) => {
+    const moveKnob = (x: number, y: number) => {
+      const dx = (x - centerX) / radius;
+      const dy = (y - centerY) / radius;
       const magnitude = Math.hypot(dx, dy);
-      const limit = 0.58;
-      const scale = magnitude > limit ? limit / magnitude : 1;
+      const scale = magnitude > KNOB_LIMIT ? KNOB_LIMIT / magnitude : 1;
       knob.style.transform = `translate(${dx * scale * radius}px, ${dy * scale * radius}px)`;
     };
 
@@ -297,10 +307,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     };
 
     const track = (event: PointerEvent) => {
-      const dx = (event.clientX - centerX) / radius;
-      const dy = (event.clientY - centerY) / radius;
-      moveKnob(dx, dy);
-      applyDirection(dx, dy);
+      moveKnob(event.clientX, event.clientY);
+      applyDirection(event.clientX - originX, event.clientY - originY);
     };
 
     joystick.addEventListener(
@@ -312,6 +320,16 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         centerX = rect.left + rect.width / 2;
         centerY = rect.top + rect.height / 2;
         radius = Math.max(1, rect.width / 2);
+        // Floating origin: a touch well inside the ring starts from where the thumb landed; a touch
+        // near the rim is already a direction, so measure that one from the centre.
+        const fromCenter = Math.hypot(event.clientX - centerX, event.clientY - centerY);
+        if (fromCenter < radius * 0.45) {
+          originX = event.clientX;
+          originY = event.clientY;
+        } else {
+          originX = centerX;
+          originY = centerY;
+        }
         activePointer = event.pointerId;
         joystick.setPointerCapture(event.pointerId);
         joystick.classList.add("active");

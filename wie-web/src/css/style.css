@@ -519,6 +519,30 @@ html[data-screen-fit="contain"] #canvas {
   object-fit: contain;
 }
 
+/* The game never draws soft-key labels; keep the on-screen soft keys out of the way (the keypad sheet still has them). */
+.softkey {
+  display: none;
+}
+
+/* WebGL upscaler output; the emulator's own canvas stays as the (invisible) frame source. */
+#screen {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+#screen[hidden] {
+  display: none;
+}
+
+#canvas.hq-source {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .player-status {
   position: absolute;
   inset: 0;

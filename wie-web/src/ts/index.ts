@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/browser";
 import { wasmIntegration } from "@sentry/wasm";
 
 import { recordPageView } from "./analytics";
+import { HqDisplay, loadScreenQuality, setCurrentDisplay, storeScreenQuality } from "./display";
 import { runApp } from "./app";
 import { initializeWie, type LibraryApp } from "./backend";
 import { getLocale, initializeLocalization, t } from "./i18n";
@@ -28,6 +29,27 @@ const main = async () => {
     canvas.width = 240;
     canvas.height = 320;
     output.prepend(canvas);
+    // Second canvas for the WebGL upscaler; the emulator keeps painting into #canvas.
+    const screen = document.createElement("canvas");
+    screen.id = "screen";
+    screen.hidden = true;
+    canvas.after(screen);
+    const display = new HqDisplay(canvas, screen);
+    setCurrentDisplay(display);
+    const applyQuality = (value: "hq" | "pixel") => {
+      document.documentElement.dataset.screenQuality = value;
+      display.setEnabled(value === "hq");
+    };
+    applyQuality(loadScreenQuality());
+    const qualitySelect = document.getElementById("screen-quality") as HTMLSelectElement | null;
+    if (qualitySelect) {
+      qualitySelect.value = loadScreenQuality();
+      qualitySelect.addEventListener("change", () => {
+        const value = qualitySelect.value === "pixel" ? "pixel" : "hq";
+        storeScreenQuality(value);
+        applyQuality(value);
+      });
+    }
   } else {
     output.className = "native-preparation";
     const keypadTopRow = document.querySelector(".button-container p")!;

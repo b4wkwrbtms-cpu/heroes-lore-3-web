@@ -141,8 +141,10 @@ const newPotionState = (): PotionState => ({ lastPress: 0, backoff: 1500, valueA
 const TICK_MS = 100;
 const POTION_HOLD_MS = 90;
 const SKILL_HOLD_MS = 90;
-/** Auto-skill keeps firing this long after the attack key is released, so tapping attack repeatedly still counts. */
-const ATTACK_GRACE_MS = 1500;
+/** Auto-skill keeps firing this long after a qualifying attack hold ends. */
+const ATTACK_GRACE_MS = 1200;
+/** A tap on attack talks to NPCs and confirms dialogs; only a real hold (a combo) arms the auto-skill. */
+const ATTACK_HOLD_MS = 350;
 const MAX_BACKOFF_MS = 12_000;
 
 type Listener = (config: AutoConfig) => void;
@@ -154,6 +156,7 @@ class Automation {
   private listeners = new Set<Listener>();
 
   private attackHeld = false;
+  private attackDownAt = 0;
   private attackUntil = 0;
   private lastSkillAt = 0;
   private roundRobin = 0;
@@ -217,8 +220,19 @@ class Automation {
   /** Called with every key transition that reaches the game. */
   notifyKey(key: string, pressed: boolean) {
     if (key !== ATTACK_KEY) return;
-    this.attackHeld = pressed;
-    if (!pressed) this.attackUntil = performance.now() + ATTACK_GRACE_MS;
+    const now = performance.now();
+    if (pressed) {
+      this.attackHeld = true;
+      this.attackDownAt = now;
+      return;
+    }
+    if (this.attackHeld && now - this.attackDownAt >= ATTACK_HOLD_MS) this.attackUntil = now + ATTACK_GRACE_MS;
+    this.attackHeld = false;
+  }
+
+  /** True while attack has been held long enough to count as fighting (or shortly after). */
+  private attacking(now: number): boolean {
+    return (this.attackHeld && now - this.attackDownAt >= ATTACK_HOLD_MS) || now < this.attackUntil;
   }
 
   private emit() {
@@ -266,7 +280,7 @@ class Automation {
       }
     }
     this.tickMacro(api, context, now);
-    if (onField && this.config.skillOn && (this.attackHeld || now < this.attackUntil)) this.tickSkill(api, context, now);
+    if (onField && this.config.skillOn && this.attacking(now)) this.tickSkill(api, context, now);
   }
 
   private borrowedSlot(): number {
@@ -295,7 +309,7 @@ class Automation {
       this.macroNextAt = now + this.config.skillGap;
       return;
     }
-    if (this.macroRestore && !(this.config.skillOn && (this.attackHeld || now < this.attackUntil))) {
+    if (this.macroRestore && !(this.config.skillOn && this.attacking(now))) {
       try {
         writeSlot(api, this.macroRestore.slot, this.macroRestore.snapshot);
       } catch {
