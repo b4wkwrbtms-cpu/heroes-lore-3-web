@@ -101,8 +101,26 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     }
   };
 
+  const flashTimers = new Map<HTMLButtonElement, number>();
+  /** Light up a pad button for a moment when the automation presses its key. */
+  const flashKey = (key: string) => {
+    for (const button of buttons) {
+      if (button.dataset.key !== key) continue;
+      button.classList.add("pressed", "auto-flash");
+      window.clearTimeout(flashTimers.get(button));
+      flashTimers.set(button, window.setTimeout(() => button.classList.remove("pressed", "auto-flash"), 220));
+    }
+  };
   const setKey = (source: string, key?: string) => {
     if (!session || preparing || suspended || ending) return;
+    // While the player mashes attack, the automation turns some of those presses into skill keys.
+    if (key === "OK" && !source.startsWith("auto:")) {
+      const replacement = automation.interceptAttack();
+      if (replacement) {
+        key = replacement;
+        flashKey(replacement);
+      }
+    }
     const previous = inputs.get(source);
     if (previous === key) return;
     if (previous) {
@@ -124,6 +142,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   let autoPressId = 0;
   const pressKey = (key: string, holdMs = 90) => {
     const source = `auto:${key}:${autoPressId++}`;
+    flashKey(key);
     setKey(source, key);
     window.setTimeout(() => setKey(source), holdMs);
   };

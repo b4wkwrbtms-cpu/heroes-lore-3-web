@@ -58,7 +58,7 @@ export const defaultAutoConfig = (): AutoConfig => ({
   infinitePotions: true,
   skillOn: false,
   skillSlots: ["1", "3"],
-  skillGap: 500,
+  skillGap: 400,
   macros: Array.from({ length: MACRO_COUNT }, () => ({ skills: [], auto: false })),
   macroSlot: "#",
 });
@@ -140,12 +140,12 @@ const newPotionState = (): PotionState => ({ lastPress: 0, backoff: 1500, valueA
 
 const TICK_MS = 100;
 const POTION_HOLD_MS = 90;
-const SKILL_HOLD_MS = 90;
+const SKILL_HOLD_MS = 140;
 /** Auto-skill keeps firing this long after the last attack press of a combo. */
 const ATTACK_GRACE_MS = 1500;
 /** Attack presses needed within ATTACK_BURST_MS to count as fighting; single taps talk to NPCs and confirm dialogs. */
 const ATTACK_BURST_COUNT = 3;
-const ATTACK_BURST_MS = 1000;
+const ATTACK_BURST_MS = 1500;
 const MAX_BACKOFF_MS = 12_000;
 
 type Listener = (config: AutoConfig) => void;
@@ -221,13 +221,51 @@ class Automation {
   /** Called with every key transition that reaches the game. */
   notifyKey(key: string, pressed: boolean) {
     if (key !== ATTACK_KEY) return;
-    const now = performance.now();
     this.attackHeld = pressed;
-    if (!pressed) return;
+  }
+
+  /**
+   * Called for every attack press from the player's thumb. While the player is mashing attack
+   * (ATTACK_BURST_COUNT presses within ATTACK_BURST_MS) every `skillGap` one of those presses is
+   * turned into a skill key instead: the game accepts input at exactly those moments, whereas extra
+   * key presses in the middle of a combo tend to be dropped. Returns the key to press instead of attack.
+   */
+  interceptAttack(): string | undefined {
+    const context = this.context;
+    if (!context || !this.config.skillOn) return undefined;
+    const api = context.getCheats();
+    if (!api) return undefined;
+    const now = performance.now();
+    let onField = false;
+    try {
+      onField = isOnField(api);
+    } catch {
+      onField = false;
+    }
+    if (!onField) {
+      this.attackPresses = [];
+      this.attackUntil = 0;
+      return undefined;
+    }
     this.attackPresses = this.attackPresses.filter(time => now - time <= ATTACK_BURST_MS);
     this.attackPresses.push(now);
-    // Mashing attack (3+ presses within a second) means a fight; keep the rotation alive while the presses continue.
     if (this.attackPresses.length >= ATTACK_BURST_COUNT || now < this.attackUntil) this.attackUntil = now + ATTACK_GRACE_MS;
+    if (!this.attacking(now)) return undefined;
+    if (now - this.lastSkillAt < this.config.skillGap || this.macroQueue.length > 0) return undefined;
+
+    const keys = skillSlotKeys(this.config).filter(key => this.config.skillSlots.includes(key) && key !== this.config.macroSlot);
+    const macroSkills = this.config.macros.filter(macro => macro.auto).flatMap(macro => macro.skills);
+    const total = keys.length + macroSkills.length;
+    if (total === 0) return undefined;
+    const position = this.roundRobin % total;
+    this.roundRobin = (this.roundRobin + 1) % total;
+    this.lastSkillAt = now;
+    if (position < keys.length) return keys[position];
+    try {
+      return this.prepareMacroSkill(api, macroSkills[position - keys.length]) ? this.config.macroSlot : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** True while the player is mashing attack (or shortly after the last press). */
@@ -282,19 +320,24 @@ class Automation {
       }
     }
     this.tickMacro(api, context, now);
-    if (onField && this.config.skillOn && this.attacking(now)) this.tickSkill(api, context, now);
   }
 
   private borrowedSlot(): number {
     return SLOT_ORDER.indexOf(this.config.macroSlot);
   }
 
-  private fireSkill(api: CheatApi, context: AutoContext, ref: SkillRef): boolean {
+  /** Register a macro skill into the borrowed slot (remembering what was there) so pressing that key fires it. */
+  private prepareMacroSkill(api: CheatApi, ref: SkillRef): boolean {
     const skill = readSkills(api).find(candidate => candidate.weapon === ref.weapon && candidate.index === ref.index);
     if (!skill || skill.level <= 0) return false;
     const slot = this.borrowedSlot();
     if (!this.macroRestore) this.macroRestore = { slot, snapshot: readSlot(api, slot) };
     registerSkill(api, slot, skill);
+    return true;
+  }
+
+  private fireSkill(api: CheatApi, context: AutoContext, ref: SkillRef): boolean {
+    if (!this.prepareMacroSkill(api, ref)) return false;
     context.pressKey(this.config.macroSlot, SKILL_HOLD_MS);
     return true;
   }
@@ -357,27 +400,6 @@ class Automation {
     state.valueAtPress = value;
     state.rose = false;
     context.pressKey(key, POTION_HOLD_MS);
-  }
-
-  /** Presses the checked slots (and auto macros' skills) in turn; the game itself ignores a skill still cooling down. */
-  private tickSkill(api: CheatApi, context: AutoContext, now: number) {
-    if (now - this.lastSkillAt < this.config.skillGap || this.macroQueue.length > 0) return;
-    const keys = skillSlotKeys(this.config).filter(key => this.config.skillSlots.includes(key) && key !== this.config.macroSlot);
-    const macroSkills = this.config.macros.filter(macro => macro.auto).flatMap(macro => macro.skills);
-    const total = keys.length + macroSkills.length;
-    if (total === 0) return;
-    const position = this.roundRobin % total;
-    this.roundRobin = (this.roundRobin + 1) % total;
-    this.lastSkillAt = now;
-    if (position < keys.length) {
-      context.pressKey(keys[position], SKILL_HOLD_MS);
-      return;
-    }
-    try {
-      this.fireSkill(api, context, macroSkills[position - keys.length]);
-    } catch {
-      // game not ready
-    }
   }
 }
 

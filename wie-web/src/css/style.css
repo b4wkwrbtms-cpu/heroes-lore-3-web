@@ -749,6 +749,11 @@ html[data-screen-fit="contain"] #canvas {
   background: #6a3fb0;
 }
 
+/* A key the automation pressed on the player's behalf. */
+.key.auto-flash {
+  box-shadow: 0 0 0 2px #fcd34d inset, 0 0 12px rgba(252, 211, 77, 0.6);
+}
+
 .key {
   display: flex;
   min-width: 0;
