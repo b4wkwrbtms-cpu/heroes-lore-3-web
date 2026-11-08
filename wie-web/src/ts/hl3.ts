@@ -5,6 +5,43 @@
 import type { CheatApi } from "./backend";
 import { HL3_ITEMS, type Hl3Item } from "./hl3_items";
 
+export const ORBS: Array<{ i: number; n: string; d: string }> = [
+  { i: 0, n: "투신의", d: "HPMAX +%" },
+  { i: 1, n: "공명의", d: "HP회복 +%" },
+  { i: 2, n: "뇌제의", d: "물리공격 +%" },
+  { i: 3, n: "금강의", d: "물리방어 +%" },
+  { i: 4, n: "정령의", d: "특수방어 +%" },
+  { i: 5, n: "사신의", d: "명중 +%" },
+  { i: 6, n: "영제의", d: "오브 효과 6" },
+  { i: 7, n: "철벽의", d: "오브 효과 7" },
+  { i: 8, n: "속박의", d: "오브 효과 8" },
+  { i: 9, n: "결의의", d: "오브 효과 9" },
+  { i: 10, n: "현자의", d: "오브 효과 10" },
+  { i: 11, n: "마도의", d: "오브 효과 11" },
+  { i: 12, n: "흡혈의", d: "HP흡수 +%" },
+  { i: 13, n: "폭풍의", d: "오브 효과 13" },
+  { i: 14, n: "직격의", d: "오브 효과 14" },
+];
+
+export const gradeLabel = (name: string): string => {
+  switch (name[0]) {
+    case "|":
+      return "레어";
+    case "$":
+      return "에픽";
+    case "{":
+      return "영웅";
+    case "@":
+      return "전설";
+    case "}":
+      return "네트워크/캐시";
+    default:
+      return "";
+  }
+};
+
+export const displayName = (name: string): string => name.replace(/^[|${}@]/, "");
+
 export const HL3 = {
   /** u32 소지금 */
   GOLD: 0x01503b54,
@@ -19,8 +56,13 @@ export const HL3 = {
   /** u16 level, u32 exp */
   LEVEL: 0x01503b6a,
   EXP: 0x01503b6c,
-  /** u8 힘, 체력, 정신, 민첩 */
+  /** u8 힘, 체력, 정신, 민첩 (two copies the game keeps in step) */
   STATS: 0x01503b5b,
+  STATS2: 0x01503b60,
+  /** u16 ATT1, ATT2, P.DEF, M.DEF, CRI, RES, ACC, DOD (final values shown on the status screen) */
+  FINAL: 0x01503c18,
+  /** second copy: ATT1 @+0, ATT2 @+2, ACC? @+4, CRI @+6, PDEF @+8, RES @+10, MDEF @+12, ... */
+  FINAL2: 0x01503b86,
   HEAP_LO: 0x40000000,
   HEAP_HI: 0x50000000,
 } as const;
@@ -185,3 +227,91 @@ export const QUICK_ITEMS: Array<[number, number, string]> = [
 
 export const findItem = (category: number, name: string): Hl3Item | undefined =>
   HL3_ITEMS[category]?.items.find(item => item.n.replace(/^[^가-힣A-Za-z0-9]+/, "") === name);
+
+export interface EquipEntry {
+  slot: number;
+  address: number;
+  name: string;
+  category: number;
+  index: number;
+  orb: number;
+  orbValue: number;
+  stat: number;
+  bagAddress?: number;
+}
+
+/** Worn equipment (.bss copies) joined with the matching bag records. */
+export const readEquipment = (api: CheatApi): EquipEntry[] => {
+  let bag: BagEntry[] = [];
+  try {
+    bag = readBag(api);
+  } catch {
+    bag = [];
+  }
+  const entries: EquipEntry[] = [];
+  for (let slot = 0; slot < HL3.EQUIP_SLOTS; slot += 1) {
+    const address = HL3.EQUIP + slot * HL3.RECORD;
+    const record = api.dump(address, HL3.RECORD);
+    if (record.length < HL3.RECORD || record[0x1f] !== 1) continue;
+    const category = u16(record, 0x22);
+    const index = u16(record, 0x24);
+    const match = bag.find(entry => entry.equipped && entry.category === category && entry.index === index);
+    entries.push({
+      slot,
+      address,
+      name: decodeName(record.subarray(0, 30)),
+      category,
+      index,
+      orb: record[0x34],
+      orbValue: u16(record, 0x38),
+      stat: u16(record, 0x3a),
+      bagAddress: match?.address,
+    });
+  }
+  return entries;
+};
+
+const recordsFor = (entry: EquipEntry): number[] => (entry.bagAddress !== undefined ? [entry.address, entry.bagAddress] : [entry.address]);
+
+/** Socket an orb (by table index) with the given percent value into a worn item (and its bag record). */
+export const setOrb = (api: CheatApi, entry: EquipEntry, orb: number, percent: number): void => {
+  const value = Math.max(0, Math.min(percent, 9999));
+  for (const address of recordsFor(entry)) {
+    if (orb < 0) {
+      api.writeBytes(address + 0x34, new Uint8Array([0xff, 0x00, 0xff, 0xff, 0x00, 0x00]));
+    } else {
+      api.writeBytes(address + 0x34, new Uint8Array([orb & 0xff, 0x00, 0xff, 0xff, value & 0xff, (value >> 8) & 0xff]));
+    }
+  }
+};
+
+/** Set the item's own attack/defense number. Takes effect in battle after re-equipping. */
+export const setItemStat = (api: CheatApi, entry: EquipEntry, stat: number): void => {
+  const value = Math.max(0, Math.min(stat, 9999));
+  for (const address of recordsFor(entry)) api.write(address + 0x3a, 2, false, value);
+};
+
+export const getLevel = (api: CheatApi): number => api.read(HL3.LEVEL, 2, false);
+export const setLevel = (api: CheatApi, level: number): void => api.write(HL3.LEVEL, 2, false, Math.max(1, Math.min(level, 99)));
+
+export const setBaseStats = (api: CheatApi, value: number): void => {
+  const v = Math.max(1, Math.min(value, 255));
+  api.writeBytes(HL3.STATS, new Uint8Array([v, v, v, v]));
+  api.writeBytes(HL3.STATS2, new Uint8Array([v, v, v, v]));
+};
+
+/** Freeze the derived battle stats (both copies the game keeps). CRI/RES are capped at 255 by the game. */
+export const freezeBattleStats = (api: CheatApi, on: boolean): void => {
+  const first = [9999, 9999, 9999, 9999, 255, 255, 255, 255]; // ATT1 ATT2 PDEF MDEF CRI RES ACC DOD
+  const second: Array<[number, number]> = [[0, 9999], [2, 9999], [4, 255], [6, 255], [8, 9999], [10, 255], [12, 9999], [16, 255], [18, 255]];
+  for (let i = 0; i < first.length; i += 1) {
+    const address = HL3.FINAL + i * 2;
+    if (on) api.freeze(address, 2, false, first[i]);
+    else api.unfreeze(address);
+  }
+  for (const [offset, value] of second) {
+    const address = HL3.FINAL2 + offset;
+    if (on) api.freeze(address, 2, false, value);
+    else api.unfreeze(address);
+  }
+};

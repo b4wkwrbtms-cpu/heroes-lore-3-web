@@ -1,7 +1,10 @@
 import { X, createIcons } from "lucide";
 
 import type { CheatApi } from "./backend";
-import { HL3, QUICK_ITEMS, freezeGold, getGold, giveItem, isHeroesLore3, readBag, setGold } from "./hl3";
+import {
+  HL3, ORBS, QUICK_ITEMS, displayName, freezeBattleStats, freezeGold, getGold, getLevel, giveItem, gradeLabel,
+  isHeroesLore3, readBag, readEquipment, setBaseStats, setGold, setItemStat, setLevel, setOrb,
+} from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
 
 export interface CheatContext {
@@ -57,6 +60,7 @@ type Step =
   | { kind: "done"; target: Target; name: string };
 
 const storageKey = (appId: string) => `wie_cheats_${appId}`;
+const BATTLE_KEY = "전투 능력치 최대 고정";
 
 const loadSaved = (appId: string): SavedCheat[] => {
   try {
@@ -398,9 +402,11 @@ export const getCheatPanel = (): CheatPanel => {
       itemSelect.replaceChildren();
       const table = HL3_ITEMS[hl3Category];
       for (const item of table.items) {
+        if (item.n.includes("아래부터")) continue;
         const extra = item.s !== undefined && item.s > 0 ? ` · ${table.kind === "equip" ? (hl3Category <= 3 || hl3Category === 11 ? "방" : "공") + item.s : ""}` : "";
         const level = item.l !== undefined && item.l > 0 && item.l < 200 ? ` · Lv${item.l}` : "";
-        const option = el("option", undefined, `${item.n}${level}${extra}`);
+        const grade = gradeLabel(item.n);
+        const option = el("option", undefined, `${displayName(item.n)}${grade ? ` [${grade}]` : ""}${level}${extra}`);
         option.value = String(item.i);
         itemSelect.append(option);
       }
@@ -443,6 +449,135 @@ export const getCheatPanel = (): CheatPanel => {
     }));
     body.append(countRow);
 
+    // 캐릭터
+    body.append(el("p", "cheat-lead", "⬆️ 캐릭터"));
+    let levelText = "";
+    try {
+      levelText = ` (지금 Lv${getLevel(live)})`;
+    } catch {
+      levelText = "";
+    }
+    const battleOn = saved.some(cheat => cheat.name === BATTLE_KEY);
+    const charRow = el("div", "cheat-item-actions");
+    charRow.append(
+      button(`레벨 99${levelText}`, "secondary-command", () => {
+        try {
+          setLevel(live, 99);
+          setStatus("레벨을 99로 바꿨어요. 높은 레벨 장비를 바로 장착할 수 있어요.");
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+      button("기본 스탯 200", "secondary-command", () => {
+        try {
+          setBaseStats(live, 200);
+          setStatus("힘·체력·정신·민첩을 200으로 바꿨어요. 상태창에서 확인하세요 (레벨업이나 장비 교체 때 다시 계산돼요).");
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+      button(battleOn ? "전투 능력치 최대 고정 끄기" : "전투 능력치 최대 고정 (공·방 9999)", battleOn ? "primary-command" : "secondary-command", () => {
+        try {
+          freezeBattleStats(live, !battleOn);
+          saved = saved.filter(cheat => cheat.name !== BATTLE_KEY);
+          if (!battleOn) saved.push({ name: BATTLE_KEY, address: HL3.FINAL, width: 2, bigEndian: false, value: 9999, freeze: true });
+          persist();
+          setStatus(!battleOn ? "ATT/DEF 9999, 명중·회피·기절·저항 255로 고정했어요. 게임을 켤 때마다 자동 적용." : "능력치 고정을 껐어요.");
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+    );
+    body.append(charRow);
+
+    // 장착 장비 강화
+    body.append(el("p", "cheat-lead", "🔨 장착 장비 강화 (오브 결합 · 공/방 수치)"));
+    body.append(el("p", "cheat-muted", "오브 효과는 바로 표시돼요. 공/방 수치는 장비를 한 번 해제했다가 다시 장착해야 전투에 반영됩니다."));
+    try {
+      const gear = readEquipment(live);
+      if (gear.length === 0) body.append(el("p", "cheat-muted", "장착 중인 장비가 없어요."));
+      const seen = new Set<string>();
+      for (const entry of gear) {
+        const key = `${entry.category}:${entry.index}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const item = el("div", "cheat-item");
+        const info = el("div", "cheat-item-info");
+        const orb = ORBS.find(o => o.i === entry.orb);
+        const isWeapon = entry.category >= 4 && entry.category <= 10;
+        info.append(
+          el("strong", undefined, `${orb ? `${orb.n} ` : ""}${displayName(entry.name)}`),
+          el("span", undefined, `${HL3_ITEMS[entry.category]?.label ?? ""} · ${isWeapon ? "공" : "방"} ${entry.stat}${orb ? ` · ${orb.d.replace("%", `${entry.orbValue}%`)}` : ""}`),
+        );
+        item.append(info);
+        const row1 = el("div", "cheat-row");
+        const statInput = el("input") as HTMLInputElement;
+        statInput.type = "text";
+        statInput.inputMode = "numeric";
+        statInput.value = String(Math.min(9999, Math.max(entry.stat * 5, 500)));
+        row1.append(el("span", undefined, isWeapon ? "공격" : "방어"), statInput, button("적용", "secondary-command", () => {
+          const value = parseNumber(statInput.value);
+          if (value === undefined) {
+            setStatus("숫자를 입력해 주세요.", true);
+            return;
+          }
+          try {
+            setItemStat(live, entry, value);
+            setStatus(`${displayName(entry.name)} ${isWeapon ? "공격" : "방어"} ${formatNumber(value)} 적용. 장비 해제 후 다시 장착하면 전투에 반영돼요.`);
+          } catch (error) {
+            setStatus(String(error), true);
+          }
+        }));
+        item.append(row1);
+        const row2 = el("div", "cheat-row");
+        const orbSelect = el("select") as HTMLSelectElement;
+        const none = el("option", undefined, "오브 없음");
+        none.value = "-1";
+        orbSelect.append(none);
+        for (const o of ORBS) {
+          const option = el("option", undefined, `${o.n} 오브 (${o.d})`);
+          option.value = String(o.i);
+          orbSelect.append(option);
+        }
+        orbSelect.value = String(orb ? orb.i : isWeapon ? 2 : 3);
+        const pctInput = el("input") as HTMLInputElement;
+        pctInput.type = "text";
+        pctInput.inputMode = "numeric";
+        pctInput.value = String(entry.orbValue || 50);
+        row2.append(orbSelect, pctInput, el("span", undefined, "%"), button("결합", "secondary-command", () => {
+          const pct = parseNumber(pctInput.value) ?? 50;
+          try {
+            setOrb(live, entry, Number(orbSelect.value), pct);
+            setStatus(`${displayName(entry.name)}에 오브를 결합했어요. 가방에서 아이템 설명을 열면 효과가 보여요.`);
+          } catch (error) {
+            setStatus(String(error), true);
+          }
+        }));
+        item.append(row2);
+        body.append(item);
+      }
+      if (gear.length > 0) {
+        body.append(button("⚡ 장착 장비 전부 한 번에: 공/방 ×5 + 무기 뇌제의 50% · 방어구 금강의 50%", "primary-command cheat-big", () => {
+          try {
+            const done = new Set<string>();
+            for (const entry of readEquipment(live)) {
+              const key = `${entry.category}:${entry.index}`;
+              if (done.has(key)) continue;
+              done.add(key);
+              const isWeaponItem = entry.category >= 4 && entry.category <= 10;
+              setItemStat(live, entry, Math.min(9999, Math.max(entry.stat * 5, 500)));
+              setOrb(live, entry, isWeaponItem ? 2 : 3, 50);
+            }
+            setStatus("장착 장비를 전부 강화했어요. 장비를 해제 후 다시 장착하면 공/방이 전투에 반영돼요.");
+          } catch (error) {
+            setStatus(String(error), true);
+          }
+        }));
+      }
+    } catch (error) {
+      body.append(el("p", "cheat-status error", String(error)));
+    }
+
     // 가방 보기
     const bagRow = el("div", "cheat-item-actions");
     bagRow.append(button(hl3ShowBag ? "가방 내용 숨기기" : "가방 내용 보기", "secondary-command", () => {
@@ -478,10 +613,12 @@ export const getCheatPanel = (): CheatPanel => {
       renderHl3(live);
     }
 
-    if (saved.length > 0) {
+    const generic = saved.filter(cheat => cheat.name !== BATTLE_KEY);
+    if (generic.length > 0) {
       body.append(el("p", "cheat-lead", "저장된 치트"));
       const list = el("ul", "cheat-saved");
-      saved.forEach((cheat, index) => {
+      generic.forEach(cheat => {
+        const index = saved.indexOf(cheat);
         const item = el("li", "cheat-item");
         const info = el("div", "cheat-item-info");
         let current = "";
@@ -808,7 +945,16 @@ export const getCheatPanel = (): CheatPanel => {
     restore(next) {
       const live = next.getCheats();
       if (!live) return;
-      for (const cheat of loadSaved(next.appId)) {
+      const cheatsForApp = loadSaved(next.appId);
+      if (isHeroesLore3(next.appTitle) && cheatsForApp.some(cheat => cheat.name === BATTLE_KEY)) {
+        try {
+          freezeBattleStats(live, true);
+        } catch {
+          // ignore
+        }
+      }
+      for (const cheat of cheatsForApp) {
+        if (cheat.name === BATTLE_KEY) continue;
         if (!cheat.freeze) continue;
         try {
           live.freeze(cheat.address, cheat.width, cheat.bigEndian, cheat.value);
