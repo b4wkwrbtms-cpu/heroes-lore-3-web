@@ -661,11 +661,11 @@ export const getCheatPanel = (): CheatPanel => {
     skillRow.append(button(auto.skillOn ? "✨ 자동 스킬 끄기" : "✨ 자동 스킬 켜기", auto.skillOn ? "primary-command" : "secondary-command", () => {
       saveAuto({ ...auto, skillOn: !auto.skillOn });
       setStatus(!auto.skillOn
-        ? "공격 버튼을 꾹 누르고 있으면(0.35초 이상) 체크한 칸의 스킬을 돌아가며 자동으로 써요. 짧게 누르는 대화·확인에는 안 나가요."
+        ? "공격을 1초 안에 3번 이상 연타하면 체크한 칸의 스킬을 돌아가며 자동으로 써요. 연타가 멈추고 1.5초 뒤에 꺼지고, 한두 번 누르는 대화·확인에는 안 나가요."
         : "자동 스킬을 껐어요.");
     }));
     body.append(skillRow);
-    body.append(el("p", "cheat-muted", "게임에서 스킬을 등록해 둔 칸을 체크하세요. 공격을 꾹 누르는 동안만 돌아가고(짧은 탭은 대화·확인용이라 제외), 메뉴가 열려 있을 땐 멈춰요. 쿨타임은 게임이 판단해서 끝난 스킬부터 바로 나가요."));
+    body.append(el("p", "cheat-muted", "게임에서 스킬을 등록해 둔 칸을 체크하세요. 공격을 3연타 이상 하는 동안만 돌아가고(한두 번 탭은 대화·확인용이라 제외), 메뉴가 열려 있을 땐 멈춰요. 쿨타임은 게임이 판단해서 끝난 스킬부터 바로 나가요."));
     const slotRow = el("div", "cheat-row cheat-wrap");
     for (const key of skillSlotKeys(auto)) {
       const check = el("label", "cheat-check");

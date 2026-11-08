@@ -141,10 +141,11 @@ const newPotionState = (): PotionState => ({ lastPress: 0, backoff: 1500, valueA
 const TICK_MS = 100;
 const POTION_HOLD_MS = 90;
 const SKILL_HOLD_MS = 90;
-/** Auto-skill keeps firing this long after a qualifying attack hold ends. */
-const ATTACK_GRACE_MS = 1200;
-/** A tap on attack talks to NPCs and confirms dialogs; only a real hold (a combo) arms the auto-skill. */
-const ATTACK_HOLD_MS = 350;
+/** Auto-skill keeps firing this long after the last attack press of a combo. */
+const ATTACK_GRACE_MS = 1500;
+/** Attack presses needed within ATTACK_BURST_MS to count as fighting; single taps talk to NPCs and confirm dialogs. */
+const ATTACK_BURST_COUNT = 3;
+const ATTACK_BURST_MS = 1000;
 const MAX_BACKOFF_MS = 12_000;
 
 type Listener = (config: AutoConfig) => void;
@@ -156,7 +157,7 @@ class Automation {
   private listeners = new Set<Listener>();
 
   private attackHeld = false;
-  private attackDownAt = 0;
+  private attackPresses: number[] = [];
   private attackUntil = 0;
   private lastSkillAt = 0;
   private roundRobin = 0;
@@ -221,18 +222,17 @@ class Automation {
   notifyKey(key: string, pressed: boolean) {
     if (key !== ATTACK_KEY) return;
     const now = performance.now();
-    if (pressed) {
-      this.attackHeld = true;
-      this.attackDownAt = now;
-      return;
-    }
-    if (this.attackHeld && now - this.attackDownAt >= ATTACK_HOLD_MS) this.attackUntil = now + ATTACK_GRACE_MS;
-    this.attackHeld = false;
+    this.attackHeld = pressed;
+    if (!pressed) return;
+    this.attackPresses = this.attackPresses.filter(time => now - time <= ATTACK_BURST_MS);
+    this.attackPresses.push(now);
+    // Mashing attack (3+ presses within a second) means a fight; keep the rotation alive while the presses continue.
+    if (this.attackPresses.length >= ATTACK_BURST_COUNT || now < this.attackUntil) this.attackUntil = now + ATTACK_GRACE_MS;
   }
 
-  /** True while attack has been held long enough to count as fighting (or shortly after). */
+  /** True while the player is mashing attack (or shortly after the last press). */
   private attacking(now: number): boolean {
-    return (this.attackHeld && now - this.attackDownAt >= ATTACK_HOLD_MS) || now < this.attackUntil;
+    return now < this.attackUntil;
   }
 
   private emit() {
@@ -251,6 +251,7 @@ class Automation {
     this.macroNextAt = 0;
     this.lastSkillAt = 0;
     this.attackHeld = false;
+    this.attackPresses = [];
     this.attackUntil = 0;
   }
 
@@ -270,6 +271,7 @@ class Automation {
     if (!onField) {
       this.macroQueue = [];
       this.attackHeld = false;
+      this.attackPresses = [];
       this.attackUntil = 0;
     }
     if (this.config.potionOn) {
