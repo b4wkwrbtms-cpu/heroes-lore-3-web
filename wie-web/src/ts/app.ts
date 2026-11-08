@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard, Map as MapIcon, Save, Settings, Sparkles, X, createIcons } from "lucide";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Ellipsis, Keyboard, Map as MapIcon, Save, Settings, Sparkles, X, createIcons } from "lucide";
 
 import { recordPageView } from "./analytics";
 import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, skillSlotKeys } from "./automation";
@@ -36,6 +36,7 @@ const icons = {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Ellipsis,
   Keyboard,
   Map: MapIcon,
   Save,
@@ -170,7 +171,28 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     if (session && !ending) void session.releaseKeys().catch(finish);
   };
 
-  backToLibrary.addEventListener("click", () => { void finish(); }, { signal: abortController.signal });
+  backToLibrary.addEventListener("click", () => {
+    releaseKeys();
+    if (!window.confirm("게임을 끝내고 라이브러리로 갈까요? 저장하지 않은 진행은 사라져요.")) return;
+    void finish();
+  }, { signal: abortController.signal });
+  // The system tools hide behind ⋯ so a thumb sliding off the joystick cannot hit them.
+  const padMore = document.getElementById("pad-more") as HTMLButtonElement | null;
+  const padTools = document.getElementById("pad-tools") as HTMLElement | null;
+  let padToolsTimer: number | undefined;
+  const showPadTools = (show: boolean) => {
+    if (!padTools || !padMore) return;
+    padTools.hidden = !show;
+    padMore.setAttribute("aria-expanded", String(show));
+    window.clearTimeout(padToolsTimer);
+    if (show) padToolsTimer = window.setTimeout(() => showPadTools(false), 6000);
+  };
+  padMore?.addEventListener("click", () => {
+    releaseKeys();
+    showPadTools(padTools?.hidden ?? true);
+  }, { signal: abortController.signal });
+  padTools?.addEventListener("click", () => showPadTools(false), { signal: abortController.signal });
+  abortController.signal.addEventListener("abort", () => window.clearTimeout(padToolsTimer));
   appSettings.addEventListener("click", () => {
     releaseKeys();
     settings.open();

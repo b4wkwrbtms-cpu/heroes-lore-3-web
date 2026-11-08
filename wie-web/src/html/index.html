@@ -134,7 +134,7 @@
 
         <div class="button-container pad" aria-label="게임 컨트롤러">
           <div class="pad-tools-bar">
-            <p class="pad-tools">
+            <p id="pad-tools" class="pad-tools" hidden>
               <button id="back-to-library" class="icon-button pad-tool" type="button" title="라이브러리" data-i18n-title="library" aria-label="라이브러리로 돌아가기" data-i18n-aria-label="backToLibrary">
                 <i data-lucide="arrow-left"></i>
               </button>
@@ -151,6 +151,9 @@
             <p class="pad-utils">
               <button class="key key-util" data-key="*"><i data-lucide="map"></i><span>미니맵</span></button>
               <button class="key key-util" data-key="CALL"><i data-lucide="save"></i><span>퀵세이브</span></button>
+              <button id="pad-more" class="icon-button pad-tool pad-tool-more" type="button" title="메뉴" aria-label="설정·치트·나가기 메뉴" aria-expanded="false">
+                <i data-lucide="ellipsis"></i>
+              </button>
             </p>
           </div>
           <div class="pad-left">

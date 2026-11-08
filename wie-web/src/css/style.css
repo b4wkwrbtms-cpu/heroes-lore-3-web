@@ -601,6 +601,7 @@ html[data-screen-fit="contain"] #canvas {
 
 /* ---- Controller (portrait): tools bar on top, joystick left, action grid right ---- */
 .pad {
+  position: relative;
   display: grid;
   width: 100%;
   height: calc(clamp(210px, 30dvh, 280px) + var(--safe-bottom));
@@ -623,11 +624,13 @@ html[data-screen-fit="contain"] #canvas {
   min-height: 0;
 }
 
+/* Tools live above the action grid, away from the joystick thumb; the left column above the stick stays empty. */
 .pad-tools-bar {
   display: flex;
-  grid-column: 1 / span 2;
+  grid-column: 2;
+  grid-row: 1;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -638,6 +641,38 @@ html[data-screen-fit="contain"] #canvas {
   margin: 0;
   align-items: stretch;
   gap: 6px;
+}
+
+/* System tools (나가기·설정·치트·키패드) pop out above the pad only after the ⋯ button is tapped. */
+.pad-tools {
+  position: absolute;
+  z-index: 6;
+  right: 12px;
+  bottom: calc(100% - 2px);
+  height: 46px;
+  padding: 5px;
+  background: rgba(20, 20, 26, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+.pad-tools[hidden] {
+  display: none;
+}
+
+.pad-tool-more[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.pad-left {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.pad-right {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .pad-tool {
@@ -980,23 +1015,29 @@ html[data-screen-fit="contain"] #canvas {
   }
 
   .pad-tools-bar {
-    grid-column: 1;
+    grid-column: 3;
     grid-row: 1;
     padding: 6px 8px 0;
   }
 
+  .pad-tools {
+    right: calc(8px + var(--safe-right));
+    bottom: auto;
+    top: 52px;
+  }
+
   .pad-left {
     grid-column: 1;
-    grid-row: 2;
-    padding: 0 8px 8px;
+    grid-row: 1 / span 2;
+    padding: 8px;
   }
 
   .pad-right {
     align-self: center;
-    height: min(100%, 340px);
+    height: min(100%, 300px);
     grid-column: 3;
-    grid-row: 1 / span 2;
-    padding: 8px;
+    grid-row: 2;
+    padding: 0 8px 8px;
   }
 }
 
