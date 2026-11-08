@@ -63,7 +63,8 @@ export const loadAutoConfig = (appId: string): AutoConfig => {
     config.spPercent = clampNumber(data.spPercent, 5, 95, config.spPercent);
     config.skillOn = data.skillOn === true;
     config.skillGap = clampNumber(data.skillGap, 150, 3000, config.skillGap);
-    if (Array.isArray(data.skillSlots)) config.skillSlots = SLOT_KEYS.filter(key => data.skillSlots.includes(key));
+    const slots: unknown = data.skillSlots;
+    if (Array.isArray(slots)) config.skillSlots = SLOT_KEYS.filter(key => slots.includes(key));
   } catch {
     // ignore corrupt settings
   }
