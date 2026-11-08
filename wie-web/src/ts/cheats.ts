@@ -3,8 +3,9 @@ import { X, createIcons } from "lucide";
 import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, loadAutoConfig, skillSlotKeys, storeAutoConfig } from "./automation";
 import type { CheatApi } from "./backend";
 import {
-  CASH_ITEMS, HL3, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel, giveItem,
-  gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, readEquipment, readVitals, setBaseStats, setGold, setItemStat, setLevel, setOrb,
+  CASH_ITEMS, HL3, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel, getSkillPoints,
+  getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, readEquipment, readSkills, readVitals, setAllSkillLevels, setGold,
+  setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
 
@@ -507,18 +508,10 @@ export const getCheatPanel = (): CheatPanel => {
     const battleOn = saved.some(cheat => cheat.name === BATTLE_KEY);
     const charRow = el("div", "cheat-item-actions");
     charRow.append(
-      button(`레벨 99${levelText}`, "secondary-command", () => {
+      button(`레벨 70 (게임 최대)${levelText}`, "secondary-command", () => {
         try {
-          setLevel(live, 99);
-          setStatus("레벨을 99로 바꿨어요. 높은 레벨 장비를 바로 장착할 수 있어요.");
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }),
-      button("기본 스탯 200", "secondary-command", () => {
-        try {
-          setBaseStats(live, 200);
-          setStatus("힘·체력·정신·민첩을 200으로 바꿨어요. 상태창에서 확인하세요 (레벨업이나 장비 교체 때 다시 계산돼요).");
+          setLevel(live, 70);
+          setStatus("레벨을 70(게임 최대치)으로 바꿨어요. 높은 레벨 장비를 바로 장착할 수 있어요. 포인트는 아래 '포인트 주기'로 따로 받으세요.");
         } catch (error) {
           setStatus(String(error), true);
         }
@@ -536,6 +529,53 @@ export const getCheatPanel = (): CheatPanel => {
       }),
     );
     body.append(charRow);
+
+    // 스탯·스킬 포인트
+    let pointsText = "";
+    try {
+      pointsText = `지금 스탯 포인트 ${formatNumber(getStatPoints(live))} · 스킬 포인트 ${formatNumber(getSkillPoints(live))}`;
+    } catch {
+      pointsText = "";
+    }
+    body.append(el("p", "cheat-lead", "🎯 포인트 주기"));
+    body.append(el("p", "cheat-muted", `스탯은 상태창에서, 스킬은 스킬창(포인트투자)에서 직접 찍어요. 게임이 주는 상한은 스탯 276 · 스킬 44인데 더 줘도 돼요.${pointsText ? ` ${pointsText}` : ""}`));
+    const pointsRow = el("div", "cheat-item-actions");
+    pointsRow.append(
+      button("스탯 포인트 276", "secondary-command", () => {
+        try {
+          setStatPoints(live, 276);
+          setStatus("스탯 포인트를 276으로 맞췄어요. 메뉴 → STATUS에서 힘·체력·정신·민첩에 찍으세요.");
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+      button("스탯 포인트 999", "secondary-command", () => {
+        try {
+          setStatPoints(live, 999);
+          setStatus("스탯 포인트를 999로 맞췄어요. 상태창에서 찍으세요 (100 넘는 스탯은 2포인트씩 들어요).");
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+      button("스킬 포인트 99", "secondary-command", () => {
+        try {
+          setSkillPoints(live, 99);
+          setStatus("스킬 포인트를 99로 맞췄어요. 메뉴 → SKILL → 스킬 선택 → 포인트투자로 찍으세요 (스킬당 최대 5).");
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+      button("모든 스킬 Lv5", "secondary-command", () => {
+        try {
+          setAllSkillLevels(live, 5);
+          const names = readSkills(live).filter(skill => skill.index > 0).map(skill => skill.name).join(", ");
+          setStatus(`주무기·보조무기 스킬을 전부 Lv5로 올렸어요: ${names}. 스킬창을 열어 확인하고 단축키에 등록하세요.`);
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+    );
+    body.append(pointsRow);
 
     // 자동화 (자동 물약 · 자동 스킬 · 치트 회복)
     body.append(el("p", "cheat-lead", "🤖 자동화"));

@@ -4,6 +4,7 @@
 
 import type { CheatApi } from "./backend";
 import { HL3_ITEMS, type Hl3Item } from "./hl3_items";
+import { HL3_SKILLS } from "./hl3_skills";
 
 export const ORBS: Array<{ i: number; n: string; d: string }> = [
   { i: 0, n: "투신의", d: "HPMAX +%" },
@@ -69,6 +70,19 @@ export const HL3 = {
   FINAL: 0x01503c18,
   /** second copy: ATT1 @+0, ATT2 @+2, ACC? @+4, CRI @+6, PDEF @+8, RES @+10, MDEF @+12, ... */
   FINAL2: 0x01503b86,
+  /** 남은 스탯 포인트 (u16). 레벨업마다 +4, 게임 자체 상한 276. */
+  STAT_POINTS: 0x01503c12,
+  /** 남은 스킬 포인트 (u8). 레벨업마다 +1, 게임 자체 상한 44. */
+  SKILL_POINTS: 0x01503c14,
+  /** 스킬 배열: 주무기 9칸(액티브 6 + 패시브 3), 보조무기 9칸, 칸마다 8바이트, 첫 바이트가 레벨(0~5). */
+  SKILLS_A: 0x01503c30,
+  SKILLS_B: 0x01503c78,
+  SKILL_STRIDE: 8,
+  SKILLS_PER_WEAPON: 9,
+  SKILL_MAX_LEVEL: 5,
+  /** 무기 종류(아이템 카테고리 4~10)가 들어 있는 바이트: 주무기, 보조무기. */
+  WEAPON_A: 0x01503b59,
+  WEAPON_B: 0x01503b5a,
   HEAP_LO: 0x40000000,
   HEAP_HI: 0x50000000,
 } as const;
@@ -371,7 +385,45 @@ export const setItemStat = (api: CheatApi, entry: EquipEntry, stat: number): voi
 };
 
 export const getLevel = (api: CheatApi): number => api.read(HL3.LEVEL, 2, false);
-export const setLevel = (api: CheatApi, level: number): void => api.write(HL3.LEVEL, 2, false, Math.max(1, Math.min(level, 99)));
+/** 게임의 레벨 상한은 70 (레벨업 루틴이 0x46에서 멈춤). */
+export const setLevel = (api: CheatApi, level: number): void => api.write(HL3.LEVEL, 2, false, Math.max(1, Math.min(level, 70)));
+
+export const getStatPoints = (api: CheatApi): number => api.read(HL3.STAT_POINTS, 2, false);
+export const setStatPoints = (api: CheatApi, value: number): void => api.write(HL3.STAT_POINTS, 2, false, Math.max(0, Math.min(value, 9999)));
+export const getSkillPoints = (api: CheatApi): number => api.read(HL3.SKILL_POINTS, 1, false);
+export const setSkillPoints = (api: CheatApi, value: number): void => api.write(HL3.SKILL_POINTS, 1, false, Math.max(0, Math.min(value, 99)));
+
+export interface SkillState {
+  weapon: "A" | "B";
+  category: number;
+  index: number;
+  name: string;
+  level: number;
+  address: number;
+}
+
+/** Current skill levels of both weapons, joined with the skill tables (주무기 category at WEAPON_A, 보조 at WEAPON_B). */
+export const readSkills = (api: CheatApi): SkillState[] => {
+  const out: SkillState[] = [];
+  for (const weapon of ["A", "B"] as const) {
+    const category = api.read(weapon === "A" ? HL3.WEAPON_A : HL3.WEAPON_B, 1, false);
+    const table = HL3_SKILLS[category];
+    const base = weapon === "A" ? HL3.SKILLS_A : HL3.SKILLS_B;
+    for (let index = 0; index < HL3.SKILLS_PER_WEAPON; index += 1) {
+      const address = base + index * HL3.SKILL_STRIDE;
+      // table records: 0..6 basic combo levels, 7..11 actives, 12..14 passives → slot 0 = basic, 1..5 actives, 6..8 passives
+      const record = table?.skills[index === 0 ? 0 : index + 6];
+      out.push({ weapon, category, index, name: record?.n ?? `스킬 ${index + 1}`, level: api.read(address, 1, false), address });
+    }
+  }
+  return out;
+};
+
+/** Set every skill of both weapons to `level` (게임 상한 5). */
+export const setAllSkillLevels = (api: CheatApi, level: number): void => {
+  const value = Math.max(0, Math.min(level, HL3.SKILL_MAX_LEVEL));
+  for (const skill of readSkills(api)) api.write(skill.address, 1, false, value);
+};
 
 export const setBaseStats = (api: CheatApi, value: number): void => {
   const v = Math.max(1, Math.min(value, 255));
