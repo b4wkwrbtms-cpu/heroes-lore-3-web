@@ -37,6 +37,21 @@ pub trait Emulator {
     fn handle_event(&mut self, event: Event);
     fn tick(&mut self) -> Result<()>;
     fn is_preparing(&self) -> bool;
+
+    /// Mapped guest memory ranges as (start, size), for memory/cheat tools. Empty when unsupported.
+    fn memory_ranges(&self) -> Vec<(u32, u32)> {
+        Vec::new()
+    }
+
+    /// Read guest memory into `result`.
+    fn read_memory(&self, _address: u32, _result: &mut [u8]) -> Result<()> {
+        Err(WieError::Unimplemented(String::from("read_memory")))
+    }
+
+    /// Write `data` into guest memory.
+    fn write_memory(&mut self, _address: u32, _data: &[u8]) -> Result<()> {
+        Err(WieError::Unimplemented(String::from("write_memory")))
+    }
 }
 
 pub struct ProfileSample {

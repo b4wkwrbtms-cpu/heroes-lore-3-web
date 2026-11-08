@@ -487,6 +487,33 @@ impl ArmCore {
         Ok(())
     }
 
+    pub fn is_mapped(&self, address: u32, size: usize) -> bool {
+        let inner = self.inner.lock();
+
+        inner.engine.is_mapped(address, size)
+    }
+
+    /// Contiguous mapped memory ranges as (start, size), in 64KiB page granularity.
+    /// The topmost page is skipped to avoid address arithmetic overflow.
+    pub fn mapped_ranges(&self) -> Vec<(u32, u32)> {
+        const PAGE: u32 = 0x10000;
+        let inner = self.inner.lock();
+
+        let mut ranges: Vec<(u32, u32)> = Vec::new();
+        let mut address: u32 = 0;
+        while address < 0xffff_0000 {
+            if inner.engine.is_mapped(address, 1) {
+                match ranges.last_mut() {
+                    Some((start, size)) if start.wrapping_add(*size) == address => *size += PAGE,
+                    _ => ranges.push((address, PAGE)),
+                }
+            }
+            address += PAGE;
+        }
+
+        ranges
+    }
+
     pub fn dump_reg_stack(&self, image_base: u32) -> String {
         format!(
             "\n{}\nPossible call stack:\n{}\nStack:\n{}",

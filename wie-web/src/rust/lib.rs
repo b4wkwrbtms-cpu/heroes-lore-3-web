@@ -145,6 +145,8 @@ pub struct WieWeb {
     exited: Arc<AtomicBool>,
     should_redraw: Arc<AtomicBool>,
     key_events: HashMap<KeyCode, f64>,
+    /// Cheat "freeze" entries: (address, width in bytes, value) rewritten after every tick.
+    frozen: Vec<(u32, u32, u32)>,
 }
 
 impl Drop for WieWeb {
@@ -222,6 +224,7 @@ impl WieWeb {
                 exited,
                 should_redraw,
                 key_events: HashMap::new(),
+                frozen: Vec::new(),
             })
         })()
         .map_err(|e| JsError::new(&e.to_string()))
@@ -250,7 +253,95 @@ impl WieWeb {
             }
         }
 
-        self.emulator.tick().map_err(|e| JsError::new(&e.to_string()))
+        self.emulator.tick().map_err(|e| JsError::new(&e.to_string()))?;
+
+        if !self.frozen.is_empty() {
+            let frozen = self.frozen.clone();
+            for (address, width, value) in frozen {
+                let bytes = value.to_le_bytes();
+                let _ = self.emulator.write_memory(address, &bytes[..width as usize]);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Search guest memory for `value` stored little-endian in `width` bytes (2 or 4), aligned to `width`.
+    /// When `previous` is non-empty only those addresses are re-checked (narrowing search).
+    pub fn cheat_search(&self, value: u32, width: u32, previous: &[u32]) -> Result<Vec<u32>, JsError> {
+        const MAX_RESULTS: usize = 50_000;
+        let width = if width == 2 { 2usize } else { 4usize };
+        let value_bytes = value.to_le_bytes();
+        let needle = &value_bytes[..width];
+        let mut results = Vec::new();
+
+        if !previous.is_empty() {
+            let mut buf = [0u8; 4];
+            for &address in previous {
+                if self.emulator.read_memory(address, &mut buf[..width]).is_ok() && &buf[..width] == needle {
+                    results.push(address);
+                }
+            }
+            return Ok(results);
+        }
+
+        let mut chunk = alloc::vec![0u8; 0x10000];
+        for (start, size) in self.emulator.memory_ranges() {
+            let mut offset: u64 = 0;
+            while offset < size as u64 {
+                let len = core::cmp::min(chunk.len() as u64, size as u64 - offset) as usize;
+                let address = start.wrapping_add(offset as u32);
+                if self.emulator.read_memory(address, &mut chunk[..len]).is_err() {
+                    break;
+                }
+                let mut i = 0;
+                while i + width <= len {
+                    if &chunk[i..i + width] == needle {
+                        results.push(address.wrapping_add(i as u32));
+                        if results.len() >= MAX_RESULTS {
+                            return Ok(results);
+                        }
+                    }
+                    i += width;
+                }
+                offset += len as u64;
+            }
+        }
+
+        Ok(results)
+    }
+
+    pub fn cheat_read(&self, address: u32, width: u32) -> Result<u32, JsError> {
+        let width = if width == 2 { 2usize } else { 4usize };
+        let mut buf = [0u8; 4];
+        self.emulator
+            .read_memory(address, &mut buf[..width])
+            .map_err(|e| JsError::new(&e.to_string()))?;
+
+        Ok(u32::from_le_bytes(buf))
+    }
+
+    pub fn cheat_write(&mut self, address: u32, width: u32, value: u32) -> Result<(), JsError> {
+        let width = if width == 2 { 2usize } else { 4usize };
+        let bytes = value.to_le_bytes();
+        self.emulator
+            .write_memory(address, &bytes[..width])
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    pub fn cheat_freeze(&mut self, address: u32, width: u32, value: u32) -> Result<(), JsError> {
+        let width = if width == 2 { 2 } else { 4 };
+        self.frozen.retain(|(a, _, _)| *a != address);
+        self.frozen.push((address, width, value));
+        self.cheat_write(address, width, value)
+    }
+
+    pub fn cheat_unfreeze(&mut self, address: u32) {
+        self.frozen.retain(|(a, _, _)| *a != address);
+    }
+
+    pub fn cheat_clear_freezes(&mut self) {
+        self.frozen.clear();
     }
 
     pub fn key_down(&mut self, key: String) -> Result<(), JsError> {

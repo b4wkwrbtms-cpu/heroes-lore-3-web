@@ -1,7 +1,8 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Settings, createIcons } from "lucide";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Settings, Sparkles, createIcons } from "lucide";
 
 import { recordPageView } from "./analytics";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
+import { getCheatPanel } from "./cheats";
 import type { SettingsController } from "./settings";
 
 const KEY_MAP: Record<string, string> = {
@@ -32,6 +33,7 @@ const icons = {
   ArrowRight,
   ArrowUp,
   Settings,
+  Sparkles,
 };
 
 export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsController): Promise<boolean> => new Promise((resolve, reject) => {
@@ -41,6 +43,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   const playerWarning = document.getElementById("player-warning") as HTMLElement;
   const backToLibrary = document.getElementById("back-to-library") as HTMLButtonElement;
   const appSettings = document.getElementById("app-settings") as HTMLButtonElement;
+  const appCheats = document.getElementById("app-cheats") as HTMLButtonElement | null;
   const buttons = playerView.querySelectorAll<HTMLButtonElement>("button[data-key]");
 
   const abortController = new AbortController();
@@ -106,6 +109,15 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   appSettings.addEventListener("click", () => {
     releaseKeys();
     settings.open();
+  }, { signal: abortController.signal });
+  const cheatContext = {
+    appId: app.id,
+    appTitle: app.title,
+    getCheats: () => (session && !ending ? session.cheats : undefined),
+  };
+  appCheats?.addEventListener("click", () => {
+    releaseKeys();
+    getCheatPanel().open(cheatContext);
   }, { signal: abortController.signal });
   window.addEventListener("blur", releaseKeys, { signal: abortController.signal });
   window.addEventListener("pagehide", () => { void finish(); }, { signal: abortController.signal });
@@ -268,6 +280,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         if (preparing) recordPageView(app.title);
         preparing = false;
         updateControls();
+        getCheatPanel().restore(cheatContext);
         break;
       case "suspended":
         suspended = event.suspended;
@@ -291,5 +304,6 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   void start.then(started => {
     session = started;
     updateControls();
+    if (!preparing) getCheatPanel().restore(cheatContext);
   }).catch(finish);
 });

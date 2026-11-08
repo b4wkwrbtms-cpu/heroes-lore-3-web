@@ -58,6 +58,32 @@ export const startWasmSession = (
       onEvent({ type: "suspended", suspended });
       if (!suspended) frame = requestAnimationFrame(update);
     },
+    cheats: {
+      search(value, width, previous) {
+        if (!running) return new Uint32Array();
+        return emulator.cheat_search(value >>> 0, width, previous ?? new Uint32Array());
+      },
+      read(address, width) {
+        if (!running) return 0;
+        return emulator.cheat_read(address >>> 0, width);
+      },
+      write(address, width, value) {
+        if (!running) return;
+        emulator.cheat_write(address >>> 0, width, value >>> 0);
+      },
+      freeze(address, width, value) {
+        if (!running) return;
+        emulator.cheat_freeze(address >>> 0, width, value >>> 0);
+      },
+      unfreeze(address) {
+        if (!running) return;
+        emulator.cheat_unfreeze(address >>> 0);
+      },
+      clearFreezes() {
+        if (!running) return;
+        emulator.cheat_clear_freezes();
+      },
+    },
     async stop() {
       if (!running) return;
       running = false;

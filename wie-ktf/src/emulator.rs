@@ -9,7 +9,7 @@ use jvm::{ClassInstance, Result as JvmResult, runtime::JavaLangString};
 use wie_backend::{Emulator, Event, Options, Platform, System, TaskRunner};
 use wie_core_arm::{Allocator, ArmCore};
 use wie_jvm_support::JvmSupport;
-use wie_util::{Result, WieError, write_generic};
+use wie_util::{ByteRead, ByteWrite, Result, WieError, write_generic};
 
 use crate::{
     adf::{KtfAdf, find_client_bin, validate_client_bin},
@@ -215,6 +215,20 @@ impl Emulator for KtfEmulator {
 
     fn tick(&mut self) -> Result<()> {
         self.system.tick()
+    }
+
+    fn memory_ranges(&self) -> Vec<(u32, u32)> {
+        self.core.mapped_ranges()
+    }
+
+    fn read_memory(&self, address: u32, result: &mut [u8]) -> Result<()> {
+        self.core.read_bytes(address, result)?;
+
+        Ok(())
+    }
+
+    fn write_memory(&mut self, address: u32, data: &[u8]) -> Result<()> {
+        self.core.write_bytes(address, data)
     }
 }
 

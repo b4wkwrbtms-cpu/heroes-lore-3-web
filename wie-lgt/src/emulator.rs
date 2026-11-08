@@ -19,7 +19,7 @@ use jvm::{
 use wie_backend::{Emulator, Event, Options, Platform, System, TaskRunner, extract_zip};
 use wie_core_arm::{Allocator, ArmCore};
 use wie_jvm_support::JvmSupport;
-use wie_util::{Result, WieError, write_generic};
+use wie_util::{ByteRead, ByteWrite, Result, WieError, write_generic};
 
 use crate::runtime::{LgtJvmSupport, SUPPORT_CONTEXT_BASE, exception, init::load_native};
 
@@ -196,6 +196,20 @@ impl Emulator for LgtEmulator {
 
     fn tick(&mut self) -> Result<()> {
         self.system.tick()
+    }
+
+    fn memory_ranges(&self) -> Vec<(u32, u32)> {
+        self.core.mapped_ranges()
+    }
+
+    fn read_memory(&self, address: u32, result: &mut [u8]) -> Result<()> {
+        self.core.read_bytes(address, result)?;
+
+        Ok(())
+    }
+
+    fn write_memory(&mut self, address: u32, data: &[u8]) -> Result<()> {
+        self.core.write_bytes(address, data)
     }
 }
 

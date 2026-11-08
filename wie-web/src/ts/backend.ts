@@ -22,10 +22,21 @@ export type SessionEvent =
   | { type: "stopped"; failed: boolean }
   | { type: "error"; message: string; cause?: unknown };
 
+/** Live guest-memory access for the cheat tool. Values are unsigned little-endian, `width` is 2 or 4 bytes. */
+export interface CheatApi {
+  search(value: number, width: number, previous?: Uint32Array): Uint32Array;
+  read(address: number, width: number): number;
+  write(address: number, width: number, value: number): void;
+  freeze(address: number, width: number, value: number): void;
+  unfreeze(address: number): void;
+  clearFreezes(): void;
+}
+
 export interface PlayerSession {
   key(key: string, pressed: boolean): Promise<void>;
   releaseKeys(): Promise<void>;
   stop(): Promise<void>;
+  cheats?: CheatApi;
 }
 
 export interface Wie {
