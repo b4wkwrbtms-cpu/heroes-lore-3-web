@@ -1,11 +1,26 @@
 import type { CheatApi } from "./backend";
-import { SLOT_ORDER, getLevel, readVitals, topUpSlotItems } from "./hl3";
+import { SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, readSkills, readSlot, readVitals, registerSkill, topUpSlotItems, writeSlot } from "./hl3";
 
 /** Quick-slot keys of 영웅서기3 (회복 아이템·스킬 등록 칸). */
 export const SLOT_KEYS = ["1", "3", "9", "0", "#"] as const;
 export type SlotKey = (typeof SLOT_KEYS)[number];
 /** 주무기 콤보(기본 공격) 키. */
 export const ATTACK_KEY = "OK";
+
+export interface SkillRef {
+  weapon: "A" | "B";
+  index: number;
+}
+
+export interface MacroConfig {
+  /** Skills fired in order when the macro button is pressed. */
+  skills: SkillRef[];
+  /** Also fire these skills in the attack-key rotation. */
+  auto: boolean;
+}
+
+export const MACRO_COUNT = 3;
+export const MACRO_NAMES = ["A", "B", "C"] as const;
 
 export interface AutoConfig {
   potionOn: boolean;
@@ -20,6 +35,9 @@ export interface AutoConfig {
   skillSlots: SlotKey[];
   /** 스킬 키를 연달아 누를 때 간격(ms). */
   skillGap: number;
+  /** 스킬 묶음: 패드의 추가 버튼. 등록은 게임 메모리의 단축키 테이블을 잠시 바꿔치기해서 `macroSlot` 키로 발동. */
+  macros: MacroConfig[];
+  macroSlot: SlotKey;
 }
 
 export interface AutoContext {
@@ -39,6 +57,8 @@ export const defaultAutoConfig = (): AutoConfig => ({
   skillOn: false,
   skillSlots: ["1", "3"],
   skillGap: 500,
+  macros: Array.from({ length: MACRO_COUNT }, () => ({ skills: [], auto: false })),
+  macroSlot: "#",
 });
 
 const storageKey = (appId: string) => `wie_auto_${appId}`;
@@ -69,6 +89,23 @@ export const loadAutoConfig = (appId: string): AutoConfig => {
     config.skillGap = clampNumber(data.skillGap, 150, 3000, config.skillGap);
     const slots: unknown = data.skillSlots;
     if (Array.isArray(slots)) config.skillSlots = SLOT_KEYS.filter(key => slots.includes(key));
+    if (isSlotKey(data.macroSlot)) config.macroSlot = data.macroSlot;
+    const macros: unknown = data.macros;
+    if (Array.isArray(macros)) {
+      macros.slice(0, MACRO_COUNT).forEach((macro: unknown, i) => {
+        if (typeof macro !== "object" || macro === null) return;
+        const entry = macro as Record<string, unknown>;
+        const skills: unknown = entry.skills;
+        config.macros[i] = {
+          auto: entry.auto === true,
+          skills: Array.isArray(skills)
+            ? skills
+                .filter((ref: unknown): ref is SkillRef => typeof ref === "object" && ref !== null && ((ref as SkillRef).weapon === "A" || (ref as SkillRef).weapon === "B") && Number.isInteger((ref as SkillRef).index))
+                .map(ref => ({ weapon: ref.weapon, index: ref.index }))
+            : [],
+        };
+      });
+    }
   } catch {
     // ignore corrupt settings
   }
@@ -82,6 +119,9 @@ export const storeAutoConfig = (appId: string, config: AutoConfig) => {
     // storage unavailable
   }
 };
+
+/** Skills a macro may hold: learned actives of both weapons. */
+export const macroCandidates = (skills: SkillState[]): SkillState[] => skills.filter(skill => skill.index >= 1 && skill.index <= 5);
 
 /** Slot keys that the auto-skill may use (potion keys are excluded while auto-potion is on). */
 export const skillSlotKeys = (config: AutoConfig): SlotKey[] =>
@@ -122,6 +162,11 @@ class Automation {
   private level = 0;
   private lastTopUp = 0;
 
+  /** Macro run in progress: remaining skills and the slot contents to restore afterwards. */
+  private macroQueue: SkillRef[] = [];
+  private macroRestore: { slot: number; snapshot: SlotSnapshot } | undefined;
+  private macroNextAt = 0;
+
   attach(context: AutoContext) {
     this.detach();
     this.context = context;
@@ -157,6 +202,16 @@ class Automation {
     return () => this.listeners.delete(listener);
   }
 
+  /** Fire a macro: its skills are registered one by one into the borrowed slot and the slot key is pressed. */
+  runMacro(index: number): boolean {
+    const macro = this.config.macros[index];
+    const context = this.context;
+    if (!macro || macro.skills.length === 0 || !context || !context.getCheats()) return false;
+    this.macroQueue.push(...macro.skills);
+    this.macroNextAt = 0;
+    return true;
+  }
+
   /** Called with every key transition that reaches the game. */
   notifyKey(key: string, pressed: boolean) {
     if (key !== ATTACK_KEY) return;
@@ -175,6 +230,9 @@ class Automation {
     this.level = 0;
     this.lastTopUp = 0;
     this.roundRobin = 0;
+    this.macroQueue = [];
+    this.macroRestore = undefined;
+    this.macroNextAt = 0;
     this.lastSkillAt = 0;
     this.attackHeld = false;
     this.attackUntil = 0;
@@ -193,7 +251,44 @@ class Automation {
         // player not in game yet
       }
     }
-    if (this.config.skillOn && (this.attackHeld || now < this.attackUntil)) this.tickSkill(context, now);
+    this.tickMacro(api, context, now);
+    if (this.config.skillOn && (this.attackHeld || now < this.attackUntil)) this.tickSkill(api, context, now);
+  }
+
+  private borrowedSlot(): number {
+    return SLOT_ORDER.indexOf(this.config.macroSlot);
+  }
+
+  private fireSkill(api: CheatApi, context: AutoContext, ref: SkillRef): boolean {
+    const skill = readSkills(api).find(candidate => candidate.weapon === ref.weapon && candidate.index === ref.index);
+    if (!skill || skill.level <= 0) return false;
+    const slot = this.borrowedSlot();
+    if (!this.macroRestore) this.macroRestore = { slot, snapshot: readSlot(api, slot) };
+    registerSkill(api, slot, skill);
+    context.pressKey(this.config.macroSlot, SKILL_HOLD_MS);
+    return true;
+  }
+
+  private tickMacro(api: CheatApi, context: AutoContext, now: number) {
+    if (now < this.macroNextAt) return;
+    const next = this.macroQueue.shift();
+    if (next) {
+      try {
+        this.fireSkill(api, context, next);
+      } catch {
+        // game not ready
+      }
+      this.macroNextAt = now + this.config.skillGap;
+      return;
+    }
+    if (this.macroRestore && !(this.config.skillOn && (this.attackHeld || now < this.attackUntil))) {
+      try {
+        writeSlot(api, this.macroRestore.slot, this.macroRestore.snapshot);
+      } catch {
+        // ignore
+      }
+      this.macroRestore = undefined;
+    }
   }
 
   private tickPotion(api: CheatApi, context: AutoContext, now: number) {
@@ -232,15 +327,25 @@ class Automation {
     context.pressKey(key, POTION_HOLD_MS);
   }
 
-  /** Presses the checked slots in turn; the game itself ignores a slot whose skill is still cooling down. */
-  private tickSkill(context: AutoContext, now: number) {
-    if (now - this.lastSkillAt < this.config.skillGap) return;
-    const keys = skillSlotKeys(this.config).filter(key => this.config.skillSlots.includes(key));
-    if (keys.length === 0) return;
-    const key = keys[this.roundRobin % keys.length];
-    this.roundRobin = (this.roundRobin + 1) % keys.length;
+  /** Presses the checked slots (and auto macros' skills) in turn; the game itself ignores a skill still cooling down. */
+  private tickSkill(api: CheatApi, context: AutoContext, now: number) {
+    if (now - this.lastSkillAt < this.config.skillGap || this.macroQueue.length > 0) return;
+    const keys = skillSlotKeys(this.config).filter(key => this.config.skillSlots.includes(key) && key !== this.config.macroSlot);
+    const macroSkills = this.config.macros.filter(macro => macro.auto).flatMap(macro => macro.skills);
+    const total = keys.length + macroSkills.length;
+    if (total === 0) return;
+    const position = this.roundRobin % total;
+    this.roundRobin = (this.roundRobin + 1) % total;
     this.lastSkillAt = now;
-    context.pressKey(key, SKILL_HOLD_MS);
+    if (position < keys.length) {
+      context.pressKey(keys[position], SKILL_HOLD_MS);
+      return;
+    }
+    try {
+      this.fireSkill(api, context, macroSkills[position - keys.length]);
+    } catch {
+      // game not ready
+    }
   }
 }
 

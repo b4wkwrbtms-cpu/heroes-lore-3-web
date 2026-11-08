@@ -1,11 +1,11 @@
 import { X, createIcons } from "lucide";
 
-import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, loadAutoConfig, skillSlotKeys, storeAutoConfig } from "./automation";
+import { type AutoConfig, MACRO_NAMES, SLOT_KEYS, type SkillRef, type SlotKey, automation, loadAutoConfig, macroCandidates, skillSlotKeys, storeAutoConfig } from "./automation";
 import type { CheatApi } from "./backend";
 import {
-  CASH_ITEMS, HL3, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel, getSkillPoints,
-  getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, readEquipment, readSkills, readVitals, setAllSkillLevels, setGold,
-  setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
+  CASH_ITEMS, HL3, HL3_SKILL_LABELS, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel,
+  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, readEquipment, readSkills, readVitals,
+  setAllSkillLevels, setGold, setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
 
@@ -677,6 +677,59 @@ export const getCheatPanel = (): CheatPanel => {
       slotRow.append(check);
     }
     body.append(slotRow);
+
+    // 스킬 묶음
+    body.append(el("p", "cheat-lead", "🧩 스킬 묶음 (패드에 버튼 추가)"));
+    body.append(el("p", "cheat-muted", "게임 단축키는 5개뿐이라, 묶음 버튼에 스킬을 여러 개 넣어 두면 누를 때 차례로 다 나가요. 배운 스킬(Lv1 이상)만 돼요 — 위 '모든 스킬 Lv5'를 먼저 누르면 전부 쓸 수 있어요."));
+    let skillList: ReturnType<typeof readSkills> = [];
+    try {
+      skillList = macroCandidates(readSkills(live));
+    } catch {
+      skillList = [];
+    }
+    const macroSlotRow = el("div", "cheat-row");
+    macroSlotRow.append(el("span", undefined, "묶음이 빌려 쓰는 칸"), slotSelect(auto.macroSlot, key => saveAuto({ ...auto, macroSlot: key })), el("span", undefined, "(끝나면 원래대로 돌려놔요)"));
+    body.append(macroSlotRow);
+    if (auto.potionOn && (auto.macroSlot === auto.hpKey || auto.macroSlot === auto.spKey)) {
+      body.append(el("p", "cheat-status error", "물약 키와 같은 칸이에요. 묶음이 빌려 쓰는 칸을 다른 키로 바꿔 주세요."));
+    }
+    auto.macros.forEach((macro, i) => {
+      const item = el("div", "cheat-item");
+      const head = el("div", "cheat-item-info");
+      head.append(el("strong", undefined, `묶음 ${MACRO_NAMES[i]}`), el("span", undefined, macro.skills.length ? `${macro.skills.length}개 등록됨` : "비어 있음 (패드에 안 보여요)"));
+      item.append(head);
+      const row = el("div", "cheat-row cheat-wrap");
+      for (const skill of skillList) {
+        const check = el("label", "cheat-check");
+        const box = el("input") as HTMLInputElement;
+        box.type = "checkbox";
+        box.checked = macro.skills.some(ref => ref.weapon === skill.weapon && ref.index === skill.index);
+        box.disabled = skill.level <= 0;
+        box.addEventListener("change", () => {
+          const ref: SkillRef = { weapon: skill.weapon, index: skill.index };
+          const skills = box.checked
+            ? [...macro.skills, ref]
+            : macro.skills.filter(other => !(other.weapon === ref.weapon && other.index === ref.index));
+          const macros = auto.macros.map((other, j) => (j === i ? { ...other, skills } : other));
+          saveAuto({ ...auto, macros });
+        });
+        check.append(box, el("span", undefined, `${skill.name}${skill.level > 0 ? ` Lv${skill.level}` : " (안 배움)"} · ${HL3_SKILL_LABELS[skill.category] ?? skill.weapon}`));
+        row.append(check);
+      }
+      if (skillList.length === 0) row.append(el("span", undefined, "캐릭터로 필드에 나오면 스킬 목록이 보여요."));
+      item.append(row);
+      const autoCheck = el("label", "cheat-check");
+      const autoBox = el("input") as HTMLInputElement;
+      autoBox.type = "checkbox";
+      autoBox.checked = macro.auto;
+      autoBox.addEventListener("change", () => {
+        const macros = auto.macros.map((other, j) => (j === i ? { ...other, auto: autoBox.checked } : other));
+        saveAuto({ ...auto, macros });
+      });
+      autoCheck.append(autoBox, el("span", undefined, "공격 버튼 누르는 동안 이 묶음도 자동으로 돌리기"));
+      item.append(autoCheck);
+      body.append(item);
+    });
 
     // 치트 회복 (메모리 방식)
     const autoOn = saved.some(cheat => cheat.name === AUTO_HEAL_KEY) && autoHealTimer !== undefined;

@@ -105,10 +105,34 @@ export interface BagEntry {
 /** Quick-slot order used by the game's 등록 menu (1키등록 … #키등록); stored per bag record at +0x21, 0xff = none. */
 export const SLOT_ORDER = ["1", "3", "9", "0", "#"] as const;
 const QUICK_SLOT_OFFSET = 0x21;
-/** Per-slot kind table (u8 × 5): 0 empty, 2 item. The HUD and the key handler read this, not the bag. */
-const SLOT_KIND = 0x01503cda;
-/** Per-slot second table (u8 × 5): 0xff when an item is registered. */
-const SLOT_AUX = 0x01503cf4;
+/**
+ * Quick-slot tables (u8 × 5 each, indexed by slot 0–4 = keys 1,3,9,0,#). The HUD and the key handler read these, not the bag.
+ * KIND: 0 empty, 1 skill, 2 item · ITEMLOC: (bag << 5) | bag index · SKILLX: per-skill value the game stores for skills · IDX: skill index (0xff for items).
+ */
+export const SLOT_TABLES = { KIND: 0x01503cda, ITEMLOC: 0x01503cdf, SKILLX: 0x01503ce4, IDX: 0x01503cf4 } as const;
+const SLOT_KIND = SLOT_TABLES.KIND;
+const SLOT_AUX = SLOT_TABLES.IDX;
+
+export interface SlotSnapshot {
+  kind: number;
+  itemLoc: number;
+  skillX: number;
+  idx: number;
+}
+
+export const readSlot = (api: CheatApi, slot: number): SlotSnapshot => ({
+  kind: api.read(SLOT_TABLES.KIND + slot, 1, false),
+  itemLoc: api.read(SLOT_TABLES.ITEMLOC + slot, 1, false),
+  skillX: api.read(SLOT_TABLES.SKILLX + slot, 1, false),
+  idx: api.read(SLOT_TABLES.IDX + slot, 1, false),
+});
+
+export const writeSlot = (api: CheatApi, slot: number, snapshot: SlotSnapshot): void => {
+  api.write(SLOT_TABLES.KIND + slot, 1, false, snapshot.kind);
+  api.write(SLOT_TABLES.ITEMLOC + slot, 1, false, snapshot.itemLoc);
+  api.write(SLOT_TABLES.SKILLX + slot, 1, false, snapshot.skillX);
+  api.write(SLOT_TABLES.IDX + slot, 1, false, snapshot.idx);
+};
 
 const decoder = (() => {
   try {
@@ -249,7 +273,23 @@ export const registerItem = (api: CheatApi, entry: BagEntry, quickSlot: number):
   }
   api.write(entry.address + QUICK_SLOT_OFFSET, 1, false, quickSlot);
   api.write(SLOT_KIND + quickSlot, 1, false, 2);
+  api.write(SLOT_TABLES.ITEMLOC + quickSlot, 1, false, entry.slot & 0xff);
+  api.write(SLOT_TABLES.SKILLX + quickSlot, 1, false, 0);
   api.write(SLOT_AUX + quickSlot, 1, false, 0xff);
+};
+
+/**
+ * Value the game keeps in SKILLX for a registered skill. Observed in the emulator after registering through the game's own
+ * N키등록 menu: weapon A idx 1,2,3 → 9, 11, 13 and weapon B idx 1,2 → 73, 75, i.e. 7 + 2·idx with bit 6 set for the second weapon.
+ */
+export const skillXValue = (skill: SkillState): number => (skill.weapon === "B" ? 0x40 : 0) + 7 + 2 * skill.index;
+
+/** Register a learned skill to a quick slot exactly like the game's N키등록 does. */
+export const registerSkill = (api: CheatApi, quickSlot: number, skill: SkillState): void => {
+  for (const other of readBag(api)) {
+    if (other.quickSlot === quickSlot) api.write(other.address + QUICK_SLOT_OFFSET, 1, false, 0xff);
+  }
+  writeSlot(api, quickSlot, { kind: 1, itemLoc: 0, skillX: skillXValue(skill), idx: skill.index });
 };
 
 export const slotItem = (api: CheatApi, quickSlot: number): BagEntry | undefined =>
@@ -392,6 +432,9 @@ export const getStatPoints = (api: CheatApi): number => api.read(HL3.STAT_POINTS
 export const setStatPoints = (api: CheatApi, value: number): void => api.write(HL3.STAT_POINTS, 2, false, Math.max(0, Math.min(value, 9999)));
 export const getSkillPoints = (api: CheatApi): number => api.read(HL3.SKILL_POINTS, 1, false);
 export const setSkillPoints = (api: CheatApi, value: number): void => api.write(HL3.SKILL_POINTS, 1, false, Math.max(0, Math.min(value, 99)));
+
+/** Weapon category → label used in the skill screen tabs. */
+export const HL3_SKILL_LABELS: Record<number, string> = { 4: "스피어", 5: "스워드", 6: "나이프", 7: "건", 8: "라이플", 9: "다크", 10: "홀리" };
 
 export interface SkillState {
   weapon: "A" | "B";

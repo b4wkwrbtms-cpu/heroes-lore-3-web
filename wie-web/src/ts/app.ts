@@ -1,10 +1,10 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard, Map as MapIcon, Save, Settings, Sparkles, X, createIcons } from "lucide";
 
 import { recordPageView } from "./analytics";
-import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, skillSlotKeys } from "./automation";
+import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, skillSlotKeys } from "./automation";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
-import { isHeroesLore3 } from "./hl3";
+import { isHeroesLore3, readSkills } from "./hl3";
 import type { SettingsController } from "./settings";
 
 const KEY_MAP: Record<string, string> = {
@@ -75,6 +75,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     playerStatus.hidden = !preparing || ending;
     playerView.setAttribute("aria-busy", String(busy));
     for (const button of buttons) button.disabled = busy;
+    for (const button of macroButtons) button.disabled = busy;
   };
   const finish = async (error?: unknown, failed = false) => {
     if (ending) return;
@@ -126,7 +127,30 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     window.setTimeout(() => setKey(source), holdMs);
   };
   const slotCaptions = new Map<HTMLButtonElement, string>();
+  const macroButtons = playerView.querySelectorAll<HTMLButtonElement>("button[data-macro]");
+  const actionGrid = playerView.querySelector<HTMLElement>(".action-grid");
+  const skillName = (weapon: "A" | "B", index: number): string => {
+    const api = cheatContext.getCheats();
+    if (!api) return `${weapon}${index}`;
+    try {
+      return macroCandidates(readSkills(api)).find(skill => skill.weapon === weapon && skill.index === index)?.name ?? `${weapon}${index}`;
+    } catch {
+      return `${weapon}${index}`;
+    }
+  };
   const applyPadLabels = (config: AutoConfig) => {
+    let anyMacro = false;
+    macroButtons.forEach((button, i) => {
+      const macro = config.macros[i];
+      const show = !!macro && macro.skills.length > 0;
+      button.hidden = !show;
+      if (show) {
+        anyMacro = true;
+        const caption = button.querySelector("span");
+        if (caption) caption.textContent = macro.skills.map(ref => skillName(ref.weapon, ref.index)).join("·");
+      }
+    });
+    actionGrid?.classList.toggle("has-macros", anyMacro);
     for (const button of buttons) {
       const key = button.dataset.key;
       if (!key || !button.classList.contains("key-slot") || !(SLOT_KEYS as readonly string[]).includes(key)) continue;
@@ -157,6 +181,18 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     getCheats: () => (session && !ending ? session.cheats : undefined),
   };
   const unsubscribeAuto = automation.onChange(applyPadLabels);
+  macroButtons.forEach((button, i) => {
+    button.addEventListener("pointerdown", event => {
+      event.preventDefault();
+      if (!session || preparing || suspended || ending) return;
+      button.classList.add("pressed");
+      automation.runMacro(i);
+    }, { signal: abortController.signal });
+    const release = () => button.classList.remove("pressed");
+    button.addEventListener("pointerup", release, { signal: abortController.signal });
+    button.addEventListener("pointercancel", release, { signal: abortController.signal });
+    button.addEventListener("pointerleave", release, { signal: abortController.signal });
+  });
   const attachAutomation = () => {
     if (!isHeroesLore3(app.title) || automation.appId === app.id) return;
     automation.attach({ appId: app.id, getCheats: cheatContext.getCheats, pressKey });

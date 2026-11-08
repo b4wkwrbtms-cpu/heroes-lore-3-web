@@ -668,6 +668,28 @@ html[data-screen-fit="contain"] #canvas {
   gap: 6px;
 }
 
+.action-grid.has-macros {
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+}
+
+.key-macro {
+  background: linear-gradient(180deg, #4c2a7a, #2d1850);
+  border-color: #7a4fc2;
+}
+
+.key-macro b {
+  color: #e9d8ff;
+}
+
+.key-macro span {
+  color: #c9b3f0;
+}
+
+.key-macro:active,
+.key-macro.pressed {
+  background: #6a3fb0;
+}
+
 .key {
   display: flex;
   min-width: 0;
