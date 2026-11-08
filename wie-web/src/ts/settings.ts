@@ -1,4 +1,4 @@
-import { Languages, Maximize, Music2, Sparkles, Volume2, X, createIcons } from "lucide";
+import { Languages, Maximize, Music2, Radio, Sparkles, Volume2, X, createIcons } from "lucide";
 
 import type { Settings, Wie } from "./backend";
 import { getLocale, setLanguagePreference, t, type LanguagePreference } from "./i18n";
@@ -83,7 +83,7 @@ export const initializeSettings = async (backend: Wie): Promise<SettingsControll
       }
     });
   }
-  createIcons({ icons: { Languages, Maximize, Music2, Sparkles, Volume2, X }, root: dialog });
+  createIcons({ icons: { Languages, Maximize, Music2, Radio, Sparkles, Volume2, X }, root: dialog });
 
   return settings;
 };

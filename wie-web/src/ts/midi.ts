@@ -24,6 +24,28 @@ type AudioState = {
 
 let midiVolume = 0.5;
 let pcmVolume = 0.5;
+
+export type BgmEngine = "fm" | "gm";
+const BGM_ENGINE_KEY = "wie_bgm_engine";
+let bgmEngine: BgmEngine = loadBgmEngine();
+
+/** Which synthesizer plays MA-3 scores: their own FM voices, or the General MIDI soundfont. */
+export function loadBgmEngine(): BgmEngine {
+  try {
+    return window.localStorage.getItem(BGM_ENGINE_KEY) === "gm" ? "gm" : "fm";
+  } catch {
+    return "fm";
+  }
+}
+
+export function setBgmEngine(value: BgmEngine): void {
+  bgmEngine = value;
+  try {
+    window.localStorage.setItem(BGM_ENGINE_KEY, value);
+  } catch {
+    // storage unavailable
+  }
+}
 let audioReady: Promise<AudioState | null> | undefined;
 let currentContext: AudioContext | undefined;
 let unlockInstalled = false;
@@ -212,7 +234,7 @@ export class AudioPlayer {
   }
 
   public play(handle: number, duration: number, events: TransportEvent[], repeat: boolean, source?: Uint8Array): void {
-    const score = this.scoreFor(handle, source);
+    const score = bgmEngine === "fm" ? this.scoreFor(handle, source) : null;
     this.commands = this.commands
       .then(async () => {
         const state = await this.audioReady;
@@ -242,7 +264,7 @@ export class AudioPlayer {
       .then(async () => {
         const state = await this.audioReady;
         if (this.disposed) return;
-        if (state && this.scores.get(handle)) void state.ma3.stop(handle);
+        if (state) void state.ma3.stop(handle);
         this.worker.postMessage({ type: "stop", handle });
       })
       .catch(error => console.warn("Failed to stop audio playback:", error));

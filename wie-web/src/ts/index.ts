@@ -4,6 +4,7 @@ import { wasmIntegration } from "@sentry/wasm";
 
 import { recordPageView } from "./analytics";
 import { HqDisplay, loadScreenQuality, setCurrentDisplay, storeScreenQuality } from "./display";
+import { loadBgmEngine, setBgmEngine } from "./midi";
 import { runApp } from "./app";
 import { initializeWie, type LibraryApp } from "./backend";
 import { getLocale, initializeLocalization, t } from "./i18n";
@@ -41,6 +42,11 @@ const main = async () => {
       display.setEnabled(value === "hq");
     };
     applyQuality(loadScreenQuality());
+    const engineSelect = document.getElementById("bgm-engine") as HTMLSelectElement | null;
+    if (engineSelect) {
+      engineSelect.value = loadBgmEngine();
+      engineSelect.addEventListener("change", () => setBgmEngine(engineSelect.value === "gm" ? "gm" : "fm"));
+    }
     const qualitySelect = document.getElementById("screen-quality") as HTMLSelectElement | null;
     if (qualitySelect) {
       qualitySelect.value = loadScreenQuality();
