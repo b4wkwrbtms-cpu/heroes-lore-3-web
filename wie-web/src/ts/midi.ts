@@ -21,6 +21,50 @@ type AudioState = {
 let midiVolume = 0.5;
 let pcmVolume = 0.5;
 let audioReady: Promise<AudioState | null> | undefined;
+let currentContext: AudioContext | undefined;
+let unlockInstalled = false;
+let silentLoop: HTMLAudioElement | undefined;
+
+// 0.1 s of 8 kHz 8-bit silence. Playing it in a looping <audio> element switches iOS to the media
+// playback audio session, so Web Audio keeps sounding with the ringer switch on silent.
+const SILENT_WAV = `data:audio/wav;base64,${btoa(
+  String.fromCharCode(
+    ...[0x52, 0x49, 0x46, 0x46, 0x44, 0x03, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45, 0x66, 0x6d, 0x74, 0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+      0x40, 0x1f, 0x00, 0x00, 0x40, 0x1f, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00, 0x64, 0x61, 0x74, 0x61, 0x20, 0x03, 0x00, 0x00],
+  ) + "\x80".repeat(800),
+)}`;
+
+/**
+ * Browsers (iOS above all) only let an AudioContext run after a user gesture, and the emulator starts
+ * music on its own schedule. Resume the context synchronously inside the first gestures we see.
+ */
+function installUnlock(): void {
+  if (unlockInstalled || typeof document === "undefined") return;
+  unlockInstalled = true;
+  const unlock = () => {
+    const ctx = currentContext;
+    if (ctx && ctx.state !== "running") {
+      void ctx.resume().then(() => {
+        void audioReady?.then(state => {
+          if (!state || state.ctx !== ctx) return;
+          state.clockAudioTime = ctx.currentTime;
+          state.clockPerformanceTime = performance.timeOrigin + performance.now();
+        });
+      }).catch(() => {});
+    }
+    if (!silentLoop) {
+      silentLoop = document.createElement("audio");
+      silentLoop.setAttribute("playsinline", "");
+      silentLoop.loop = true;
+      silentLoop.volume = 0.01;
+      silentLoop.src = SILENT_WAV;
+    }
+    if (silentLoop.paused) void silentLoop.play().catch(() => {});
+  };
+  for (const type of ["pointerdown", "touchend", "mousedown", "keydown"] as const) {
+    document.addEventListener(type, unlock, { capture: true, passive: true });
+  }
+}
 
 async function initAudio(ctx: AudioContext): Promise<AudioState> {
   const midiGain = ctx.createGain();
@@ -33,7 +77,7 @@ async function initAudio(ctx: AudioContext): Promise<AudioState> {
 
   let synth: WorkletSynthesizer | null = null;
   try {
-    await ctx.audioWorklet.addModule("/spessasynth_processor.min.js");
+    await ctx.audioWorklet.addModule(new URL("spessasynth_processor.min.js", document.baseURI).href);
     synth = new WorkletSynthesizer(ctx);
     const buffer = await fetch("1mgm.sf2").then(response => response.arrayBuffer());
     await synth.soundBankManager.addSoundBank(buffer, "main");
@@ -75,6 +119,7 @@ export class AudioPlayer {
     .then(() => {
       if (this.disposed) return null;
       this.ctx = new AudioContext();
+      currentContext = this.ctx;
       return initAudio(this.ctx);
     })
     .catch(error => {
@@ -86,6 +131,7 @@ export class AudioPlayer {
 
   constructor() {
     audioReady = this.audioReady;
+    installUnlock();
     this.worker.onmessage = (message: MessageEvent<WorkerOutput>) => {
       void this.audioReady.then(state => {
         if (!state || this.disposed) return;
@@ -177,6 +223,7 @@ export class AudioPlayer {
     this.disposed = true;
     this.worker.terminate();
     if (audioReady === this.audioReady) audioReady = undefined;
+    if (currentContext === this.ctx) currentContext = undefined;
     void this.ctx?.close().catch(error => console.warn("Failed to close audio context:", error));
     void this.audioReady.then(state => state?.synth?.destroy());
   }
