@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard, Settings, Sparkles, X, createIcons } from "lucide";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard, Map as MapIcon, Save, Settings, Sparkles, X, createIcons } from "lucide";
 
 import { recordPageView } from "./analytics";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
@@ -35,6 +35,8 @@ const icons = {
   ArrowRight,
   ArrowUp,
   Keyboard,
+  Map: MapIcon,
+  Save,
   Settings,
   Sparkles,
   X,

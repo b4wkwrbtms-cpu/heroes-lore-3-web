@@ -575,15 +575,16 @@ html[data-screen-fit="contain"] #canvas {
   padding: 16px;
 }
 
-/* ---- Keypad (portrait): joystick (left) / OK·CLR (middle) / numpad (right) ---- */
+/* ---- Controller (portrait): tools bar on top, joystick left, action grid right ---- */
 .pad {
   display: grid;
   width: 100%;
-  height: calc(clamp(190px, 27dvh, 260px) + var(--safe-bottom));
+  height: calc(clamp(210px, 30dvh, 280px) + var(--safe-bottom));
   flex: 0 0 auto;
-  grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
-  gap: 10px;
-  padding: 8px 12px calc(6px + var(--safe-bottom));
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  grid-template-rows: 34px minmax(0, 1fr);
+  gap: 8px 10px;
+  padding: 6px 12px calc(6px + var(--safe-bottom));
   background: var(--pad-bg);
   touch-action: none;
   user-select: none;
@@ -591,47 +592,38 @@ html[data-screen-fit="contain"] #canvas {
   -webkit-touch-callout: none;
 }
 
+.pad-tools-bar,
 .pad-left,
-.pad-mid,
 .pad-right {
   min-width: 0;
   min-height: 0;
 }
 
-.pad-left {
+.pad-tools-bar {
   display: flex;
+  grid-column: 1 / span 2;
   align-items: center;
-  justify-content: center;
-  container-type: size;
-}
-
-.pad-mid {
-  display: grid;
-  grid-template-rows: 64px minmax(0, 1.4fr) minmax(0, 1fr);
+  justify-content: space-between;
   gap: 8px;
 }
 
-.pad-tools {
-  display: grid;
+.pad-tools,
+.pad-utils {
+  display: flex;
+  height: 100%;
   margin: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
-  gap: 4px;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .pad-tool {
-  width: 100%;
+  width: 44px;
   height: 100%;
-  min-height: 26px;
-  flex-basis: auto;
+  flex: 0 0 44px;
   color: #cbd5e1;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-}
-
-.pad-tool-cheat {
-  color: #fcd34d;
 }
 
 .pad-tool:hover {
@@ -643,112 +635,44 @@ html[data-screen-fit="contain"] #canvas {
   height: 18px;
 }
 
-.quickpad {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.pad-tool-cheat {
+  color: #fcd34d;
 }
 
-.key-quick {
-  font-size: 1.5rem;
-}
-
-/* Full keypad: a bottom sheet for the keys that are rarely needed. */
-.keypad-sheet {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 20;
-  display: flex;
-  height: min(330px, 46dvh);
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
-  background: rgba(9, 9, 12, 0.96);
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.6);
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.keypad-sheet-head {
-  display: flex;
-  height: 30px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  color: #cbd5e1;
-  font-size: 0.85rem;
-}
-
-.keypad-sheet-head .pad-tool {
-  width: 30px;
-  height: 30px;
-}
-
-.keypad-sheet .numpad {
-  min-height: 0;
-  flex: 1;
-}
-
-.numpad {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 0.8fr) repeat(4, minmax(0, 1fr));
+.key-util {
+  flex-direction: row;
+  padding: 0 10px;
   gap: 6px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
-.numpad .key {
-  grid-column: span 2;
+.key-util svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
 }
 
-.numpad .key-soft {
-  grid-column: span 3;
-  color: #e2e8f0;
-  background: linear-gradient(180deg, rgba(148, 163, 184, 0.28), rgba(148, 163, 184, 0.12));
-  border-color: rgba(148, 163, 184, 0.35);
-  font-size: 0.78rem;
+.pad-left {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
 }
 
-/* Invisible tap zones over the game's own soft-key labels (bottom corners of the screen). */
-.softkey {
-  position: absolute;
-  bottom: 0;
-  z-index: 1;
-  width: 38%;
-  height: 15%;
-  max-height: 72px;
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 12px 12px 0 0;
-  touch-action: none;
-}
-
-.softkey-left {
-  left: 0;
-}
-
-.softkey-right {
-  right: 0;
-}
-
-.softkey.pressed {
-  background: rgba(251, 191, 36, 0.28);
-}
-
-.softkey:disabled {
-  display: none;
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .key {
   display: flex;
   min-width: 0;
   min-height: 0;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   margin: 0;
@@ -760,9 +684,20 @@ html[data-screen-fit="contain"] #canvas {
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.5);
   font-size: 1.1rem;
   font-weight: 650;
-  line-height: 1;
+  line-height: 1.1;
   touch-action: none;
   transition: background 0.08s ease, transform 0.08s ease;
+}
+
+.key b {
+  font-weight: 750;
+}
+
+.key span {
+  color: rgba(241, 245, 249, 0.6);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .key:active,
@@ -776,11 +711,28 @@ html[data-screen-fit="contain"] #canvas {
   opacity: 0.35;
 }
 
+.key-slot b {
+  font-size: 1.25rem;
+}
+
+.key-sub {
+  color: #bfdbfe;
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.32), rgba(37, 99, 235, 0.22));
+  border-color: rgba(96, 165, 250, 0.45);
+}
+
+.key-sub b {
+  font-size: 1rem;
+}
+
 .key-ok {
   color: #1c1917;
   background: linear-gradient(180deg, #fcd34d, #f59e0b);
   border-color: rgba(0, 0, 0, 0.25);
-  font-size: 1rem;
+}
+
+.key-ok span {
+  color: rgba(28, 25, 23, 0.6);
 }
 
 .key-ok:active,
@@ -788,11 +740,26 @@ html[data-screen-fit="contain"] #canvas {
   background: linear-gradient(180deg, #fbbf24, #d97706);
 }
 
+.key-attack {
+  grid-column: 1 / span 2;
+}
+
+.key-attack b {
+  font-size: 1.35rem;
+}
+
 .key-clr {
   color: #fecaca;
   background: linear-gradient(180deg, rgba(248, 113, 113, 0.28), rgba(185, 28, 28, 0.22));
   border-color: rgba(248, 113, 113, 0.35);
-  font-size: 0.9rem;
+}
+
+.key-clr span {
+  color: rgba(254, 202, 202, 0.6);
+}
+
+.key-menu b {
+  font-size: 1rem;
 }
 
 /* 360° joystick */
@@ -882,7 +849,65 @@ html[data-screen-fit="contain"] #canvas {
   opacity: 0.35;
 }
 
-/* ---- Landscape: joystick + OK/CLR on the left, screen in the middle, numpad on the right ---- */
+/* Full keypad: a bottom sheet for the keys that are rarely needed. */
+.keypad-sheet {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  height: min(330px, 46dvh);
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: rgba(9, 9, 12, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.6);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.keypad-sheet-head {
+  display: flex;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.keypad-sheet-head .pad-tool {
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+}
+
+.numpad {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 0.8fr) repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.numpad .key {
+  grid-column: span 2;
+  font-size: 1.1rem;
+}
+
+.numpad .key-soft {
+  grid-column: span 3;
+  color: #e2e8f0;
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.28), rgba(148, 163, 184, 0.12));
+  border-color: rgba(148, 163, 184, 0.35);
+  font-size: 0.78rem;
+}
+
+/* ---- Landscape: joystick + tools on the left, screen in the middle, action grid on the right ---- */
 @media (orientation: landscape) and (max-height: 600px) {
   .player-view {
     padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
@@ -892,8 +917,8 @@ html[data-screen-fit="contain"] #canvas {
   .player-main {
     display: grid;
     grid-template-columns: minmax(0, 1fr) calc((100dvh - var(--safe-top) - var(--safe-bottom)) * 3 / 4) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) 60px;
-    column-gap: 8px;
+    grid-template-rows: 40px minmax(0, 1fr);
+    gap: 6px 8px;
   }
 
   .canvas-wrapper {
@@ -908,348 +933,24 @@ html[data-screen-fit="contain"] #canvas {
     display: contents;
   }
 
-  .pad-left {
+  .pad-tools-bar {
     grid-column: 1;
     grid-row: 1;
-    padding: 8px 8px 0;
+    padding: 6px 8px 0;
   }
 
-  .pad-mid {
+  .pad-left {
     grid-column: 1;
     grid-row: 2;
-    grid-template-columns: 72px minmax(0, 1.3fr) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr);
     padding: 0 8px 8px;
-  }
-
-  .pad-tools {
-    grid-auto-rows: minmax(0, 1fr);
   }
 
   .pad-right {
     align-self: center;
-    max-height: 100%;
-    height: min(100%, 360px);
+    height: min(100%, 340px);
     grid-column: 3;
     grid-row: 1 / span 2;
     padding: 8px;
-  }
-}
-
-.native .player-toolbar {
-  display: none;
-}
-
-.native .player-main {
-  height: 100dvh;
-}
-
-.native .player-warning {
-  position: fixed;
-  top: 8px;
-  z-index: 3;
-  width: calc(100% - 24px);
-  pointer-events: none;
-}
-
-.native .button-container {
-  min-height: 0;
-  flex: 1;
-  grid-template-rows: repeat(8, minmax(0, 1fr));
-  padding: 6px 12px 0;
-}
-
-.native .button-container p {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.native .button-container p:nth-child(-n + 4) button:only-child {
-  grid-column: 2;
-}
-
-.native .button-container button {
-  width: 100%;
-}
-
-.native .button-container .icon-button {
-  position: relative;
-  z-index: 2;
-  width: 32px;
-  justify-self: start;
-}
-
-.native .button-container #app-settings {
-  justify-self: end;
-}
-
-.app-dialog {
-  width: min(420px, calc(100% - 32px));
-  padding: 0;
-  color: var(--fg);
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 18px 54px rgba(15, 23, 42, 0.28);
-}
-
-.app-dialog::backdrop {
-  background: rgba(15, 23, 42, 0.58);
-}
-
-.app-dialog form {
-  padding: 22px;
-}
-
-.app-dialog p {
-  margin: 6px 0 20px;
-  color: var(--muted);
-  line-height: 1.55;
-}
-
-.dialog-header {
-  display: flex;
-  min-height: 40px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 8px;
-}
-
-.dialog-header h2 {
-  margin: 0;
-  font-size: 1.2rem;
-}
-
-.dialog-close {
-  margin-right: -8px;
-}
-
-.settings-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 12px 0 4px;
-}
-
-.settings-fields label {
-  display: grid;
-  grid-template-columns: 20px 100px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  font-size: 0.9rem;
-}
-
-.settings-fields svg {
-  width: 18px;
-  height: 18px;
-}
-
-.settings-fields input[type="range"] {
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-}
-
-.language-preference {
-  width: 100%;
-  min-width: 0;
-  min-height: 40px;
-  color: var(--fg);
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-
-#library-view:not([hidden]) ~ #settings-dialog .language-setting {
-  display: none;
-}
-
-.welcome-steps {
-  display: grid;
-  gap: 12px;
-  margin: 0 0 22px;
-  padding-left: 22px;
-}
-
-.welcome-steps li {
-  padding-left: 4px;
-}
-
-.welcome-steps strong,
-.welcome-steps span {
-  display: block;
-}
-
-.welcome-steps strong {
-  margin-bottom: 2px;
-}
-
-.welcome-steps span {
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-
-.welcome-actions .primary-command {
-  flex: 1;
-}
-
-.primary-command,
-.secondary-command,
-.danger-command {
-  display: inline-flex;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 5px;
-  font-weight: 650;
-}
-
-.primary-command {
-  color: var(--fg);
-  background: var(--accent);
-  border: 1px solid var(--accent);
-}
-
-.primary-command:hover {
-  background: var(--accent-dark);
-  border-color: var(--accent-dark);
-}
-
-.primary-command.drop-active {
-  background: var(--accent-light);
-  border-color: var(--accent-dark);
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
-}
-
-.primary-command:disabled {
-  opacity: 0.6;
-}
-
-.secondary-command {
-  color: var(--fg);
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-}
-
-.danger-command {
-  color: #ffffff;
-  background: #dc2626;
-  border: 1px solid #dc2626;
-}
-
-.dialog-status {
-  min-height: 1.55em;
-  margin: 14px 0 0 !important;
-  font-size: 0.875rem;
-}
-
-.dialog-status.error {
-  color: #b91c1c;
-}
-
-.dialog-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 24px;
-}
-
-.help-dialog table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-}
-
-.help-dialog td {
-  padding: 8px 4px;
-  border-bottom: 1px solid var(--border);
-}
-
-.help-dialog td:first-child {
-  white-space: nowrap;
-}
-
-.help-dialog .dialog-actions {
-  align-items: center;
-  justify-content: space-between;
-}
-
-kbd {
-  display: inline-block;
-  min-width: 24px;
-  padding: 2px 5px;
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  border-radius: 3px;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  text-align: center;
-}
-
-@media (max-width: 600px) {
-  .settings-fields label {
-    grid-template-columns: 20px minmax(0, 1fr);
-  }
-
-  .settings-fields input,
-  .settings-fields select {
-    grid-column: 2;
-  }
-
-  .library-header {
-    padding: 4px 18px;
-  }
-
-  .brand-block {
-    display: grid;
-    grid-template-columns: 32px auto;
-    gap: 0 8px;
-  }
-
-  .brand-icon {
-    width: 32px;
-    height: 32px;
-    grid-row: span 2;
-  }
-
-  .brand-name {
-    font-size: 1.5rem;
-  }
-
-  .brand-block h1 {
-    font-size: 0.75rem;
-  }
-
-  .library-main {
-    padding: 4px 18px 0;
-  }
-
-  .library-page {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: repeat(4, minmax(0, 1fr));
-    gap: 8px 12px;
-    padding-block: 4px;
-  }
-
-  .app-launch,
-  .add-app {
-    gap: 6px;
-  }
-
-  .app-icon {
-    font-size: 1.75rem;
-  }
-
-  .app-title {
-    font-size: 0.8rem;
-  }
-
-  .library-ad {
-    padding: 10px 18px 16px;
   }
 }
 

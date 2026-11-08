@@ -132,17 +132,8 @@
         </div>
         <p id="player-warning" class="player-warning" role="status" hidden></p>
 
-        <div class="button-container pad" aria-label="앱 키패드" data-i18n-aria-label="keypad">
-          <div class="pad-left">
-            <div id="joystick" class="joystick" role="application" aria-label="조이스틱">
-              <span class="joystick-arrow joystick-arrow-up" aria-hidden="true"></span>
-              <span class="joystick-arrow joystick-arrow-down" aria-hidden="true"></span>
-              <span class="joystick-arrow joystick-arrow-left" aria-hidden="true"></span>
-              <span class="joystick-arrow joystick-arrow-right" aria-hidden="true"></span>
-              <div class="joystick-knob"></div>
-            </div>
-          </div>
-          <div class="pad-mid">
+        <div class="button-container pad" aria-label="게임 컨트롤러">
+          <div class="pad-tools-bar">
             <p class="pad-tools">
               <button id="back-to-library" class="icon-button pad-tool" type="button" title="라이브러리" data-i18n-title="library" aria-label="라이브러리로 돌아가기" data-i18n-aria-label="backToLibrary">
                 <i data-lucide="arrow-left"></i>
@@ -157,14 +148,29 @@
                 <i data-lucide="keyboard"></i>
               </button>
             </p>
-            <button class="key key-ok" data-key="OK">OK</button>
-            <button class="key key-clr" data-key="CLR">CLR</button>
+            <p class="pad-utils">
+              <button class="key key-util" data-key="*"><i data-lucide="map"></i><span>미니맵</span></button>
+              <button class="key key-util" data-key="CALL"><i data-lucide="save"></i><span>퀵세이브</span></button>
+            </p>
           </div>
-          <div class="pad-right quickpad">
-            <button class="key key-quick" data-key="1">1</button>
-            <button class="key key-quick" data-key="2">2</button>
-            <button class="key key-quick" data-key="3">3</button>
-            <button class="key key-quick" data-key="4">4</button>
+          <div class="pad-left">
+            <div id="joystick" class="joystick" role="application" aria-label="조이스틱">
+              <span class="joystick-arrow joystick-arrow-up" aria-hidden="true"></span>
+              <span class="joystick-arrow joystick-arrow-down" aria-hidden="true"></span>
+              <span class="joystick-arrow joystick-arrow-left" aria-hidden="true"></span>
+              <span class="joystick-arrow joystick-arrow-right" aria-hidden="true"></span>
+              <div class="joystick-knob"></div>
+            </div>
+          </div>
+          <div class="pad-right action-grid">
+            <button class="key key-slot" data-key="1"><b>1</b><span>단축</span></button>
+            <button class="key key-slot" data-key="3"><b>3</b><span>단축</span></button>
+            <button class="key key-slot" data-key="9"><b>9</b><span>단축</span></button>
+            <button class="key key-slot" data-key="0"><b>0</b><span>단축</span></button>
+            <button class="key key-slot" data-key="#"><b>#</b><span>단축·스킵</span></button>
+            <button class="key key-sub" data-key="7"><b>보조</b><span>7</span></button>
+            <button class="key key-ok key-attack" data-key="OK"><b>공격</b><span>확인 · 대화</span></button>
+            <button class="key key-clr key-menu" data-key="CLR"><b>메뉴</b><span>CLR</span></button>
           </div>
         </div>
 
