@@ -208,7 +208,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   };
   padMore?.addEventListener("click", () => {
     releaseKeys();
-    showPadTools(padTools?.hidden ?? true);
+    showPadTools(padTools?.hidden !== false);
   }, { signal: abortController.signal });
   padTools?.addEventListener("click", () => showPadTools(false), { signal: abortController.signal });
   abortController.signal.addEventListener("abort", () => window.clearTimeout(padToolsTimer));
