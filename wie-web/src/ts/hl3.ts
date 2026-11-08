@@ -84,7 +84,13 @@ export interface BagEntry {
   index: number;
   count: number;
   equipped: boolean;
+  /** Quick-slot the item is registered to (index into SLOT_ORDER), or -1. */
+  quickSlot: number;
 }
+
+/** Quick-slot order used by the game's 등록 menu (1키등록 … #키등록); stored per bag record at +0x21, 0xff = none. */
+export const SLOT_ORDER = ["1", "3", "9", "0", "#"] as const;
+const QUICK_SLOT_OFFSET = 0x21;
 
 const decoder = (() => {
   try {
@@ -125,7 +131,7 @@ export const readBag = (api: CheatApi): BagEntry[] => {
     if (record.length < HL3.RECORD) break;
     const exists = record[0x1f] === 1;
     if (!exists) {
-      entries.push({ slot, address, name: "", category: -1, index: -1, count: 0, equipped: false });
+      entries.push({ slot, address, name: "", category: -1, index: -1, count: 0, equipped: false, quickSlot: -1 });
       continue;
     }
     entries.push({
@@ -136,6 +142,7 @@ export const readBag = (api: CheatApi): BagEntry[] => {
       index: u16(record, 0x24),
       count: u16(record, 0x26),
       equipped: record[0x1e] === 1,
+      quickSlot: record[QUICK_SLOT_OFFSET] === 0xff ? -1 : record[QUICK_SLOT_OFFSET],
     });
   }
   return entries;
@@ -217,6 +224,53 @@ export const giveItem = (api: CheatApi, category: number, index: number, count: 
   return { slot, stacked: false, count: table.kind === "equip" ? pieces : Math.min(count, 99) };
 };
 
+/** Register a bag item to a quick slot (unregistering whatever was there). */
+export const registerItem = (api: CheatApi, entry: BagEntry, quickSlot: number): void => {
+  for (const other of readBag(api)) {
+    if (other.quickSlot === quickSlot && other.address !== entry.address) api.write(other.address + QUICK_SLOT_OFFSET, 1, false, 0xff);
+  }
+  api.write(entry.address + QUICK_SLOT_OFFSET, 1, false, quickSlot);
+};
+
+export const slotItem = (api: CheatApi, quickSlot: number): BagEntry | undefined =>
+  readBag(api).find(entry => entry.count > 0 && entry.quickSlot === quickSlot);
+
+/** HP / SP potions used by 물약 준비: 엘릭서 (HP 3000), 요정수 (SP 완전 회복). */
+export const AUTO_POTIONS = { hp: [18, 3] as const, sp: [18, 6] as const };
+
+/** Put 99 HP potions in `hpSlot` and 99 SP potions in `spSlot`, giving them when the bag has none. */
+export const prepareAutoPotions = (api: CheatApi, hpSlot: number, spSlot: number): { hp: string; sp: string } => {
+  const names = { hp: "", sp: "" };
+  for (const kind of ["hp", "sp"] as const) {
+    const [category, index] = AUTO_POTIONS[kind];
+    const item = HL3_ITEMS[category]?.items[index];
+    if (!item) continue;
+    let entry = readBag(api).find(candidate => candidate.category === category && candidate.index === index && candidate.count > 0);
+    if (!entry) {
+      giveItem(api, category, index, 99);
+      entry = readBag(api).find(candidate => candidate.category === category && candidate.index === index && candidate.count > 0);
+    }
+    if (!entry) throw new Error("가방이 가득 차서 물약을 넣지 못했어요.");
+    if (entry.count < 99) api.write(entry.address + 0x26, 2, false, 99);
+    registerItem(api, entry, kind === "hp" ? hpSlot : spSlot);
+    names[kind] = displayName(item.n);
+  }
+  return names;
+};
+
+/** Keep the items registered to the given quick slots at `count` pieces. Returns true when something was topped up. */
+export const topUpSlotItems = (api: CheatApi, quickSlots: number[], count = 99): boolean => {
+  let changed = false;
+  for (const entry of readBag(api)) {
+    if (entry.quickSlot < 0 || !quickSlots.includes(entry.quickSlot) || entry.count <= 0 || entry.count >= count) continue;
+    const table = HL3_ITEMS[entry.category];
+    if (!table || table.kind !== "use") continue;
+    api.write(entry.address + 0x26, 2, false, count);
+    changed = true;
+  }
+  return changed;
+};
+
 export const getGold = (api: CheatApi): number => api.read(HL3.GOLD, 4, false) >>> 0;
 export const setGold = (api: CheatApi, value: number): void => api.write(HL3.GOLD, 4, false, Math.max(0, Math.min(value, 99_999_999)));
 export const freezeGold = (api: CheatApi, value: number): void => api.freeze(HL3.GOLD, 4, false, Math.max(0, Math.min(value, 99_999_999)));
@@ -225,10 +279,23 @@ export const freezeGold = (api: CheatApi, value: number): void => api.freeze(HL3
 export const QUICK_ITEMS: Array<[number, number, string]> = [
   [18, 7, "오브원석"],
   [14, 3, "제련석"],
-  [18, 0, "포션"],
   [18, 3, "엘릭서"],
-  [18, 5, "포도주"],
+  [18, 6, "요정수"],
+  [18, 2, "미라클포션"],
   [18, 8, "귀환서"],
+];
+
+/** 캐시 상점 전용 아이템 (게임 안에서는 네트워크 결제로만 살 수 있던 것들): [category, index, label, description]. */
+export const CASH_ITEMS: Array<[number, number, string, string]> = [
+  [18, 12, "컵라면", "HP·SP 완전 회복"],
+  [18, 13, "오토루팅", "아이템 자동 루팅 (게임 종료 전까지)"],
+  [18, 14, "여행가방", "인벤토리 1가방 확장 (최대 5가방)"],
+  [18, 11, "부활의서", "게임오버 때 자동 부활"],
+  [18, 15, "스탯리셋", "육성한 스탯 포인트 초기화"],
+  [18, 16, "스킬리셋", "육성한 스킬 포인트 초기화"],
+  [18, 26, "소켓확장", "장비 소켓 증가 (최대 5)"],
+  [18, 25, "오브상자", "랜덤 오브 상자"],
+  [18, 9, "그리폰의피리", "원하는 마을로 이동"],
 ];
 
 export const findItem = (category: number, name: string): Hl3Item | undefined =>

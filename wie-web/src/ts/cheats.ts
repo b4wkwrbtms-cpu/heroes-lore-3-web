@@ -3,8 +3,8 @@ import { X, createIcons } from "lucide";
 import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, loadAutoConfig, skillSlotKeys, storeAutoConfig } from "./automation";
 import type { CheatApi } from "./backend";
 import {
-  HL3, ORBS, QUICK_ITEMS, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel, giveItem, gradeLabel,
-  isHeroesLore3, readBag, readEquipment, readVitals, setBaseStats, setGold, setItemStat, setLevel, setOrb,
+  CASH_ITEMS, HL3, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel, giveItem,
+  gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, readEquipment, readVitals, setBaseStats, setGold, setItemStat, setLevel, setOrb,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
 
@@ -416,6 +416,24 @@ export const getCheatPanel = (): CheatPanel => {
     }
     body.append(quick);
 
+    // 캐시 아이템
+    body.append(el("p", "cheat-lead", "💎 캐시 아이템 넣기 (캐시 상점 전용이던 것들)"));
+    body.append(el("p", "cheat-muted", "원래는 네트워크 결제로만 살 수 있던 아이템이에요. 가방에 바로 넣어 드려요 (싱글 플레이에서 안 먹히는 것도 있을 수 있어요)."));
+    const cash = el("div", "cheat-item-actions");
+    for (const [category, index, label, description] of CASH_ITEMS) {
+      const cashButton = button(label, "secondary-command", () => {
+        try {
+          const result = giveItem(live, category, index, 10);
+          setStatus(`${label} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸. ${description}.`);
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      });
+      cashButton.title = description;
+      cash.append(cashButton);
+    }
+    body.append(cash);
+
     // 아이템 선택 지급
     body.append(el("p", "cheat-lead", "🗡️ 아이템 골라서 넣기 (무기·방어구·장신구·오브·재료 전부)"));
     const pickRow = el("div", "cheat-row");
@@ -580,6 +598,23 @@ export const getCheatPanel = (): CheatPanel => {
     const spRow = el("div", "cheat-row");
     spRow.append(el("span", undefined, "SP 물약"), slotSelect(auto.spKey, key => saveAuto({ ...auto, spKey: key })), percentInput(auto.spPercent, percent => saveAuto({ ...auto, spPercent: percent })), el("span", undefined, "% 아래면"));
     body.append(spRow);
+    const prepRow = el("div", "cheat-item-actions");
+    prepRow.append(button(`🧴 물약 준비 (${auto.hpKey}번 엘릭서 · ${auto.spKey}번 요정수 99개 등록)`, "secondary-command", () => {
+      try {
+        const names = prepareAutoPotions(live, SLOT_ORDER.indexOf(auto.hpKey), SLOT_ORDER.indexOf(auto.spKey));
+        setStatus(`${auto.hpKey}번 칸에 ${names.hp}, ${auto.spKey}번 칸에 ${names.sp}를 99개씩 넣고 등록했어요. 화면 아래 단축키 칸에 바로 안 보이면 가방을 한 번 열었다 닫으세요.`);
+      } catch (error) {
+        setStatus(String(error), true);
+      }
+    }));
+    body.append(prepRow);
+    const infiniteCheck = el("label", "cheat-check");
+    const infiniteBox = el("input") as HTMLInputElement;
+    infiniteBox.type = "checkbox";
+    infiniteBox.checked = auto.infinitePotions;
+    infiniteBox.addEventListener("change", () => saveAuto({ ...auto, infinitePotions: infiniteBox.checked }));
+    infiniteCheck.append(infiniteBox, el("span", undefined, "등록한 물약 안 줄어들게 (개수 99 유지)"));
+    body.append(infiniteCheck);
 
     // 자동 스킬
     const skillRow = el("div", "cheat-item-actions");

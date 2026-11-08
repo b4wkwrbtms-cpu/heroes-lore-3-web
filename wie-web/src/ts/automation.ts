@@ -1,5 +1,5 @@
 import type { CheatApi } from "./backend";
-import { getLevel, readVitals } from "./hl3";
+import { SLOT_ORDER, getLevel, readVitals, topUpSlotItems } from "./hl3";
 
 /** Quick-slot keys of 영웅서기3 (회복 아이템·스킬 등록 칸). */
 export const SLOT_KEYS = ["1", "3", "9", "0", "#"] as const;
@@ -13,6 +13,8 @@ export interface AutoConfig {
   hpPercent: number;
   spKey: SlotKey;
   spPercent: number;
+  /** Keep the potions registered to hpKey/spKey at 99 pieces. */
+  infinitePotions: boolean;
   skillOn: boolean;
   /** 자동 스킬로 돌릴 단축키 칸. 쿨타임은 게임이 판단하므로 칸을 차례로 눌러 주기만 해요. */
   skillSlots: SlotKey[];
@@ -33,6 +35,7 @@ export const defaultAutoConfig = (): AutoConfig => ({
   hpPercent: 40,
   spKey: "0",
   spPercent: 30,
+  infinitePotions: true,
   skillOn: false,
   skillSlots: ["1", "3"],
   skillGap: 500,
@@ -61,6 +64,7 @@ export const loadAutoConfig = (appId: string): AutoConfig => {
     if (isSlotKey(data.spKey)) config.spKey = data.spKey;
     config.hpPercent = clampNumber(data.hpPercent, 5, 95, config.hpPercent);
     config.spPercent = clampNumber(data.spPercent, 5, 95, config.spPercent);
+    config.infinitePotions = data.infinitePotions !== false;
     config.skillOn = data.skillOn === true;
     config.skillGap = clampNumber(data.skillGap, 150, 3000, config.skillGap);
     const slots: unknown = data.skillSlots;
@@ -116,6 +120,7 @@ class Automation {
   private sp = newPotionState();
   private spPeak = 0;
   private level = 0;
+  private lastTopUp = 0;
 
   attach(context: AutoContext) {
     this.detach();
@@ -168,6 +173,7 @@ class Automation {
     this.sp = newPotionState();
     this.spPeak = 0;
     this.level = 0;
+    this.lastTopUp = 0;
     this.roundRobin = 0;
     this.lastSkillAt = 0;
     this.attackHeld = false;
@@ -202,6 +208,11 @@ class Automation {
 
     this.drink(context, now, this.hp, vitals.hp, vitals.hpMax, this.config.hpPercent, this.config.hpKey);
     if (this.spPeak > 0) this.drink(context, now, this.sp, vitals.sp, this.spPeak, this.config.spPercent, this.config.spKey);
+
+    if (this.config.infinitePotions && now - this.lastTopUp > 2000) {
+      this.lastTopUp = now;
+      topUpSlotItems(api, [SLOT_ORDER.indexOf(this.config.hpKey), SLOT_ORDER.indexOf(this.config.spKey)]);
+    }
   }
 
   private drink(context: AutoContext, now: number, state: PotionState, value: number, max: number, percent: number, key: string) {
