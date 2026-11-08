@@ -78,6 +78,13 @@ export const HL3 = {
   FINAL2: 0x01503b86,
   /** 게임 모드 (u32): 4 = 필드에서 플레이 중, 5 = 메뉴(상태창·가방·스킬창) 열림, 2·3 = 타이틀/로딩. */
   MODE: 0x01503b00,
+  /** u32 field sub-state: 3 while the player has control, 4 while an NPC or event dialog is on screen. */
+  FIELD_STATE: 0x0150db48,
+  /**
+   * The active buff (one at a time; casting another replaces it): u16 skill id (0xffff = none), u16 ?,
+   * u16 remaining time (counts down about 4 per second), u16 full duration, then the buff's effect values.
+   */
+  BUFF: 0x01503bb8,
   /** 남은 스탯 포인트 (u16). 레벨업마다 +4, 게임 자체 상한 276. */
   STAT_POINTS: 0x01503c12,
   /** 남은 스킬 포인트 (u8). 레벨업마다 +1, 게임 자체 상한 44. */
@@ -529,7 +536,19 @@ export const setLevel = (api: CheatApi, level: number): void => api.write(HL3.LE
 
 export const MODE_FIELD = 4;
 /** True while the player is actually on the field (not in a menu), where quick-slot keys mean skills/items. */
-export const isOnField = (api: CheatApi): boolean => (api.read(HL3.MODE, 4, false) >>> 0) === MODE_FIELD;
+export const FIELD_CONTROL = 3;
+/** On the field with the player in control: not in a menu, a shop or an NPC/event dialog. */
+export const isOnField = (api: CheatApi): boolean =>
+  (api.read(HL3.MODE, 4, false) >>> 0) === MODE_FIELD && (api.read(HL3.FIELD_STATE, 4, false) >>> 0) === FIELD_CONTROL;
+
+/** Keep the active buff at its full duration so it never runs out. Returns true while a buff is active. */
+export const keepBuff = (api: CheatApi): boolean => {
+  if (api.read(HL3.BUFF, 2, false) === 0xffff) return false;
+  const total = api.read(HL3.BUFF + 6, 2, false);
+  if (total === 0 || total === 0xffff) return false;
+  if (api.read(HL3.BUFF + 4, 2, false) < total) api.write(HL3.BUFF + 4, 2, false, total);
+  return true;
+};
 
 export const getStatPoints = (api: CheatApi): number => api.read(HL3.STAT_POINTS, 2, false);
 export const setStatPoints = (api: CheatApi, value: number): void => api.write(HL3.STAT_POINTS, 2, false, Math.max(0, Math.min(value, 9999)));

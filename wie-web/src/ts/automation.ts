@@ -1,6 +1,6 @@
 import type { CheatApi } from "./backend";
 import {
-  HL3, SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, readSkills, readSlot, readVitals, registerSkill, sanitizeInventory,
+  HL3, SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, keepBuff, readSkills, readSlot, readVitals, registerSkill, sanitizeInventory,
   topUpSlotItems, writeSlot,
 } from "./hl3";
 import { HL3_SKILLS } from "./hl3_skills";
@@ -34,6 +34,8 @@ export interface AutoConfig {
   spPercent: number;
   /** Keep the potions registered to hpKey/spKey at 99 pieces. */
   infinitePotions: boolean;
+  /** Keep a cast buff active forever, as if it were a passive. */
+  keepBuffs: boolean;
   skillOn: boolean;
   /** 자동 스킬로 돌릴 단축키 칸. 쿨타임은 게임이 판단하므로 칸을 차례로 눌러 주기만 해요. */
   skillSlots: SlotKey[];
@@ -58,6 +60,7 @@ export const defaultAutoConfig = (): AutoConfig => ({
   spKey: "0",
   spPercent: 30,
   infinitePotions: true,
+  keepBuffs: true,
   skillOn: false,
   skillSlots: ["1", "3"],
   skillGap: 400,
@@ -89,6 +92,7 @@ export const loadAutoConfig = (appId: string): AutoConfig => {
     config.hpPercent = clampNumber(data.hpPercent, 5, 95, config.hpPercent);
     config.spPercent = clampNumber(data.spPercent, 5, 95, config.spPercent);
     config.infinitePotions = data.infinitePotions !== false;
+    config.keepBuffs = data.keepBuffs !== false;
     config.skillOn = data.skillOn === true;
     config.skillGap = clampNumber(data.skillGap, 150, 3000, config.skillGap);
     const slots: unknown = data.skillSlots;
@@ -402,6 +406,13 @@ class Automation {
       this.attackPresses = [];
       this.attackUntil = 0;
       this.pendingSkill = undefined;
+    }
+    if (this.config.keepBuffs) {
+      try {
+        if ((api.read(HL3.MODE, 4, false) >>> 0) === 4) keepBuff(api);
+      } catch {
+        // game state not loaded yet
+      }
     }
     if (this.config.potionOn) {
       try {

@@ -658,6 +658,13 @@ export const getCheatPanel = (): CheatPanel => {
     infiniteBox.addEventListener("change", () => saveAuto({ ...auto, infinitePotions: infiniteBox.checked }));
     infiniteCheck.append(infiniteBox, el("span", undefined, "등록한 물약 안 줄어들게 (개수 99 유지)"));
     body.append(infiniteCheck);
+    const buffCheck = el("label", "cheat-check");
+    const buffBox = el("input") as HTMLInputElement;
+    buffBox.type = "checkbox";
+    buffBox.checked = auto.keepBuffs;
+    buffBox.addEventListener("change", () => saveAuto({ ...auto, keepBuffs: buffBox.checked }));
+    buffCheck.append(buffBox, el("span", undefined, "✨ 버프 계속 유지 (한 번 쓰면 안 꺼져요 · 게임 규칙상 버프는 하나만, 다른 버프를 쓰면 바뀌어요)"));
+    body.append(buffCheck);
 
     // 자동 스킬
     const skillRow = el("div", "cheat-item-actions");
