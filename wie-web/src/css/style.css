@@ -1152,6 +1152,13 @@ kbd {
   }
 }
 
+.settings-credits {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
 .cheat-dialog {
   width: min(520px, calc(100% - 24px));
 }

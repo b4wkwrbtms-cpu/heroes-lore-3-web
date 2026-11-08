@@ -14,3 +14,6 @@
 - `.github/workflows/pages.yml`: Pages 자동 빌드/배포
 - `wie-web/public/manifest.webmanifest`, `icon-*.png`, `index.html` 메타: 홈 화면 앱 이름/아이콘
 - `wie-web/src/ts/library.ts`: 게임이 1개면 자동 실행
+
+## Credits
+This project is based on [wie](https://github.com/dlunch/wie), created by Inseok Lee.
