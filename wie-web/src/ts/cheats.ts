@@ -38,6 +38,9 @@ interface Target {
   hint: string;
 }
 
+/** Bag record index → "N번 가방 M번째 칸" as the game shows it (16 slots per bag). */
+const bagPlace = (slot: number): string => `${Math.floor(slot / 16) + 1}번 가방 ${(slot % 16) + 1}번째 칸`;
+
 const TARGETS: Target[] = [
   { key: "gold", label: "소지금(돈)", particle: "이", defaultValue: 10000000, hint: "상태창·상점에서 보이는 골드 숫자" },
   { key: "cash", label: "캐시", particle: "가", defaultValue: 10000000, hint: "캐시 상점에서 보이는 캐시 숫자" },
@@ -409,7 +412,7 @@ export const getCheatPanel = (): CheatPanel => {
       quick.append(button(label, "secondary-command", () => {
         try {
           const result = giveItem(live, category, index, 99);
-          setStatus(`${label} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸${result.stacked ? "에 합쳤어요" : "에 넣었어요"}. 가방을 열어 확인하세요.`);
+          setStatus(`${label} ${formatNumber(result.count)}개 — ${bagPlace(result.slot)}${result.stacked ? "에 합쳤어요" : "에 넣었어요"}. 가방을 열어 확인하세요.`);
         } catch (error) {
           setStatus(String(error), true);
         }
@@ -425,7 +428,7 @@ export const getCheatPanel = (): CheatPanel => {
       const cashButton = button(label, "secondary-command", () => {
         try {
           const result = giveItem(live, category, index, 10);
-          setStatus(`${label} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸. ${description}.`);
+          setStatus(`${label} ${formatNumber(result.count)}개 — ${bagPlace(result.slot)}. ${description}.`);
         } catch (error) {
           setStatus(String(error), true);
         }
@@ -490,7 +493,7 @@ export const getCheatPanel = (): CheatPanel => {
         const table = HL3_ITEMS[hl3Category];
         const item = table.items[hl3Index];
         const result = giveItem(live, hl3Category, hl3Index, count);
-        setStatus(`${item.n} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸에 넣었어요.${table.kind === "equip" ? " 장비는 가방에서 선택해 장착하세요 (요구 레벨 미달이면 장착 불가)." : ""}`);
+        setStatus(`${item.n} ${formatNumber(result.count)}개 — ${bagPlace(result.slot)}${result.stacked ? "에 합쳤어요" : "에 넣었어요"}.${table.kind === "equip" ? " 장비는 가방에서 선택해 장착하세요 (요구 레벨 미달이면 장착 불가)." : ""}`);
       } catch (error) {
         setStatus(String(error), true);
       }

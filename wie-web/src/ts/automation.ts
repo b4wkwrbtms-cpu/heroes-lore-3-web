@@ -156,6 +156,9 @@ const MAX_BACKOFF_MS = 12_000;
 
 type Listener = (config: AutoConfig) => void;
 
+/** True while one of the app's own panels (settings, cheats, keypad sheet) covers the game. */
+const appPanelOpen = (): boolean => typeof document !== "undefined" && document.querySelector("dialog[open]") !== null;
+
 class Automation {
   private context: AutoContext | undefined;
   private config: AutoConfig = defaultAutoConfig();
@@ -246,7 +249,7 @@ class Automation {
     const now = performance.now();
     let onField = false;
     try {
-      onField = isOnField(api);
+      onField = !appPanelOpen() && isOnField(api);
     } catch {
       onField = false;
     }
@@ -389,7 +392,7 @@ class Automation {
     // In menus the quick-slot keys page through screens (◀1 STATUS 3▶, 7/9 tabs), so never press them there.
     let onField = false;
     try {
-      onField = isOnField(api);
+      onField = !appPanelOpen() && isOnField(api);
     } catch {
       onField = false;
     }

@@ -273,7 +273,7 @@ export const giveItem = (api: CheatApi, category: number, index: number, count: 
   if (!table || !item) throw new Error("알 수 없는 아이템이에요.");
   const bag = readBag(api);
   if (table.kind === "use") {
-    const existing = bag.find(entry => entry.category === category && entry.index === index && entry.count > 0);
+    const existing = bag.find(entry => entry.category === category && entry.index === index && entry.count > 0 && entry.count < 99);
     if (existing) {
       const total = Math.min(99, existing.count + count);
       api.write(existing.address + 0x26, 2, false, total);
@@ -367,52 +367,67 @@ const validItemReference = (category: number, index: number): boolean => {
   return table ? index < table.items.length : category === 15;
 };
 
-const EMPTY_RECORD = new Uint8Array(60);
+/** An unused bag record exactly as the game writes it: no name, item 0xff/0xff, no quick slot. */
+const EMPTY_BAG_RECORD = (() => {
+  const record = new Uint8Array(60).fill(0xff);
+  record.fill(0, 0, 0x21);
+  record.set([0xff, 0x00, 0xff, 0x00, 0x01, 0x00], 0x22);
+  return record;
+})();
+/** An unused worn-equipment record: all 0xff. */
+const EMPTY_WORN_RECORD = new Uint8Array(60).fill(0xff);
+
+const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((value, i) => value === b[i]);
+const hasName = (record: Uint8Array): boolean => record[0] !== 0 && record[0] !== 0xff;
 
 /**
- * Removes bag and worn-equipment records that reference items the game has no data for (they make the game
- * dereference garbage, which is fatal), and quick slots that point at such records. Returns how many were cleared.
- * Earlier versions of these cheats wrote records with a wrong bag stride and could leave such entries behind.
+ * Repairs bag and worn-equipment records the game cannot use: records that reference items the game has no
+ * data for (they make it dereference garbage, which is fatal) and nameless leftovers that show up as phantom
+ * 투구 items. They are rewritten in the game's own empty format, and quick slots pointing at them are cleared.
+ * Earlier versions of these cheats wrote records with a wrong bag stride and a wrong empty format.
+ * Returns how many records were repaired.
  */
 export const sanitizeInventory = (api: CheatApi): number => {
   const state = statePointer(api);
   if (state === 0) return 0;
-  let cleared = 0;
+  let repaired = 0;
   const base = state + HL3.BAG_OFFSET;
   const wiped = new Set<number>();
   for (let slot = 0; slot < HL3.MAX_BAGS * HL3.BAG_SLOTS; slot += 1) {
     const address = recordAddress(base, slot);
     const record = api.dump(address, HL3.RECORD);
     if (record.length < HL3.RECORD) break;
-    // The loader also resolves names for empty slots, so leftovers there must reference real items too.
-    const exists = record[0x1f];
-    if (exists <= 1 && validItemReference(u16(record, 0x22), u16(record, 0x24))) continue;
-    api.writeBytes(address, EMPTY_RECORD);
-    if (exists !== 0) {
-      wiped.add(itemLocation(slot));
-      cleared += 1;
+    const category = u16(record, 0x22);
+    if (category === 0xff) {
+      if (record[0x1f] === 0 || sameBytes(record, EMPTY_BAG_RECORD)) continue;
+    } else if (record[0x1f] === 1 && hasName(record) && validItemReference(category, u16(record, 0x24))) {
+      continue;
     }
+    api.writeBytes(address, EMPTY_BAG_RECORD);
+    wiped.add(itemLocation(slot));
+    repaired += 1;
   }
   for (let slot = 0; slot < HL3.EQUIP_SLOTS; slot += 1) {
     const address = HL3.EQUIP + slot * HL3.RECORD;
     const record = api.dump(address, HL3.RECORD);
     if (record.length < HL3.RECORD) break;
-    const exists = record[0x1f];
-    if (exists <= 1 && validItemReference(u16(record, 0x22), u16(record, 0x24))) continue;
-    api.writeBytes(address, EMPTY_RECORD);
-    if (exists !== 0) cleared += 1;
+    if (sameBytes(record, EMPTY_WORN_RECORD)) continue;
+    if (hasName(record) && validItemReference(u16(record, 0x22), u16(record, 0x24))) continue;
+    api.writeBytes(address, EMPTY_WORN_RECORD);
+    repaired += 1;
   }
   for (let quickSlot = 0; quickSlot < SLOT_ORDER.length; quickSlot += 1) {
     const snapshot = readSlot(api, quickSlot);
     if (snapshot.kind !== 2) continue;
     const bag = snapshot.itemLoc >> 5;
     const position = snapshot.itemLoc & 31;
-    const record = bag < HL3.MAX_BAGS && position < HL3.BAG_SLOTS ? api.dump(recordAddress(base, bag * HL3.BAG_SLOTS + position), HL3.RECORD) : new Uint8Array();
+    const record =
+      bag < HL3.MAX_BAGS && position < HL3.BAG_SLOTS ? api.dump(recordAddress(base, bag * HL3.BAG_SLOTS + position), HL3.RECORD) : new Uint8Array();
     if (!wiped.has(snapshot.itemLoc) && record.length === HL3.RECORD && record[0x1f] === 1) continue;
     writeSlot(api, quickSlot, { kind: 0, itemLoc: 0, skillX: 0, idx: 0 });
-    cleared += 1;
+    repaired += 1;
   }
-  return cleared;
+  return repaired;
 };
 
 export const getGold = (api: CheatApi): number => api.read(HL3.GOLD, 4, false) >>> 0;
