@@ -34,6 +34,7 @@ export const startWasmSession = (
   let running = true;
   let preparing = true;
   let frame: number;
+  let presented = -1;
 
   const session: WasmSession = {
     async key(key, pressed) {
@@ -116,7 +117,11 @@ export const startWasmSession = (
     if (!running || suspended) return;
     try {
       emulator.update();
-      presentFrame();
+      const painted = emulator.frame_count();
+      if (painted !== presented) {
+        presented = painted;
+        presentFrame();
+      }
       if (emulator.is_exited()) {
         void session.stop();
         return;

@@ -19,7 +19,7 @@ use alloc::{
 };
 use core::{
     str,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 use hashbrown::HashMap;
@@ -144,6 +144,8 @@ pub struct WieWeb {
     host: Option<WasmHost>,
     exited: Arc<AtomicBool>,
     should_redraw: Arc<AtomicBool>,
+    frames: Arc<AtomicU32>,
+    last_update: f64,
     key_events: HashMap<KeyCode, f64>,
     /// Cheat "freeze" entries: (address, width in bytes, value, big_endian) rewritten after every tick.
     frozen: Vec<(u32, u32, u32, bool)>,
@@ -227,7 +229,8 @@ impl WieWeb {
         (|| {
             let should_redraw = Arc::new(AtomicBool::new(true));
             let exited = Arc::new(AtomicBool::new(false));
-            let window = WindowImpl::new(canvas, should_redraw.clone());
+            let frames = Arc::new(AtomicU32::new(0));
+            let window = WindowImpl::new(canvas, should_redraw.clone(), frames.clone());
             let font = Font::try_from_vec(font_data)?;
             let platform = Box::new(WieWebPlatform::new(window, font, audio_player.clone(), host.clone(), exited.clone()));
             let options = Options {
@@ -244,6 +247,8 @@ impl WieWeb {
                 host,
                 exited,
                 should_redraw,
+                frames,
+                last_update: 0.0,
                 key_events: HashMap::new(),
                 frozen: Vec::new(),
             })
@@ -257,6 +262,11 @@ impl WieWeb {
 
     pub fn is_exited(&self) -> bool {
         self.exited.load(Ordering::SeqCst)
+    }
+
+    /// Number of frames the guest has painted so far; lets the page present only new frames.
+    pub fn frame_count(&self) -> u32 {
+        self.frames.load(Ordering::SeqCst)
     }
 
     pub fn update(&mut self) -> Result<(), JsError> {
@@ -274,7 +284,25 @@ impl WieWeb {
             }
         }
 
-        self.emulator.tick().map_err(|e| JsError::new(&e.to_string()))?;
+        // One executor tick runs the guest for at most 8 ms. When the game is busy (map loads, battles)
+        // that is well under a display frame, so keep ticking while the guest still has work and the
+        // frame budget allows; an idle guest returns almost immediately and ends the loop.
+        let interval = if self.last_update > 0.0 {
+            (millis - self.last_update).clamp(8.0, 34.0)
+        } else {
+            16.0
+        };
+        self.last_update = millis;
+        let budget = (interval * 0.8).min(13.0);
+        let started = js_sys::Date::now();
+        loop {
+            let before = js_sys::Date::now();
+            self.emulator.tick().map_err(|e| JsError::new(&e.to_string()))?;
+            let now = js_sys::Date::now();
+            if now - before < 2.0 || now - started >= budget {
+                break;
+            }
+        }
 
         if !self.frozen.is_empty() {
             let frozen = self.frozen.clone();

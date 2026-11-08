@@ -12,6 +12,8 @@ pub enum AudioError {
 pub struct Audio {
     sink: Box<dyn AudioSink>,
     files: BTreeMap<AudioHandle, Arc<AudioSequence>>,
+    /// Parsed sequences by content hash: games re-upload the same clip for every sound effect.
+    parsed: BTreeMap<u64, Arc<AudioSequence>>,
     playing: BTreeSet<AudioHandle>,
     last_audio_handle: AudioHandle,
 }
@@ -21,14 +23,20 @@ impl Audio {
         Self {
             sink,
             files: BTreeMap::new(),
+            parsed: BTreeMap::new(),
             playing: BTreeSet::new(),
-            last_audio_handle: 0,
+            // Handle 0 is reserved so a zeroed guest clip means "nothing loaded".
+            last_audio_handle: 1,
         }
     }
 
     pub fn load_smaf(&mut self, data: &[u8]) -> Result<AudioHandle, AudioError> {
         let audio_handle = self.last_audio_handle;
-        let sequence = Arc::new(convert_smaf_events(parse_smaf(data)));
+        let sequence = self
+            .parsed
+            .entry(fnv1a(data))
+            .or_insert_with(|| Arc::new(convert_smaf_events(parse_smaf(data))))
+            .clone();
 
         self.last_audio_handle += 1;
         self.files.insert(audio_handle, sequence);
@@ -65,6 +73,12 @@ impl Audio {
 
         Ok(())
     }
+}
+
+fn fnv1a(data: &[u8]) -> u64 {
+    data.iter().fold(0xcbf2_9ce4_8422_2325u64, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
 }
 
 fn convert_smaf_events(events: Vec<(usize, SmafEvent)>) -> AudioSequence {

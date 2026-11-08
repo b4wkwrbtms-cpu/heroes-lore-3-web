@@ -1,5 +1,5 @@
 use alloc::{sync::Arc, vec::Vec};
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use wasm_bindgen::{Clamped, JsCast};
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
@@ -10,14 +10,19 @@ use wie_util::Result;
 pub struct WindowImpl {
     canvas: HtmlCanvasElement,
     should_redraw: Arc<AtomicBool>,
+    frames: Arc<AtomicU32>,
 }
 
 unsafe impl Send for WindowImpl {} // XXX We're on wasm, so it's fine
 unsafe impl Sync for WindowImpl {}
 
 impl WindowImpl {
-    pub fn new(canvas: HtmlCanvasElement, should_redraw: Arc<AtomicBool>) -> Self {
-        Self { canvas, should_redraw }
+    pub fn new(canvas: HtmlCanvasElement, should_redraw: Arc<AtomicBool>, frames: Arc<AtomicU32>) -> Self {
+        Self {
+            canvas,
+            should_redraw,
+            frames,
+        }
     }
 }
 
@@ -47,6 +52,7 @@ impl Screen for WindowImpl {
         let data = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&image_data), self.width(), self.height()).unwrap();
 
         context.put_image_data(&data, 0.0, 0.0).unwrap();
+        self.frames.fetch_add(1, Ordering::SeqCst);
     }
 
     fn width(&self) -> u32 {

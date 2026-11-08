@@ -81,6 +81,7 @@ pub async fn clip_create(context: &mut dyn WIPICContext, ptr_type: WIPICWord, bu
     tracing::debug!("MC_mdaClipCreate({ptr_type:#x}, {buf_size:#x}, {callback:#x})");
 
     let clip = context.alloc_raw(size_of::<MdaClip>() as u32)?;
+    context.write_bytes(clip, &vec![0; size_of::<MdaClip>()])?;
 
     Ok(clip)
 }
@@ -91,6 +92,11 @@ pub async fn clip_free(context: &mut dyn WIPICContext, clip: WIPICWord) -> Resul
     // some app call clip free with null clip...
     if clip == 0 {
         return Ok(0);
+    }
+
+    let data: MdaClip = read_generic(context, clip)?;
+    if data.handle != 0 {
+        let _ = context.system().audio().close(data.handle);
     }
 
     context.free_raw(clip, size_of::<MdaClip>() as u32)?;
@@ -141,6 +147,9 @@ pub async fn clip_put_data(context: &mut dyn WIPICContext, ptr_clip: WIPICWord, 
     let handle = handle.unwrap();
 
     let mut clip: MdaClip = read_generic(context, ptr_clip)?;
+    if clip.handle != 0 {
+        let _ = context.system().audio().close(clip.handle);
+    }
     clip.handle = handle;
     write_generic(context, ptr_clip, clip)?;
 
