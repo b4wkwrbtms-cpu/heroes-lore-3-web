@@ -63,6 +63,14 @@ export const startWasmSession = (
         if (!running) return 0;
         return emulator.cheat_memory_size();
       },
+      memoryRanges() {
+        if (!running) return new Uint32Array();
+        return emulator.cheat_memory_ranges();
+      },
+      dump(address, size) {
+        if (!running) return new Uint8Array();
+        return emulator.cheat_dump(address >>> 0, size >>> 0);
+      },
       search(value, width, bigEndian, previous) {
         if (!running) return new Uint32Array();
         return emulator.cheat_search(value >>> 0, width, bigEndian, previous ?? new Uint32Array());

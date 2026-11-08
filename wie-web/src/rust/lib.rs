@@ -343,6 +343,27 @@ impl WieWeb {
         Ok(results)
     }
 
+    /// Mapped guest memory ranges, flattened as [start0, size0, start1, size1, ...].
+    pub fn cheat_memory_ranges(&self) -> Vec<u32> {
+        self.emulator.memory_ranges().into_iter().flat_map(|(start, size)| [start, size]).collect()
+    }
+
+    /// Copy `size` bytes of guest memory starting at `address` (unmapped tail is truncated).
+    pub fn cheat_dump(&self, address: u32, size: u32) -> Result<Vec<u8>, JsError> {
+        let mut data = alloc::vec![0u8; size as usize];
+        let mut done = 0usize;
+        while done < data.len() {
+            let len = core::cmp::min(0x10000, data.len() - done);
+            if self.emulator.read_memory(address.wrapping_add(done as u32), &mut data[done..done + len]).is_err() {
+                data.truncate(done);
+                break;
+            }
+            done += len;
+        }
+
+        Ok(data)
+    }
+
     pub fn cheat_read(&self, address: u32, width: u32, big_endian: bool) -> Result<u32, JsError> {
         let width = if width == 2 { 2usize } else { 4usize };
         let mut buf = [0u8; 4];

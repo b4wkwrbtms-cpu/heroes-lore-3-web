@@ -111,6 +111,152 @@ const button = (label: string, className: string, onClick: () => void): HTMLButt
   return node;
 };
 
+const toBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK)));
+  }
+  return btoa(binary);
+};
+
+const readStore = (dbName: string, storeName: string): Promise<Array<{ key: unknown; data: string; size: number }>> =>
+  new Promise(resolve => {
+    const entries: Array<{ key: unknown; data: string; size: number }> = [];
+    let request: IDBOpenDBRequest;
+    try {
+      request = indexedDB.open(dbName);
+    } catch {
+      resolve(entries);
+      return;
+    }
+    request.onupgradeneeded = () => {
+      // The database did not exist; abort so we don't create an empty one.
+      request.transaction?.abort();
+    };
+    request.onerror = () => resolve(entries);
+    request.onblocked = () => resolve(entries);
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(storeName)) {
+        db.close();
+        resolve(entries);
+        return;
+      }
+      const cursorRequest = db.transaction(storeName, "readonly").objectStore(storeName).openCursor();
+      cursorRequest.onerror = () => {
+        db.close();
+        resolve(entries);
+      };
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (!cursor) {
+          db.close();
+          resolve(entries);
+          return;
+        }
+        const value = cursor.value;
+        const bytes = value instanceof Uint8Array ? value : value instanceof ArrayBuffer ? new Uint8Array(value) : undefined;
+        entries.push({
+          key: cursor.key,
+          data: bytes ? toBase64(bytes) : JSON.stringify(value),
+          size: bytes ? bytes.length : -1,
+        });
+        cursor.continue();
+      };
+    };
+  });
+
+const yieldToUi = () => new Promise<void>(resolve => window.setTimeout(resolve, 0));
+
+/** Collect memory + save data so the layout can be analysed offline. Returns the file to share. */
+const buildDiagnostics = async (live: CheatApi, context: CheatContext, saved: SavedCheat[], note: string, onProgress: (text: string) => void): Promise<File> => {
+  onProgress("메모리 읽는 중…");
+  await yieldToUi();
+  const ranges = live.memoryRanges();
+  const regions: Array<{ address: number; size: number; data: string }> = [];
+  const HEAP_BASE = 0x40000000;
+  const HEAP_HALF = 0x08000000;
+  const HEAP_TAKE = 8 * 1024 * 1024;
+  const CHUNK = 1024 * 1024;
+  const take = async (address: number, size: number) => {
+    for (let offset = 0; offset < size; offset += CHUNK) {
+      const len = Math.min(CHUNK, size - offset);
+      const bytes = live.dump(address + offset, len);
+      if (bytes.length === 0) break;
+      regions.push({ address: address + offset, size: bytes.length, data: toBase64(bytes) });
+      onProgress(`메모리 읽는 중… ${regions.length}MB`);
+      await yieldToUi();
+    }
+  };
+  for (let i = 0; i + 1 < ranges.length; i += 2) {
+    const start = ranges[i];
+    const size = ranges[i + 1];
+    if (start >= HEAP_BASE && start < HEAP_BASE + 2 * HEAP_HALF) {
+      // Heap: first 8 MiB of each allocator half.
+      await take(HEAP_BASE, Math.min(HEAP_TAKE, size));
+      if (size > HEAP_HALF) await take(HEAP_BASE + HEAP_HALF, Math.min(HEAP_TAKE, size - HEAP_HALF));
+    } else if (size <= 4 * 1024 * 1024) {
+      await take(start, size);
+    }
+  }
+  // Extra context around every saved cheat address.
+  for (const cheat of saved) {
+    const start = Math.max(0, cheat.address - 0x8000) >>> 0;
+    await take(start, 0x10000);
+  }
+
+  onProgress("세이브 파일 읽는 중…");
+  const files = await readStore("wie_filesystem", "files");
+  const dbName = `wie_${context.appId}`;
+  const records = await readStore(dbName, dbName);
+
+  onProgress("파일 압축 중…");
+  await yieldToUi();
+  const payload = {
+    format: "wie-cheat-diagnostics/1",
+    exportedAt: new Date().toISOString(),
+    app: { id: context.appId, title: context.appTitle },
+    note,
+    savedCheats: saved,
+    memoryRanges: Array.from(ranges),
+    regions,
+    files,
+    records,
+  };
+  const json = JSON.stringify(payload);
+  let blob = new Blob([json], { type: "application/json" });
+  let filename = `hl3-diagnostics-${Date.now()}.json`;
+  if (typeof CompressionStream === "function") {
+    const compressed = blob.stream().pipeThrough(new CompressionStream("gzip"));
+    blob = await new Response(compressed).blob();
+    filename += ".gz";
+  }
+  return new File([blob], filename, { type: "application/octet-stream" });
+};
+
+/** Must be called directly from a tap: the share sheet needs a fresh user gesture. */
+const shareDiagnostics = (file: File): Promise<string> => {
+  const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
+  const fallback = () => {
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return `파일로 저장했어요 (${Math.round(file.size / 1024)}KB). 파일 앱 → 다운로드에서 찾아 보내 주세요.`;
+  };
+  if (typeof navigator.share === "function" && (!nav.canShare || nav.canShare({ files: [file] }))) {
+    return navigator.share({ files: [file], title: "영웅서기3 진단 파일" })
+      .then(() => `보냈어요 (${Math.round(file.size / 1024)}KB).`)
+      .catch((error: Error) => (error.name === "AbortError" ? "공유를 취소했어요." : fallback()));
+  }
+  return Promise.resolve(fallback());
+};
+
 let panel: CheatPanel | undefined;
 
 export const getCheatPanel = (): CheatPanel => {
@@ -135,6 +281,8 @@ export const getCheatPanel = (): CheatPanel => {
   let step: Step = { kind: "home" };
   let statusText = "";
   let statusError = false;
+  let exporting = false;
+  let diagnosticsFile: File | undefined;
 
   const setStatus = (text: string, error = false) => {
     statusText = text;
@@ -244,6 +392,40 @@ export const getCheatPanel = (): CheatPanel => {
         statusText = "";
         step = { kind: "enter", target, round: 1, candidates: new Uint32Array(), width: 4, bigEndian: false };
         render();
+      }));
+    }
+
+    body.append(el("div", "cheat-divider"), el("p", "cheat-lead", "아이템·무기 강화·오브 치트 준비"));
+    body.append(el("p", "cheat-muted", "아이템 목록 치트를 만들려면 게임 데이터 구조를 분석해야 해요. 게임을 켜 둔 채(가능하면 소지금 치트를 먼저 찾은 뒤) 아래 버튼으로 진단 파일을 만들어 대화창에 보내 주세요. 게임 파일 자체는 포함되지 않아요."));
+    const noteRow = el("div", "cheat-row");
+    const note = el("input") as HTMLInputElement;
+    note.type = "text";
+    note.placeholder = "메모 (예: 소지금 1250, 포션 3개, 오브원석 2개)";
+    note.autocomplete = "off";
+    noteRow.append(note);
+    body.append(noteRow);
+    const exportButton = button(exporting ? "만드는 중…" : "1) 진단 파일 만들기", "secondary-command cheat-big", () => {
+      if (!context || exporting) return;
+      exporting = true;
+      diagnosticsFile = undefined;
+      const current = context;
+      void buildDiagnostics(live, current, saved, note.value, text => setStatus(text))
+        .then(file => {
+          diagnosticsFile = file;
+          setStatus(`준비됐어요 (${Math.round(file.size / 1024)}KB). 아래 “보내기”를 누르세요.`);
+        })
+        .catch(error => setStatus(String(error), true))
+        .finally(() => {
+          exporting = false;
+          render();
+        });
+    });
+    exportButton.disabled = exporting;
+    body.append(exportButton);
+    if (diagnosticsFile) {
+      const file = diagnosticsFile;
+      body.append(button("2) 📤 보내기 (공유 → Claude 또는 파일에 저장)", "primary-command cheat-big", () => {
+        void shareDiagnostics(file).then(text => setStatus(text));
       }));
     }
   };

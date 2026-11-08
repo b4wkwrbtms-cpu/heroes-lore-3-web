@@ -25,6 +25,9 @@ export type SessionEvent =
 /** Live guest-memory access for the cheat tool. Values are unsigned; `width` is 2 or 4 bytes. */
 export interface CheatApi {
   memorySize(): number;
+  /** Flattened [start, size, start, size, ...] of mapped guest memory. */
+  memoryRanges(): Uint32Array;
+  dump(address: number, size: number): Uint8Array;
   search(value: number, width: number, bigEndian: boolean, previous?: Uint32Array): Uint32Array;
   read(address: number, width: number, bigEndian: boolean): number;
   write(address: number, width: number, bigEndian: boolean, value: number): void;
