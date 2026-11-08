@@ -109,7 +109,7 @@ const main = async () => {
   try {
     const advertising = native
       ? await invoke<"adsense" | "adsense-test" | "sponsor">("initialize_advertising")
-      : "adsense";
+      : "sponsor";
     if (advertising === "sponsor") {
       document.querySelector(".adsbygoogle")!.remove();
       document.querySelector<HTMLElement>(".library-sponsor")!.hidden = false;

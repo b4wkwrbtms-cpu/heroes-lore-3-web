@@ -370,6 +370,7 @@ export const initializeLibrary = async (backend: Wie, launchApp: (app: LibraryAp
         }
       }
 
+      const wasEmpty = apps.length === 0;
       if (addedCount > 0) {
         apps = await backend.listApps();
         renderLibrary(Math.floor(apps.length / APPS_PER_PAGE));
@@ -377,6 +378,15 @@ export const initializeLibrary = async (backend: Wie, launchApp: (app: LibraryAp
 
       if (failures.length === 0) {
         importDialog.close();
+        if (wasEmpty && apps.length === 1 && !appStarting) {
+          // First game installed: start it right away.
+          appStarting = true;
+          launchApp(apps[0])
+            .catch(error => window.alert(String(error)))
+            .finally(() => {
+              appStarting = false;
+            });
+        }
       } else {
         importStatus.classList.add("error");
         setImportStatus(() => {
@@ -441,6 +451,9 @@ export const initializeLibrary = async (backend: Wie, launchApp: (app: LibraryAp
     try {
       await settings.set("welcomeSeen", true);
       welcomeDialog.close();
+      if (apps.length === 0) {
+        openImportDialog();
+      }
     } catch (error) {
       window.alert(t("settingsSaveFailed", { error: String(error) }));
     }
@@ -450,6 +463,8 @@ export const initializeLibrary = async (backend: Wie, launchApp: (app: LibraryAp
   renderLibrary();
   if (!settings.get("welcomeSeen")) {
     welcomeDialog.showModal();
+  } else if (apps.length === 0) {
+    openImportDialog();
   } else if (apps.length === 1 && !new URLSearchParams(window.location.search).has("library")) {
     // Single-game mode: launch the only installed game right away.
     // Open with ?library to get the library screen instead.
