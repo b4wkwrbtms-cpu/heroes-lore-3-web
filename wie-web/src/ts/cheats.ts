@@ -12,6 +12,7 @@ interface SavedCheat {
   name: string;
   address: number;
   width: number;
+  bigEndian: boolean;
   value: number;
   freeze: boolean;
 }
@@ -22,6 +23,37 @@ export interface CheatPanel {
   restore(context: CheatContext): void;
 }
 
+interface Target {
+  key: "gold" | "cash" | "custom";
+  label: string;
+  particle: string; // 이/가
+  defaultValue: number;
+  hint: string;
+}
+
+const TARGETS: Target[] = [
+  { key: "gold", label: "소지금(돈)", particle: "이", defaultValue: 10000000, hint: "상태창·상점에서 보이는 골드 숫자" },
+  { key: "cash", label: "캐시", particle: "가", defaultValue: 10000000, hint: "캐시 상점에서 보이는 캐시 숫자" },
+  { key: "custom", label: "값", particle: "이", defaultValue: 10000000, hint: "HP, 아이템 개수 등 화면에 보이는 숫자" },
+];
+
+type Step =
+  | { kind: "home" }
+  | { kind: "enter"; target: Target; round: number; candidates: Uint32Array; width: number; bigEndian: boolean }
+  | {
+      kind: "apply";
+      target: Target;
+      candidates: number[];
+      index: number;
+      width: number;
+      bigEndian: boolean;
+      value: number;
+      freeze: boolean;
+      awaiting: boolean;
+      previousValue?: number;
+    }
+  | { kind: "done"; target: Target; name: string };
+
 const storageKey = (appId: string) => `wie_cheats_${appId}`;
 
 const loadSaved = (appId: string): SavedCheat[] => {
@@ -30,17 +62,19 @@ const loadSaved = (appId: string): SavedCheat[] => {
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is SavedCheat =>
-      typeof item === "object" && item !== null
-      && typeof (item as SavedCheat).address === "number"
-      && typeof (item as SavedCheat).value === "number",
-    ).map(item => ({
-      name: String(item.name ?? ""),
-      address: item.address >>> 0,
-      width: item.width === 2 ? 2 : 4,
-      value: item.value >>> 0,
-      freeze: Boolean(item.freeze),
-    }));
+    return parsed
+      .filter((item): item is SavedCheat =>
+        typeof item === "object" && item !== null
+        && typeof (item as SavedCheat).address === "number"
+        && typeof (item as SavedCheat).value === "number")
+      .map(item => ({
+        name: String(item.name ?? ""),
+        address: item.address >>> 0,
+        width: item.width === 2 ? 2 : 4,
+        bigEndian: Boolean(item.bigEndian),
+        value: item.value >>> 0,
+        freeze: Boolean(item.freeze),
+      }));
   } catch {
     return [];
   }
@@ -54,8 +88,28 @@ const storeSaved = (appId: string, cheats: SavedCheat[]) => {
   }
 };
 
-const hex = (address: number) => `0x${(address >>> 0).toString(16).toUpperCase().padStart(8, "0")}`;
 const formatNumber = (value: number) => value.toLocaleString("ko-KR");
+const parseNumber = (text: string): number | undefined => {
+  const digits = text.replace(/[^0-9]/g, "");
+  if (digits === "") return undefined;
+  const value = Number(digits);
+  if (!Number.isFinite(value) || value > 0xffffffff) return undefined;
+  return value;
+};
+
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+
+const button = (label: string, className: string, onClick: () => void): HTMLButtonElement => {
+  const node = el("button", className, label);
+  node.type = "button";
+  node.addEventListener("click", onClick);
+  return node;
+};
 
 let panel: CheatPanel | undefined;
 
@@ -63,304 +117,370 @@ export const getCheatPanel = (): CheatPanel => {
   if (panel) return panel;
 
   const dialog = document.getElementById("cheat-dialog") as HTMLDialogElement;
-  const savedList = document.getElementById("cheat-saved") as HTMLUListElement;
-  const savedEmpty = document.getElementById("cheat-saved-empty") as HTMLElement;
-  const valueInput = document.getElementById("cheat-value") as HTMLInputElement;
-  const searchButton = document.getElementById("cheat-search") as HTMLButtonElement;
-  const resetButton = document.getElementById("cheat-reset") as HTMLButtonElement;
-  const status = document.getElementById("cheat-status") as HTMLElement;
-  const resultsList = document.getElementById("cheat-results") as HTMLUListElement;
-  const editSection = document.getElementById("cheat-edit") as HTMLElement;
-  const editAddress = document.getElementById("cheat-edit-address") as HTMLElement;
-  const newValueInput = document.getElementById("cheat-new-value") as HTMLInputElement;
-  const applyButton = document.getElementById("cheat-apply") as HTMLButtonElement;
-  const freezeCheckbox = document.getElementById("cheat-freeze") as HTMLInputElement;
-  const nameInput = document.getElementById("cheat-name") as HTMLInputElement;
-  const saveButton = document.getElementById("cheat-save") as HTMLButtonElement;
-
+  const title = document.getElementById("cheat-title") as HTMLElement;
+  const body = document.getElementById("cheat-body") as HTMLElement;
   createIcons({ icons: { X }, root: dialog });
+
   // Enter inside a text field must not submit the form (which would close the dialog).
   dialog.addEventListener("keydown", event => {
     if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type !== "checkbox") {
       event.preventDefault();
+      const next = body.querySelector<HTMLButtonElement>("button[data-default]");
+      next?.click();
     }
   });
 
   let context: CheatContext | undefined;
   let saved: SavedCheat[] = [];
-  let results: Uint32Array = new Uint32Array();
-  let width = 4;
-  let searchCount = 0;
-  let selected: number | undefined;
+  let step: Step = { kind: "home" };
+  let statusText = "";
+  let statusError = false;
 
   const setStatus = (text: string, error = false) => {
-    status.textContent = text;
-    status.classList.toggle("error", error);
+    statusText = text;
+    statusError = error;
+    render();
   };
 
-  const cheats = () => {
-    const api = context?.getCheats();
-    if (!api) setStatus("게임이 실행 중일 때만 사용할 수 있어요.", true);
-    return api;
+  const api = () => context?.getCheats();
+
+  const persist = () => {
+    if (context) storeSaved(context.appId, saved);
   };
 
-  const renderSaved = () => {
-    savedList.replaceChildren();
-    savedEmpty.hidden = saved.length > 0;
-    const api = context?.getCheats();
-    saved.forEach((cheat, index) => {
-      const item = document.createElement("li");
-      item.className = "cheat-item";
+  const render = () => {
+    body.replaceChildren();
+    const live = api();
+    if (!live) {
+      title.textContent = "치트";
+      body.append(el("p", "cheat-lead", "게임이 실행 중일 때만 사용할 수 있어요."));
+      return;
+    }
 
-      const info = document.createElement("div");
-      info.className = "cheat-item-info";
-      const name = document.createElement("strong");
-      name.textContent = cheat.name || `치트 ${index + 1}`;
-      const detail = document.createElement("span");
-      let current = "";
-      try {
-        if (api) current = ` · 현재 ${formatNumber(api.read(cheat.address, cheat.width))}`;
-      } catch {
-        current = "";
-      }
-      detail.textContent = `${hex(cheat.address)} → ${formatNumber(cheat.value)}${current}`;
-      info.append(name, detail);
+    switch (step.kind) {
+      case "home":
+        renderHome(live);
+        break;
+      case "enter":
+        renderEnter(step, live);
+        break;
+      case "apply":
+        renderApply(step, live);
+        break;
+      case "done":
+        renderDone(step);
+        break;
+    }
 
-      const actions = document.createElement("div");
-      actions.className = "cheat-item-actions";
+    if (statusText) {
+      const status = el("p", `cheat-status${statusError ? " error" : ""}`, statusText);
+      body.append(status);
+    }
+  };
 
-      const apply = document.createElement("button");
-      apply.type = "button";
-      apply.className = "primary-command";
-      apply.textContent = "적용";
-      apply.addEventListener("click", () => {
-        const live = cheats();
-        if (!live) return;
+  const renderHome = (live: CheatApi) => {
+    title.textContent = "치트";
+
+    if (saved.length > 0) {
+      body.append(el("p", "cheat-lead", "저장된 치트"));
+      const list = el("ul", "cheat-saved");
+      saved.forEach((cheat, index) => {
+        const item = el("li", "cheat-item");
+        const info = el("div", "cheat-item-info");
+        let current = "";
         try {
-          live.write(cheat.address, cheat.width, cheat.value);
-          setStatus(`${cheat.name || hex(cheat.address)} 에 ${formatNumber(cheat.value)} 적용했어요.`);
-          renderSaved();
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      });
-
-      const freeze = document.createElement("button");
-      freeze.type = "button";
-      freeze.className = cheat.freeze ? "primary-command" : "secondary-command";
-      freeze.textContent = cheat.freeze ? "고정 중" : "고정";
-      freeze.title = "값을 계속 이 값으로 유지합니다 (무제한)";
-      freeze.addEventListener("click", () => {
-        const live = cheats();
-        if (!live) return;
-        try {
-          cheat.freeze = !cheat.freeze;
-          if (cheat.freeze) live.freeze(cheat.address, cheat.width, cheat.value);
-          else live.unfreeze(cheat.address);
-          if (context) storeSaved(context.appId, saved);
-          setStatus(cheat.freeze ? "고정했어요. 게임을 켤 때마다 자동으로 유지됩니다." : "고정을 해제했어요.");
-          renderSaved();
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      });
-
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "danger-command";
-      remove.textContent = "삭제";
-      remove.addEventListener("click", () => {
-        try {
-          context?.getCheats()?.unfreeze(cheat.address);
+          current = ` · 지금 값 ${formatNumber(live.read(cheat.address, cheat.width, cheat.bigEndian))}`;
         } catch {
-          // ignore
+          current = "";
         }
-        saved.splice(index, 1);
-        if (context) storeSaved(context.appId, saved);
-        renderSaved();
+        info.append(
+          el("strong", undefined, cheat.name),
+          el("span", undefined, `${formatNumber(cheat.value)}으로 설정${current}${cheat.freeze ? " · 자동 유지 켜짐" : ""}`),
+        );
+        const actions = el("div", "cheat-item-actions");
+        actions.append(
+          button("지금 적용", "primary-command", () => {
+            try {
+              live.write(cheat.address, cheat.width, cheat.bigEndian, cheat.value);
+              setStatus(`${cheat.name}: ${formatNumber(cheat.value)} 적용했어요.`);
+            } catch (error) {
+              setStatus(String(error), true);
+            }
+          }),
+          button(cheat.freeze ? "자동 유지 끄기" : "자동 유지 켜기", "secondary-command", () => {
+            cheat.freeze = !cheat.freeze;
+            try {
+              if (cheat.freeze) live.freeze(cheat.address, cheat.width, cheat.bigEndian, cheat.value);
+              else live.unfreeze(cheat.address);
+            } catch (error) {
+              setStatus(String(error), true);
+              return;
+            }
+            persist();
+            setStatus(cheat.freeze ? "게임을 켤 때마다 자동으로 유지돼요." : "자동 유지를 껐어요.");
+          }),
+          button("삭제", "danger-command", () => {
+            try {
+              live.unfreeze(cheat.address);
+            } catch {
+              // ignore
+            }
+            saved.splice(index, 1);
+            persist();
+            setStatus("삭제했어요.");
+          }),
+        );
+        item.append(info, actions);
+        list.append(item);
       });
-
-      actions.append(apply, freeze, remove);
-      item.append(info, actions);
-      savedList.append(item);
-    });
-  };
-
-  const renderResults = () => {
-    resultsList.replaceChildren();
-    const api = context?.getCheats();
-    const shown = Math.min(results.length, 40);
-    for (let i = 0; i < shown; i += 1) {
-      const address = results[i];
-      const item = document.createElement("li");
-      item.className = "cheat-result";
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = selected === address ? "primary-command" : "secondary-command";
-      let current = "";
-      try {
-        if (api) current = ` = ${formatNumber(api.read(address, width))}`;
-      } catch {
-        current = "";
-      }
-      button.textContent = `${hex(address)}${current}`;
-      button.addEventListener("click", () => {
-        selected = address;
-        editAddress.textContent = hex(address);
-        editSection.hidden = false;
-        renderResults();
-      });
-      item.append(button);
-      resultsList.append(item);
+      body.append(list, el("div", "cheat-divider"));
     }
-    if (results.length > shown) {
-      const more = document.createElement("li");
-      more.className = "cheat-muted";
-      more.textContent = `… 외 ${formatNumber(results.length - shown)}개. 게임에서 값을 바꾼 뒤 새 값으로 다시 검색하면 좁혀져요.`;
-      resultsList.append(more);
+
+    body.append(el("p", "cheat-lead", "새 치트 만들기"));
+    body.append(el("p", "cheat-muted", "물어보는 숫자만 입력하면 나머지는 자동으로 찾아서 바꿔 드려요. 게임을 켜 둔 채로 진행하세요."));
+    for (const target of TARGETS) {
+      const label = target.key === "gold" ? "💰 소지금 1천만으로" : target.key === "cash" ? "💎 캐시 무제한으로" : "🔧 다른 숫자 바꾸기";
+      body.append(button(label, "primary-command cheat-big", () => {
+        statusText = "";
+        step = { kind: "enter", target, round: 1, candidates: new Uint32Array(), width: 4, bigEndian: false };
+        render();
+      }));
     }
   };
 
-  const resetSearch = () => {
-    results = new Uint32Array();
-    width = 4;
-    searchCount = 0;
-    selected = undefined;
-    editSection.hidden = true;
-    resultsList.replaceChildren();
-    setStatus("");
+  const renderEnter = (current: Extract<Step, { kind: "enter" }>, live: CheatApi) => {
+    const { target, round } = current;
+    title.textContent = `${target.label} 치트 · ${round}단계`;
+
+    if (round === 1) {
+      body.append(
+        el("p", "cheat-lead", `게임 화면에 보이는 지금 ${target.label} 숫자를 그대로 입력하세요.`),
+        el("p", "cheat-muted", `${target.hint}. 쉼표는 빼고 숫자만 (예: 1,250 → 1250). 화면에 안 보이면 먼저 게임에서 ${target.label}${target.particle} 보이는 메뉴를 열어 두고 오세요.`),
+      );
+    } else {
+      body.append(
+        el("p", "cheat-lead", `후보가 ${formatNumber(current.candidates.length)}개예요. 게임으로 돌아가 ${target.label}${target.particle} 바뀌게 한 뒤, 바뀐 숫자를 입력하세요.`),
+        el("p", "cheat-muted", "예: 상점에서 아무거나 사거나 팔기, 적을 잡아 돈 얻기. 바뀐 뒤 ✨ 버튼을 다시 누르면 이 화면으로 돌아와요."),
+      );
+    }
+
+    const row = el("div", "cheat-row");
+    const input = el("input") as HTMLInputElement;
+    input.type = "text";
+    input.inputMode = "numeric";
+    input.placeholder = round === 1 ? `지금 ${target.label}` : `바뀐 ${target.label}`;
+    input.autocomplete = "off";
+    const next = button("다음", "primary-command", () => runSearch(current, input, live));
+    next.dataset.default = "true";
+    row.append(input, next);
+    body.append(row);
+
+    const actions = el("div", "cheat-actions");
+    if (round > 1) {
+      actions.append(button("처음부터", "secondary-command", () => {
+        statusText = "";
+        step = { kind: "enter", target, round: 1, candidates: new Uint32Array(), width: 4, bigEndian: false };
+        render();
+      }));
+    }
+    actions.append(button("홈으로", "secondary-command", () => {
+      statusText = "";
+      step = { kind: "home" };
+      render();
+    }));
+    body.append(actions);
+    window.setTimeout(() => input.focus(), 50);
   };
 
-  const runSearch = () => {
-    const api = cheats();
-    if (!api) return;
-    const value = Number(valueInput.value.replace(/[^0-9]/g, ""));
-    if (!Number.isFinite(value) || valueInput.value.trim() === "") {
-      setStatus("찾을 값을 숫자로 입력하세요.", true);
+  const runSearch = (current: Extract<Step, { kind: "enter" }>, input: HTMLInputElement, live: CheatApi) => {
+    const value = parseNumber(input.value);
+    if (value === undefined) {
+      setStatus("숫자만 입력해 주세요.", true);
       return;
     }
-    if (value > 0xffffffff) {
-      setStatus("값이 너무 커요 (최대 4,294,967,295).", true);
-      return;
-    }
-    searchButton.disabled = true;
-    setStatus(searchCount === 0 ? "메모리 전체를 검색 중…" : "이전 결과에서 좁히는 중…");
-    // Let the status paint before the (synchronous) scan.
+    setStatus(current.round === 1 ? "메모리 전체를 검색하는 중… (몇 초 걸려요)" : "후보를 좁히는 중…");
     window.setTimeout(() => {
       try {
-        if (searchCount === 0) {
-          let found = api.search(value, 4);
-          width = 4;
-          if (found.length === 0) {
-            found = api.search(value, 2);
-            if (found.length > 0) width = 2;
+        let found: Uint32Array;
+        let width = current.width;
+        let bigEndian = current.bigEndian;
+        if (current.round === 1) {
+          const attempts: Array<[number, boolean]> = value > 0xffff
+            ? [[4, false], [4, true]]
+            : [[4, false], [4, true], [2, false], [2, true]];
+          found = new Uint32Array();
+          for (const [tryWidth, tryBigEndian] of attempts) {
+            found = live.search(value, tryWidth, tryBigEndian);
+            width = tryWidth;
+            bigEndian = tryBigEndian;
+            if (found.length > 0) break;
           }
-          results = found;
         } else {
-          results = api.search(value, width, results);
+          found = live.search(value, width, bigEndian, current.candidates);
         }
-        searchCount += 1;
-        selected = undefined;
-        editSection.hidden = true;
-        if (results.length === 0) {
-          setStatus("일치하는 값이 없어요. 값을 다시 확인하거나 “처음부터”로 재검색하세요.", true);
-        } else if (results.length === 1) {
-          setStatus("1개 찾았어요! 아래 주소를 누르고 값을 바꾸세요.");
-          selected = results[0];
-          editAddress.textContent = hex(selected);
-          editSection.hidden = false;
-        } else {
-          setStatus(`${formatNumber(results.length)}개 일치 (${width}바이트). 게임에서 값을 바꾼 뒤 새 값을 넣고 다시 “검색”을 누르면 좁혀져요.`);
+
+        if (found.length === 0) {
+          if (current.round === 1) {
+            const scanned = Math.round(live.memorySize() / (1024 * 1024));
+            setStatus(`그 숫자를 메모리(${scanned}MB)에서 못 찾았어요. 게임 화면의 숫자와 똑같은지 다시 확인해 주세요.`, true);
+          } else {
+            setStatus("이전 후보 중에 바뀐 숫자와 맞는 게 없어요. 숫자를 다시 확인하거나 “처음부터”를 눌러 주세요.", true);
+          }
+          return;
         }
-        renderResults();
+
+        if (found.length <= 3) {
+          statusText = "";
+          step = {
+            kind: "apply",
+            target: current.target,
+            candidates: Array.from(found),
+            index: 0,
+            width,
+            bigEndian,
+            value: current.target.defaultValue,
+            freeze: true,
+            awaiting: false,
+          };
+          render();
+          return;
+        }
+
+        statusText = "";
+        step = { kind: "enter", target: current.target, round: current.round + 1, candidates: found, width, bigEndian };
+        render();
       } catch (error) {
         setStatus(String(error), true);
-      } finally {
-        searchButton.disabled = false;
       }
     }, 30);
   };
 
-  searchButton.addEventListener("click", runSearch);
-  valueInput.addEventListener("keydown", event => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      runSearch();
-    }
-  });
-  resetButton.addEventListener("click", () => {
-    resetSearch();
-    setStatus("처음부터 다시 검색합니다.");
-  });
+  const renderApply = (current: Extract<Step, { kind: "apply" }>, live: CheatApi) => {
+    const { target, candidates, index } = current;
+    title.textContent = `${target.label} 치트 · 적용`;
+    const address = candidates[index];
 
-  const readNewValue = (): number | undefined => {
-    const value = Number(newValueInput.value.replace(/[^0-9]/g, ""));
-    if (newValueInput.value.trim() === "" || !Number.isFinite(value) || value > 0xffffffff) {
-      setStatus("바꿀 값을 숫자로 입력하세요.", true);
-      return undefined;
+    if (!current.awaiting) {
+      body.append(el("p", "cheat-lead", candidates.length > 1
+        ? `후보 ${candidates.length}개 중 ${index + 1}번째를 시험해 볼게요.`
+        : "찾았어요! 원하는 값으로 바꿀게요."));
+
+      const row = el("div", "cheat-row");
+      const input = el("input") as HTMLInputElement;
+      input.type = "text";
+      input.inputMode = "numeric";
+      input.value = String(current.value);
+      input.autocomplete = "off";
+      row.append(el("span", undefined, "바꿀 값"), input);
+      body.append(row);
+
+      const check = el("label", "cheat-check");
+      const freeze = el("input") as HTMLInputElement;
+      freeze.type = "checkbox";
+      freeze.checked = current.freeze;
+      check.append(freeze, el("span", undefined, "항상 이 값으로 유지 (써도 안 줄어듦 = 무제한)"));
+      body.append(check);
+
+      const apply = button("적용하기", "primary-command cheat-big", () => {
+        const value = parseNumber(input.value);
+        if (value === undefined) {
+          setStatus("바꿀 값을 숫자로 입력해 주세요.", true);
+          return;
+        }
+        if (current.width === 2 && value > 0xffff) {
+          setStatus("이 값은 2바이트짜리라 65,535까지만 넣을 수 있어요.", true);
+          return;
+        }
+        try {
+          const previousValue = live.read(address, current.width, current.bigEndian);
+          live.write(address, current.width, current.bigEndian, value);
+          statusText = "";
+          step = { ...current, value, freeze: freeze.checked, awaiting: true, previousValue };
+          render();
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      });
+      apply.dataset.default = "true";
+      body.append(apply);
+    } else {
+      body.append(
+        el("p", "cheat-lead", `게임 화면에서 ${target.label}${target.particle} ${formatNumber(current.value)}(으)로 바뀌었나요?`),
+        el("p", "cheat-muted", "바로 안 보이면 이 창을 닫고 게임에서 상태창/상점을 한 번 열었다 닫아 보세요. ✨를 다시 누르면 이 질문으로 돌아와요."),
+      );
+      const actions = el("div", "cheat-actions");
+      actions.append(
+        button("네, 바뀌었어요!", "primary-command", () => {
+          const name = target.key === "custom" ? `치트 ${saved.length + 1}` : target.label;
+          saved = saved.filter(cheat => cheat.address !== address);
+          saved.push({ name, address, width: current.width, bigEndian: current.bigEndian, value: current.value, freeze: current.freeze });
+          persist();
+          if (current.freeze) {
+            try {
+              live.freeze(address, current.width, current.bigEndian, current.value);
+            } catch {
+              // ignore
+            }
+          }
+          statusText = "";
+          step = { kind: "done", target, name };
+          render();
+        }),
+        button("아니요, 그대로예요", "secondary-command", () => {
+          try {
+            if (current.previousValue !== undefined) live.write(address, current.width, current.bigEndian, current.previousValue);
+          } catch {
+            // ignore
+          }
+          if (index + 1 < candidates.length) {
+            statusText = "";
+            step = { ...current, index: index + 1, awaiting: false, previousValue: undefined };
+            render();
+          } else {
+            step = { kind: "enter", target, round: 1, candidates: new Uint32Array(), width: 4, bigEndian: false };
+            setStatus("후보가 다 아니었어요. 게임에서 값을 한 번 바꾼 뒤 처음부터 다시 해 볼게요.", true);
+          }
+        }),
+      );
+      body.append(actions);
     }
-    if (width === 2 && value > 0xffff) {
-      setStatus("이 값은 2바이트라서 최대 65,535까지만 넣을 수 있어요.", true);
-      return undefined;
-    }
-    return value;
   };
 
-  applyButton.addEventListener("click", () => {
-    const api = cheats();
-    if (!api || selected === undefined) return;
-    const value = readNewValue();
-    if (value === undefined) return;
-    try {
-      if (freezeCheckbox.checked) api.freeze(selected, width, value);
-      else api.write(selected, width, value);
-      setStatus(`${hex(selected)} 에 ${formatNumber(value)} ${freezeCheckbox.checked ? "적용 + 고정" : "적용"}했어요. 게임 화면에서 확인해 보세요.`);
-      renderResults();
-    } catch (error) {
-      setStatus(String(error), true);
-    }
-  });
-
-  saveButton.addEventListener("click", () => {
-    if (!context || selected === undefined) return;
-    const value = readNewValue();
-    if (value === undefined) return;
-    const name = nameInput.value.trim() || `치트 ${saved.length + 1}`;
-    saved = saved.filter(cheat => cheat.address !== selected);
-    saved.push({ name, address: selected, width, value, freeze: freezeCheckbox.checked });
-    storeSaved(context.appId, saved);
-    const api = context.getCheats();
-    if (api && freezeCheckbox.checked) {
-      try {
-        api.freeze(selected, width, value);
-      } catch {
-        // ignore
-      }
-    }
-    nameInput.value = "";
-    setStatus(`“${name}” 저장했어요. 다음에 게임을 켜도 위 목록에서 바로 쓸 수 있어요.`);
-    renderSaved();
-  });
+  const renderDone = (current: Extract<Step, { kind: "done" }>) => {
+    title.textContent = "완료";
+    body.append(
+      el("p", "cheat-lead", `${current.name} 치트를 저장했어요.`),
+      el("p", "cheat-muted", "다음에 게임을 켜도 자동으로 적용돼요. 끄거나 지우려면 ✨ → 저장된 치트에서 바꾸면 됩니다."),
+    );
+    const actions = el("div", "cheat-actions");
+    actions.append(
+      button("홈으로", "secondary-command", () => {
+        step = { kind: "home" };
+        render();
+      }),
+      button("닫기", "primary-command", () => dialog.close()),
+    );
+    body.append(actions);
+  };
 
   panel = {
     open(next) {
       if (!context || context.appId !== next.appId) {
-        resetSearch();
         saved = loadSaved(next.appId);
+        step = { kind: "home" };
+        statusText = "";
       }
       context = next;
-      renderSaved();
-      renderResults();
+      render();
       dialog.showModal();
     },
     restore(next) {
-      const api = next.getCheats();
-      if (!api) return;
-      const cheatsForApp = loadSaved(next.appId);
-      for (const cheat of cheatsForApp) {
+      const live = next.getCheats();
+      if (!live) return;
+      for (const cheat of loadSaved(next.appId)) {
         if (!cheat.freeze) continue;
         try {
-          api.freeze(cheat.address, cheat.width, cheat.value);
+          live.freeze(cheat.address, cheat.width, cheat.bigEndian, cheat.value);
         } catch {
           // ignore – memory may not be mapped yet
         }

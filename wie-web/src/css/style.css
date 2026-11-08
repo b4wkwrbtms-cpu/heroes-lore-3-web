@@ -645,9 +645,53 @@ html[data-screen-fit="contain"] #canvas {
 
 .numpad {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 0.8fr) repeat(4, minmax(0, 1fr));
   gap: 6px;
+}
+
+.numpad .key {
+  grid-column: span 2;
+}
+
+.numpad .key-soft {
+  grid-column: span 3;
+  color: #e2e8f0;
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.28), rgba(148, 163, 184, 0.12));
+  border-color: rgba(148, 163, 184, 0.35);
+  font-size: 0.78rem;
+}
+
+/* Invisible tap zones over the game's own soft-key labels (bottom corners of the screen). */
+.softkey {
+  position: absolute;
+  bottom: 0;
+  z-index: 1;
+  width: 38%;
+  height: 15%;
+  max-height: 72px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 12px 12px 0 0;
+  touch-action: none;
+}
+
+.softkey-left {
+  left: 0;
+}
+
+.softkey-right {
+  right: 0;
+}
+
+.softkey.pressed {
+  background: rgba(251, 191, 36, 0.28);
+}
+
+.softkey:disabled {
+  display: none;
 }
 
 .key {
@@ -1174,37 +1218,63 @@ kbd {
   overflow-y: auto;
 }
 
-.cheat-section {
-  padding: 10px 0 4px;
-  border-top: 1px solid var(--border);
+.cheat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
-.cheat-section h3 {
-  margin: 0 0 6px;
-  font-size: 0.95rem;
+.cheat-body p {
+  margin: 0;
+}
+
+.cheat-lead {
+  font-size: 1rem;
+  font-weight: 650;
 }
 
 .cheat-muted {
-  margin: 0 0 8px;
   color: var(--muted);
-  font-size: 0.8rem;
-  line-height: 1.5;
+  font-size: 0.82rem;
+}
+
+.cheat-status {
+  min-height: 1.2em;
+  color: #0f766e;
+  font-size: 0.85rem;
+}
+
+.cheat-status.error {
+  color: #b91c1c;
+}
+
+.cheat-big {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 12px;
+  font-size: 1rem;
+  font-weight: 650;
+  text-align: left;
 }
 
 .cheat-row {
   display: flex;
-  margin-bottom: 8px;
   align-items: center;
   gap: 6px;
 }
 
-.cheat-row input {
+.cheat-row input[type="text"] {
   min-width: 0;
   flex: 1;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  font-size: 1rem;
+  font-size: 1.1rem;
 }
 
 .cheat-row button {
@@ -1214,37 +1284,43 @@ kbd {
 
 .cheat-check {
   display: flex;
-  margin: 0 0 8px;
   align-items: center;
-  gap: 6px;
-  font-size: 0.85rem;
+  gap: 8px;
+  font-size: 0.9rem;
 }
 
-.cheat-saved,
-.cheat-results {
+.cheat-check input {
+  width: 20px;
+  height: 20px;
+}
+
+.cheat-saved {
+  display: flex;
   margin: 0;
   padding: 0;
+  flex-direction: column;
+  gap: 8px;
   list-style: none;
 }
 
 .cheat-item {
   display: flex;
-  padding: 8px 0;
+  padding: 10px;
   flex-direction: column;
-  gap: 6px;
-  border-bottom: 1px dashed var(--border);
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
 .cheat-item-info {
   display: flex;
   flex-direction: column;
-  font-size: 0.85rem;
 }
 
 .cheat-item-info span {
   color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
 }
 
 .cheat-item-actions {
@@ -1254,21 +1330,22 @@ kbd {
 }
 
 .cheat-item-actions button,
-.cheat-row button {
-  padding: 7px 12px;
+.cheat-actions button {
+  padding: 8px 12px;
   font-size: 0.85rem;
 }
 
-.cheat-results {
+.cheat-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
 }
 
-.cheat-result button {
-  padding: 6px 10px;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.8rem;
+.cheat-divider {
+  height: 1px;
+  margin: 2px 0;
+  background: var(--border);
 }
 
 @media (prefers-reduced-motion: reduce) {

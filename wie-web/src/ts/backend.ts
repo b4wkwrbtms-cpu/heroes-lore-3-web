@@ -22,12 +22,13 @@ export type SessionEvent =
   | { type: "stopped"; failed: boolean }
   | { type: "error"; message: string; cause?: unknown };
 
-/** Live guest-memory access for the cheat tool. Values are unsigned little-endian, `width` is 2 or 4 bytes. */
+/** Live guest-memory access for the cheat tool. Values are unsigned; `width` is 2 or 4 bytes. */
 export interface CheatApi {
-  search(value: number, width: number, previous?: Uint32Array): Uint32Array;
-  read(address: number, width: number): number;
-  write(address: number, width: number, value: number): void;
-  freeze(address: number, width: number, value: number): void;
+  memorySize(): number;
+  search(value: number, width: number, bigEndian: boolean, previous?: Uint32Array): Uint32Array;
+  read(address: number, width: number, bigEndian: boolean): number;
+  write(address: number, width: number, bigEndian: boolean, value: number): void;
+  freeze(address: number, width: number, bigEndian: boolean, value: number): void;
   unfreeze(address: number): void;
   clearFreezes(): void;
 }

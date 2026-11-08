@@ -19,6 +19,8 @@ const KEY_MAP: Record<string, string> = {
   KeyX: "0",
   KeyC: "#",
   Backspace: "CLR",
+  ShiftLeft: "SOFT1",
+  ShiftRight: "SOFT2",
   ArrowUp: "UP",
   ArrowLeft: "LEFT",
   ArrowRight: "RIGHT",

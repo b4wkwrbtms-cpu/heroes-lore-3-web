@@ -59,21 +59,25 @@ export const startWasmSession = (
       if (!suspended) frame = requestAnimationFrame(update);
     },
     cheats: {
-      search(value, width, previous) {
-        if (!running) return new Uint32Array();
-        return emulator.cheat_search(value >>> 0, width, previous ?? new Uint32Array());
-      },
-      read(address, width) {
+      memorySize() {
         if (!running) return 0;
-        return emulator.cheat_read(address >>> 0, width);
+        return emulator.cheat_memory_size();
       },
-      write(address, width, value) {
-        if (!running) return;
-        emulator.cheat_write(address >>> 0, width, value >>> 0);
+      search(value, width, bigEndian, previous) {
+        if (!running) return new Uint32Array();
+        return emulator.cheat_search(value >>> 0, width, bigEndian, previous ?? new Uint32Array());
       },
-      freeze(address, width, value) {
+      read(address, width, bigEndian) {
+        if (!running) return 0;
+        return emulator.cheat_read(address >>> 0, width, bigEndian);
+      },
+      write(address, width, bigEndian, value) {
         if (!running) return;
-        emulator.cheat_freeze(address >>> 0, width, value >>> 0);
+        emulator.cheat_write(address >>> 0, width, bigEndian, value >>> 0);
+      },
+      freeze(address, width, bigEndian, value) {
+        if (!running) return;
+        emulator.cheat_freeze(address >>> 0, width, bigEndian, value >>> 0);
       },
       unfreeze(address) {
         if (!running) return;

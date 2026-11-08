@@ -127,6 +127,8 @@
             <span id="player-status-label" data-i18n-text="preparing">실행 준비중</span>
             <progress aria-labelledby="player-status-label"></progress>
           </div>
+          <button class="softkey softkey-left" data-key="SOFT1" type="button" aria-label="왼쪽 소프트키"></button>
+          <button class="softkey softkey-right" data-key="SOFT2" type="button" aria-label="오른쪽 소프트키"></button>
         </div>
         <p id="player-warning" class="player-warning" role="status" hidden></p>
 
@@ -156,6 +158,8 @@
             <button class="key key-clr" data-key="CLR">CLR</button>
           </div>
           <div class="pad-right numpad">
+            <button class="key key-soft" data-key="SOFT1">메뉴 (L)</button>
+            <button class="key key-soft key-soft-right" data-key="SOFT2">취소 (R)</button>
             <button class="key" data-key="1">1</button>
             <button class="key" data-key="2">2</button>
             <button class="key" data-key="3">3</button>
@@ -268,46 +272,12 @@
     <dialog id="cheat-dialog" class="app-dialog cheat-dialog">
       <form method="dialog">
         <header class="dialog-header">
-          <h2>치트</h2>
+          <h2 id="cheat-title">치트</h2>
           <button class="icon-button dialog-close" value="cancel" title="닫기" aria-label="닫기">
             <i data-lucide="x"></i>
           </button>
         </header>
-
-        <section class="cheat-section">
-          <h3>저장된 치트</h3>
-          <ul id="cheat-saved" class="cheat-saved"></ul>
-          <p id="cheat-saved-empty" class="cheat-muted">아직 없어요. 아래에서 값을 찾아 저장하면 다음부터 한 번에 쓸 수 있어요.</p>
-        </section>
-
-        <section class="cheat-section">
-          <h3>값 찾기</h3>
-          <p class="cheat-muted">
-            ① 게임 화면에 보이는 현재 값(예: 소지금 1250)을 넣고 <b>검색</b><br />
-            ② 게임에서 그 값을 바꾼 뒤(사거나 팔기) 새 값을 넣고 다시 <b>검색</b><br />
-            ③ 1~2개로 좁혀지면 주소를 눌러 원하는 값으로 변경
-          </p>
-          <div class="cheat-row">
-            <input id="cheat-value" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="현재 값" />
-            <button id="cheat-search" type="button" class="primary-command">검색</button>
-            <button id="cheat-reset" type="button" class="secondary-command">처음부터</button>
-          </div>
-          <p id="cheat-status" class="dialog-status" role="status" aria-live="polite"></p>
-          <ul id="cheat-results" class="cheat-results"></ul>
-        </section>
-
-        <section id="cheat-edit" class="cheat-section" hidden>
-          <h3>값 변경 · <span id="cheat-edit-address"></span></h3>
-          <div class="cheat-row">
-            <input id="cheat-new-value" type="text" inputmode="numeric" pattern="[0-9]*" value="10000000" />
-            <button id="cheat-apply" type="button" class="primary-command">적용</button>
-          </div>
-          <label class="cheat-check"><input type="checkbox" id="cheat-freeze" /> 값 고정 — 계속 이 값으로 유지 (무제한)</label>
-          <div class="cheat-row">
-            <input id="cheat-name" type="text" placeholder="이름 (예: 골드, 캐시)" />
-            <button id="cheat-save" type="button" class="secondary-command">저장</button>
-          </div>
-        </section>
+        <div id="cheat-body" class="cheat-body"></div>
       </form>
     </dialog>
 

@@ -57,6 +57,10 @@ impl KeyCode {
             "#" => KeyCode::HASH,
             "*" => KeyCode::STAR,
             "CLR" => KeyCode::CLEAR,
+            "SOFT1" => KeyCode::LEFT_SOFT_KEY,
+            "SOFT2" => KeyCode::RIGHT_SOFT_KEY,
+            "CALL" => KeyCode::CALL,
+            "HANGUP" => KeyCode::HANGUP,
             _ => unimplemented!("Unknown key: {string}"),
         }
     }
