@@ -1,5 +1,8 @@
 import { WorkletSynthesizer } from "spessasynth_lib";
 
+import { Ma3Player } from "./ma3/player";
+import { type Ma3Score, parseMa3Score } from "./ma3/smaf";
+
 type MidiEvent = [time: number, kind: "midi", data: Uint8Array];
 type WaveEvent = [time: number, kind: "wave", channels: number, samplingRate: number, samples: Int16Array];
 type TransportEvent = MidiEvent | WaveEvent;
@@ -10,6 +13,7 @@ type WorkerOutput =
 
 type AudioState = {
   synth: WorkletSynthesizer | null;
+  ma3: Ma3Player;
   ctx: AudioContext;
   clockAudioTime: number;
   clockPerformanceTime: number;
@@ -87,8 +91,12 @@ async function initAudio(ctx: AudioContext): Promise<AudioState> {
     console.warn("MIDI output is unavailable:", error);
   }
 
+  // MA-3 scores are synthesized with their own FM voices; only their sampled drums fall back to the soundfont.
+  const ma3 = new Ma3Player(ctx, midiGain, (data, time) => synth?.sendMessage(data, 0, { time }));
+
   return {
     synth,
+    ma3,
     ctx,
     clockAudioTime: ctx.currentTime,
     clockPerformanceTime: performance.timeOrigin + performance.now(),
@@ -128,6 +136,8 @@ export class AudioPlayer {
     });
   private commands: Promise<void> = Promise.resolve();
   private disposed = false;
+  /** Parsed MA-3 scores by clip handle; null marks clips that play as General MIDI. */
+  private readonly scores = new Map<number, Ma3Score | null>();
 
   constructor() {
     audioReady = this.audioReady;
@@ -192,8 +202,17 @@ export class AudioPlayer {
     };
   }
 
-  public play(handle: number, duration: number, events: TransportEvent[], repeat: boolean): void {
-    const buffers = events.map(event => (event[1] === "midi" ? event[2].buffer : event[4].buffer));
+  private scoreFor(handle: number, source: Uint8Array | undefined): Ma3Score | null {
+    const cached = this.scores.get(handle);
+    if (cached !== undefined) return cached;
+    const score = source ? parseMa3Score(source) : null;
+    if (this.scores.size >= 64) this.scores.delete(this.scores.keys().next().value as number);
+    this.scores.set(handle, score);
+    return score;
+  }
+
+  public play(handle: number, duration: number, events: TransportEvent[], repeat: boolean, source?: Uint8Array): void {
+    const score = this.scoreFor(handle, source);
     this.commands = this.commands
       .then(async () => {
         const state = await this.audioReady;
@@ -204,7 +223,16 @@ export class AudioPlayer {
           state.clockPerformanceTime = performance.timeOrigin + performance.now();
         }
         if (this.disposed) return;
-        this.worker.postMessage({ type: "play", handle, duration, events, repeat }, buffers);
+        // An MA-3 score plays on the FM synthesizer; the worker only gets its sampled streams. Should the
+        // synthesizer be unavailable, the whole clip falls back to General MIDI.
+        let scheduled = events;
+        if (score && state && (await state.ma3.play(handle, score, repeat))) {
+          scheduled = events.filter(event => event[1] === "wave");
+          if (scheduled.length === 0) return;
+        }
+        if (this.disposed) return;
+        const buffers = scheduled.map(event => (event[1] === "midi" ? event[2].buffer : event[4].buffer));
+        this.worker.postMessage({ type: "play", handle, duration, events: scheduled, repeat }, buffers);
       })
       .catch(error => console.warn("Failed to start audio playback:", error));
   }
@@ -212,8 +240,9 @@ export class AudioPlayer {
   public stop(handle: number): void {
     this.commands = this.commands
       .then(async () => {
-        await this.audioReady;
+        const state = await this.audioReady;
         if (this.disposed) return;
+        if (state && this.scores.get(handle)) void state.ma3.stop(handle);
         this.worker.postMessage({ type: "stop", handle });
       })
       .catch(error => console.warn("Failed to stop audio playback:", error));
@@ -225,6 +254,9 @@ export class AudioPlayer {
     if (audioReady === this.audioReady) audioReady = undefined;
     if (currentContext === this.ctx) currentContext = undefined;
     void this.ctx?.close().catch(error => console.warn("Failed to close audio context:", error));
-    void this.audioReady.then(state => state?.synth?.destroy());
+    void this.audioReady.then(state => {
+      state?.ma3.dispose();
+      state?.synth?.destroy();
+    });
   }
 }

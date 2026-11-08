@@ -308,7 +308,11 @@ impl TryFrom<AudioRequest> for AudioCommand {
                     .collect::<Result<_>>()?;
                 Self::Play {
                     handle,
-                    sequence: Arc::new(AudioSequence { duration, events }),
+                    sequence: Arc::new(AudioSequence {
+                        duration,
+                        events,
+                        source: Vec::new(),
+                    }),
                     repeat,
                 }
             }

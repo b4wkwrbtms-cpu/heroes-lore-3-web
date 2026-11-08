@@ -12,7 +12,7 @@ extern "C" {
     pub fn dispose(this: &AudioPlayer);
 
     #[wasm_bindgen(method, structural)]
-    fn play(this: &AudioPlayer, handle: u32, duration: f64, events: Array, repeat: bool);
+    fn play(this: &AudioPlayer, handle: u32, duration: f64, events: Array, repeat: bool, source: Uint8Array);
 
     #[wasm_bindgen(method, structural)]
     fn stop(this: &AudioPlayer, handle: u32);
@@ -61,7 +61,13 @@ impl wie_backend::AudioSink for AudioSink {
                     events.push(value.as_ref());
                 }
 
-                self.player.play(handle, sequence.duration as f64, events, repeat);
+                self.player.play(
+                    handle,
+                    sequence.duration as f64,
+                    events,
+                    repeat,
+                    Uint8Array::from(sequence.source.as_slice()),
+                );
             }
             AudioCommand::Stop { handle } => self.player.stop(handle),
         }

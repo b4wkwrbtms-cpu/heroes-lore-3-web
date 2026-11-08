@@ -101,6 +101,7 @@ mod tests {
     fn repeat_stop_and_replay_preserve_other_handles_and_absolute_deadlines() {
         let sequence = Arc::new(AudioSequence {
             duration: 100,
+            source: vec![],
             events: vec![TimedAudioEvent {
                 time: 10,
                 data: AudioEventData::Midi(vec![0x90, 60, 100]),
@@ -134,13 +135,23 @@ mod tests {
             Arc::new(AudioSequence {
                 duration: 100,
                 events: vec![],
+                source: vec![],
             }),
             true,
             Duration::ZERO,
         );
         assert!(matches!(schedule.due(Duration::from_millis(1005)).as_slice(), [Due::End(1)]));
         assert_eq!(schedule.deadline(), Some(Duration::from_millis(1100)));
-        schedule.play(2, Arc::new(AudioSequence { duration: 0, events: vec![] }), true, Duration::ZERO);
+        schedule.play(
+            2,
+            Arc::new(AudioSequence {
+                duration: 0,
+                events: vec![],
+                source: vec![],
+            }),
+            true,
+            Duration::ZERO,
+        );
         assert!(matches!(schedule.due(Duration::from_millis(1005)).as_slice(), [Due::End(2)]));
     }
 
@@ -153,6 +164,7 @@ mod tests {
             1,
             Arc::new(AudioSequence {
                 duration: 100,
+                source: vec![],
                 events: vec![TimedAudioEvent {
                     time: 50,
                     data: AudioEventData::Midi(vec![0x90, 60, 100]),

@@ -18,6 +18,8 @@ pub enum AudioCommand {
 pub struct AudioSequence {
     pub duration: u64,
     pub events: Vec<TimedAudioEvent>,
+    /// The file the sequence was decoded from, for sinks that synthesize it themselves.
+    pub source: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

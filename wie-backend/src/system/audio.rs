@@ -35,7 +35,12 @@ impl Audio {
         let sequence = self
             .parsed
             .entry(fnv1a(data))
-            .or_insert_with(|| Arc::new(convert_smaf_events(parse_smaf(data))))
+            .or_insert_with(|| {
+                Arc::new(AudioSequence {
+                    source: data.to_vec(),
+                    ..convert_smaf_events(parse_smaf(data))
+                })
+            })
             .clone();
 
         self.last_audio_handle += 1;
@@ -111,7 +116,11 @@ fn convert_smaf_events(events: Vec<(usize, SmafEvent)>) -> AudioSequence {
         })
         .collect();
 
-    AudioSequence { duration, events }
+    AudioSequence {
+        duration,
+        events,
+        source: Vec::new(),
+    }
 }
 
 #[cfg(test)]
@@ -146,6 +155,7 @@ mod tests {
             sequence,
             AudioSequence {
                 duration: 15,
+                source: vec![],
                 events: vec![
                     TimedAudioEvent {
                         time: 5,

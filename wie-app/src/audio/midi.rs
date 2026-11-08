@@ -310,6 +310,7 @@ mod tests {
         };
         let sequence = AudioSequence {
             duration: 100,
+            source: vec![],
             events: vec![TimedAudioEvent {
                 time: 0,
                 data: AudioEventData::Midi(vec![0x90, 60, 100]),
@@ -339,6 +340,7 @@ mod tests {
 
         let percussion = AudioSequence {
             duration: 100,
+            source: vec![],
             events: vec![TimedAudioEvent {
                 time: 0,
                 data: AudioEventData::Midi(vec![0x99, 36, 100]),
@@ -405,6 +407,7 @@ mod tests {
 
         let full = AudioSequence {
             duration: 100,
+            source: vec![],
             events: (0..16)
                 .map(|channel| TimedAudioEvent {
                     time: 0,
@@ -432,6 +435,7 @@ mod tests {
         let mut midi = Midi::new(0.5, &warning);
         let sequence = AudioSequence {
             duration: 100,
+            source: vec![],
             events: vec![TimedAudioEvent {
                 time: 0,
                 data: AudioEventData::Midi(vec![0x90, 60, 100]),

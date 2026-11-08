@@ -44,6 +44,7 @@ mod tests {
     fn memory_smf_preserves_order_sysex_and_silent_tail_without_pcm() {
         let bytes = encode(&AudioSequence {
             duration: 1250,
+            source: vec![],
             events: vec![
                 TimedAudioEvent {
                     time: 0,

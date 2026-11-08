@@ -15,5 +15,10 @@
 - `wie-web/public/manifest.webmanifest`, `icon-*.png`, `index.html` 메타: 홈 화면 앱 이름/아이콘
 - `wie-web/src/ts/library.ts`: 게임이 1개면 자동 실행
 
+- `wie-web/src/ts/ma3/`, `wie-web/public/ma3_processor.js`: MA-3 SMAF BGM을 원본 FM 음색으로 직접 합성 (GM 사운드폰트 대신)
+
 ## Credits
 This project is based on [wie](https://github.com/dlunch/wie), created by Inseok Lee.
+
+The MA-3 FM synthesizer follows the YMF825 (SD-1) tone parameter documentation published by Yamaha
+for the YMF825Board, and the SMAF voice exclusive layouts documented by [go-smaf](https://github.com/but80/go-smaf) (MIT).
