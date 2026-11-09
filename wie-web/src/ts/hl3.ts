@@ -120,10 +120,9 @@ export interface BagEntry {
 /** Quick-slot order used by the game's 등록 menu (1키등록 … #키등록); stored per bag record at +0x21, 0xff = none. */
 export const SLOT_ORDER = ["1", "3", "9", "0", "#"] as const;
 const QUICK_SLOT_OFFSET = 0x21;
-/** Bag record byte holding the worn-equipment slot the piece is in (0xff = not worn); 0x30 is 0xff with it. */
-const WORN_SLOT_OFFSET = 0x33;
-/** Off until the worn-record link is confirmed for every bag: a wrong guess un-equips pieces the game just put on. */
-const REPAIR_WORN_FLAGS = false;
+/** Bag record byte naming the equipment slot a piece goes into (0xff makes it unequippable). */
+const EQUIP_SLOT_OFFSET = 0x33;
+
 /**
  * Quick-slot tables (u8 × 5 each, indexed by slot 0–4 = keys 1,3,9,0,#). The HUD and the key handler read these, not the bag.
  * KIND: 0 empty, 1 skill, 2 item · ITEMLOC: (bag << 5) | bag index · SKILLX: per-skill value the game stores for skills · IDX: skill index (0xff for items).
@@ -222,7 +221,7 @@ export const readBag = (api: CheatApi): BagEntry[] => {
       category: u16(record, 0x22),
       index: u16(record, 0x24),
       count: u16(record, 0x26),
-      equipped: record[WORN_SLOT_OFFSET] !== 0xff,
+      equipped: record[0x1e] === 1,
       quickSlot: record[QUICK_SLOT_OFFSET] === 0xff ? -1 : record[QUICK_SLOT_OFFSET],
     });
   }
@@ -254,12 +253,10 @@ export const buildRecord = (category: number, item: Hl3Item, count: number): Uin
     view.setUint16(0x26, 1, true);
     view.setUint32(0x28, 0xedae06d0, true);
     view.setUint32(0x2c, 287, true);
-    // 0x30 and 0x33 say where the piece is worn; 0xff = in the bag. (Earlier versions wrote the worn slot here,
-    // so every given piece claimed to be worn and the game could not take them off.)
-    record[0x30] = 0xff;
-    record[0x31] = 0x00;
+    view.setUint16(0x30, 1, true);
     record[0x32] = SOCKETS[category] ?? 3;
-    record[WORN_SLOT_OFFSET] = 0xff;
+    // Equipment slot the piece goes into; without it the game offers no 장비장착.
+    record[EQUIP_SLOT_OFFSET] = EQUIP_SLOT[category] ?? 0;
     record.set([0xff, 0x00, 0xff, 0xff, 0x00, 0x00], 0x34);
     view.setUint16(0x3a, item.s ?? 0, true);
   } else {
@@ -422,26 +419,16 @@ export const sanitizeInventory = (api: CheatApi): number => {
     wiped.add(itemLocation(slot));
     repaired += 1;
   }
-  // Worn records point at their bag record (+0x20); a bag piece that claims to be worn without one is not.
-  const wornLinks = new Set<number>();
-  for (let slot = 0; slot < HL3.EQUIP_SLOTS; slot += 1) {
-    const record = api.dump(HL3.EQUIP + slot * HL3.RECORD, HL3.RECORD);
-    if (record.length === HL3.RECORD && !sameBytes(record, EMPTY_WORN_RECORD)) wornLinks.add(record[0x20]);
-  }
+  // A previous version cleared the equipment slot byte (+0x30/+0x33) of bag pieces, which took away 장비장착.
   for (let slot = 0; slot < HL3.MAX_BAGS * HL3.BAG_SLOTS; slot += 1) {
     const address = recordAddress(base, slot);
     const record = api.dump(address, HL3.RECORD);
-    if (record.length < HL3.RECORD || record[0x1f] !== 1 || HL3_ITEMS[u16(record, 0x22)]?.kind !== "equip") continue;
-    if (record[0x1e] !== 1) {
-      api.write(address + 0x1e, 1, false, 1);
-      repaired += 1;
-    }
-    const linked = wornLinks.has(slot) || wornLinks.has(itemLocation(slot));
-    if (REPAIR_WORN_FLAGS && record[WORN_SLOT_OFFSET] !== 0xff && !linked) {
-      api.write(address + 0x30, 1, false, 0xff);
-      api.write(address + WORN_SLOT_OFFSET, 1, false, 0xff);
-      repaired += 1;
-    }
+    if (record.length < HL3.RECORD || record[0x1f] !== 1) continue;
+    const category = u16(record, 0x22);
+    if (HL3_ITEMS[category]?.kind !== "equip" || record[EQUIP_SLOT_OFFSET] !== 0xff) continue;
+    api.write(address + 0x30, 2, false, 1);
+    api.write(address + EQUIP_SLOT_OFFSET, 1, false, EQUIP_SLOT[category] ?? 0);
+    repaired += 1;
   }
   for (let slot = 0; slot < HL3.EQUIP_SLOTS; slot += 1) {
     const address = HL3.EQUIP + slot * HL3.RECORD;
