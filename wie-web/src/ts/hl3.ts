@@ -122,6 +122,8 @@ export const SLOT_ORDER = ["1", "3", "9", "0", "#"] as const;
 const QUICK_SLOT_OFFSET = 0x21;
 /** Bag record byte holding the worn-equipment slot the piece is in (0xff = not worn); 0x30 is 0xff with it. */
 const WORN_SLOT_OFFSET = 0x33;
+/** Off until the worn-record link is confirmed for every bag: a wrong guess un-equips pieces the game just put on. */
+const REPAIR_WORN_FLAGS = false;
 /**
  * Quick-slot tables (u8 × 5 each, indexed by slot 0–4 = keys 1,3,9,0,#). The HUD and the key handler read these, not the bag.
  * KIND: 0 empty, 1 skill, 2 item · ITEMLOC: (bag << 5) | bag index · SKILLX: per-skill value the game stores for skills · IDX: skill index (0xff for items).
@@ -435,7 +437,7 @@ export const sanitizeInventory = (api: CheatApi): number => {
       repaired += 1;
     }
     const linked = wornLinks.has(slot) || wornLinks.has(itemLocation(slot));
-    if (record[WORN_SLOT_OFFSET] !== 0xff && !linked) {
+    if (REPAIR_WORN_FLAGS && record[WORN_SLOT_OFFSET] !== 0xff && !linked) {
       api.write(address + 0x30, 1, false, 0xff);
       api.write(address + WORN_SLOT_OFFSET, 1, false, 0xff);
       repaired += 1;
