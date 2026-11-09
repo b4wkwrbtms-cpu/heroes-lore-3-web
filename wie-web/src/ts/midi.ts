@@ -22,6 +22,18 @@ type AudioState = {
   pcmSources: Map<number, Set<AudioBufferSourceNode>>;
 };
 
+/** How long after a stop the same background music still resumes instead of restarting. */
+const MUSIC_RESUME_SECONDS = 20;
+/** The FM worklet starts a score this long after it is asked to (matches its START_DELAY_SECONDS). */
+const MUSIC_START_DELAY_SECONDS = 0.06;
+
+/** Cheap content fingerprint (FNV-1a) to recognise the same song coming back on a new clip. */
+function fingerprint(data: Uint8Array): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < data.length; i++) hash = Math.imul(hash ^ data[i], 0x01000193);
+  return hash >>> 0;
+}
+
 let midiVolume = 0.5;
 let pcmVolume = 0.5;
 
@@ -224,6 +236,11 @@ export class AudioPlayer {
     };
   }
 
+  /** The looping score now playing, to know where it was when the game stops it for a sound effect. */
+  private music: { handle: number; key: number; startedAt: number; offset: number; duration: number } | undefined;
+  /** Where the last stopped looping score left off; the same score played again soon after resumes there. */
+  private musicResume: { key: number; position: number; at: number } | undefined;
+
   private scoreFor(handle: number, source: Uint8Array | undefined): Ma3Score | null {
     const cached = this.scores.get(handle);
     if (cached !== undefined) return cached;
@@ -248,7 +265,17 @@ export class AudioPlayer {
         // An MA-3 score plays on the FM synthesizer; the worker only gets its sampled streams. Should the
         // synthesizer be unavailable, the whole clip falls back to General MIDI.
         let scheduled = events;
-        if (score && state && (await state.ma3.play(handle, score, repeat))) {
+        // The game has a single sound channel: every sound effect stops the background music and plays it again
+        // afterwards, which on the FM path restarted the song each time. Resume it where it left off instead.
+        let offset = 0;
+        if (score && state && repeat && source) {
+          const key = fingerprint(source);
+          const resume = this.musicResume;
+          if (resume && resume.key === key && state.ctx.currentTime - resume.at < MUSIC_RESUME_SECONDS) offset = resume.position;
+          this.musicResume = undefined;
+          this.music = { handle, key, startedAt: state.ctx.currentTime + MUSIC_START_DELAY_SECONDS, offset, duration: score.duration };
+        }
+        if (score && state && (await state.ma3.play(handle, score, repeat, offset))) {
           scheduled = events.filter(event => event[1] === "wave");
           if (scheduled.length === 0) return;
         }
@@ -264,6 +291,12 @@ export class AudioPlayer {
       .then(async () => {
         const state = await this.audioReady;
         if (this.disposed) return;
+        if (state && this.music?.handle === handle) {
+          const music = this.music;
+          const elapsed = Math.max(0, state.ctx.currentTime - music.startedAt) * 1000;
+          this.musicResume = { key: music.key, position: (music.offset + elapsed) % Math.max(1, music.duration), at: state.ctx.currentTime };
+          this.music = undefined;
+        }
         if (state) void state.ma3.stop(handle);
         this.worker.postMessage({ type: "stop", handle });
       })

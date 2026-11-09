@@ -421,7 +421,7 @@ class Channel {
 }
 
 class Sequence {
-  constructor(handle, score, repeat, sampleRate) {
+  constructor(handle, score, repeat, sampleRate, offsetMs = 0) {
     this.handle = handle;
     this.score = score;
     this.repeat = repeat;
@@ -445,6 +445,7 @@ class Sequence {
     this.startDelay = Math.round(START_DELAY_SECONDS * sampleRate);
     this.position = -this.startDelay;
     this.cycleStartTime = -1;
+    this.cycleOffset = 0;
     this.ended = false;
     this.stopping = false;
     this.active = [];
@@ -590,7 +591,23 @@ class Sequence {
     }
   }
 
+  /** Starts playback `offsetMs` into the score: controller state is replayed, notes before it are skipped. */
+  seek(offsetMs) {
+    const offset = offsetMs % Math.max(1, this.score.duration);
+    const events = this.score.events;
+    while (this.cursor < events.length && events[this.cursor].t < offset) {
+      const event = events[this.cursor++];
+      if (event.type !== "on") this.applyEvent(event);
+    }
+    this.lookaheadCursor = this.cursor;
+    this.lookaheadMaster = this.master;
+    for (let i = 0; i < 16; i++) Object.assign(this.lookaheadChannels[i], this.channels[i]);
+    this.position = Math.round((offset / 1000) * this.sampleRate) - this.startDelay;
+    this.cycleOffset = offset / 1000;
+  }
+
   startCycle(time) {
+    this.cycleOffset = 0;
     this.position = 0;
     this.cursor = 0;
     this.lookaheadCursor = 0;
@@ -611,7 +628,7 @@ class Sequence {
 
   /** Renders `frames` samples into the block, advancing the sequence; returns false once it has fallen silent. */
   process(left, right, frames, blockTime, port) {
-    if (this.cycleStartTime < 0) this.cycleStartTime = blockTime + this.startDelay / this.sampleRate;
+    if (this.cycleStartTime < 0) this.cycleStartTime = blockTime + this.startDelay / this.sampleRate - this.cycleOffset;
     let offset = 0;
     while (offset < frames) {
       let segmentEnd = frames;
@@ -669,7 +686,9 @@ class Ma3Processor extends AudioWorkletProcessor {
       const message = event.data;
       if (message.type === "play") {
         this.stopHandle(message.handle);
-        this.sequences.push(new Sequence(message.handle, message.score, message.repeat, globalThis.sampleRate));
+        const sequence = new Sequence(message.handle, message.score, message.repeat, globalThis.sampleRate);
+        if (message.offsetMs > 0) sequence.seek(message.offsetMs);
+        this.sequences.push(sequence);
       } else if (message.type === "stop") {
         this.stopHandle(message.handle);
       } else if (message.type === "stopAll") {

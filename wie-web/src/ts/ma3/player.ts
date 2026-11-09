@@ -28,9 +28,10 @@ export class Ma3Player {
       });
   }
 
-  async play(handle: number, score: Ma3Score, repeat: boolean): Promise<boolean> {
+  /** Plays `score`, starting `offsetMs` into it (used to resume background music after a sound effect). */
+  async play(handle: number, score: Ma3Score, repeat: boolean, offsetMs = 0): Promise<boolean> {
     if (!(await this.ready) || !this.node) return false;
-    this.node.port.postMessage({ type: "play", handle, score, repeat });
+    this.node.port.postMessage({ type: "play", handle, score, repeat, offsetMs });
     return true;
   }
 
