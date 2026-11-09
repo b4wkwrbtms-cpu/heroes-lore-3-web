@@ -4,7 +4,7 @@ import { type AutoConfig, MACRO_NAMES, SLOT_KEYS, type SkillRef, type SlotKey, a
 import type { CheatApi } from "./backend";
 import {
   CASH_ITEMS, HL3, HL3_SKILL_LABELS, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel,
-  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, removeDuplicateEquipment, readEquipment, readSkills, readVitals,
+  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, readEquipment, readSkills, readVitals,
   setAllSkillLevels, setGold, setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
@@ -37,9 +37,6 @@ interface Target {
   defaultValue: number;
   hint: string;
 }
-
-/** Bag record index → "N번 가방 M번째 칸" as the game shows it (16 slots per bag). */
-const bagPlace = (slot: number): string => `${Math.floor(slot / 16) + 1}번 가방 ${(slot % 16) + 1}번째 칸`;
 
 const TARGETS: Target[] = [
   { key: "gold", label: "소지금(돈)", particle: "이", defaultValue: 10000000, hint: "상태창·상점에서 보이는 골드 숫자" },
@@ -412,7 +409,7 @@ export const getCheatPanel = (): CheatPanel => {
       quick.append(button(label, "secondary-command", () => {
         try {
           const result = giveItem(live, category, index, 99);
-          setStatus(`${label} ${formatNumber(result.count)}개 — ${bagPlace(result.slot)}${result.stacked ? "에 합쳤어요" : "에 넣었어요"}. 가방을 열어 확인하세요.`);
+          setStatus(`${label} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸${result.stacked ? "에 합쳤어요" : "에 넣었어요"}. 가방을 열어 확인하세요.`);
         } catch (error) {
           setStatus(String(error), true);
         }
@@ -428,7 +425,7 @@ export const getCheatPanel = (): CheatPanel => {
       const cashButton = button(label, "secondary-command", () => {
         try {
           const result = giveItem(live, category, index, 10);
-          setStatus(`${label} ${formatNumber(result.count)}개 — ${bagPlace(result.slot)}. ${description}.`);
+          setStatus(`${label} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸. ${description}.`);
         } catch (error) {
           setStatus(String(error), true);
         }
@@ -493,7 +490,7 @@ export const getCheatPanel = (): CheatPanel => {
         const table = HL3_ITEMS[hl3Category];
         const item = table.items[hl3Index];
         const result = giveItem(live, hl3Category, hl3Index, count);
-        setStatus(`${item.n} ${formatNumber(result.count)}개 — ${bagPlace(result.slot)}${result.stacked ? "에 합쳤어요" : "에 넣었어요"}.${table.kind === "equip" ? " 장비는 한 번에 1개씩만 넣어요. 가방에서 선택해 장착하세요 (요구 레벨 미달이면 장착 불가)." : ""}`);
+        setStatus(`${item.n} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸에 넣었어요.${table.kind === "equip" ? " 장비는 가방에서 선택해 장착하세요 (요구 레벨 미달이면 장착 불가)." : ""}`);
       } catch (error) {
         setStatus(String(error), true);
       }
@@ -658,13 +655,6 @@ export const getCheatPanel = (): CheatPanel => {
     infiniteBox.addEventListener("change", () => saveAuto({ ...auto, infinitePotions: infiniteBox.checked }));
     infiniteCheck.append(infiniteBox, el("span", undefined, "등록한 물약 안 줄어들게 (개수 99 유지)"));
     body.append(infiniteCheck);
-    const buffCheck = el("label", "cheat-check");
-    const buffBox = el("input") as HTMLInputElement;
-    buffBox.type = "checkbox";
-    buffBox.checked = auto.keepBuffs;
-    buffBox.addEventListener("change", () => saveAuto({ ...auto, keepBuffs: buffBox.checked }));
-    buffCheck.append(buffBox, el("span", undefined, "✨ 버프 계속 유지 (한 번 쓰면 안 꺼져요 · 게임 규칙상 버프는 하나만, 다른 버프를 쓰면 바뀌어요)"));
-    body.append(buffCheck);
 
     // 자동 스킬
     const skillRow = el("div", "cheat-item-actions");
@@ -852,19 +842,10 @@ export const getCheatPanel = (): CheatPanel => {
       hl3ShowBag = !hl3ShowBag;
       render();
     }));
-    bagRow.append(button("🧹 같은 장비 중복 정리", "secondary-command", () => {
-      try {
-        const removed = removeDuplicateEquipment(live);
-        setStatus(removed > 0 ? `같은 장비 ${removed}개를 정리했어요. 장착 중인 것 하나만 남겼어요. (중복이 필요 없으면 쓰세요 — 장착·해제 오류는 자동으로 고쳐져요)` : "중복된 장비가 없어요.");
-      } catch (error) {
-        setStatus(String(error), true);
-      }
-    }));
     body.append(bagRow);
     if (hl3ShowBag) {
       try {
-        const allEntries = readBag(live);
-        const bag = allEntries.filter(entry => entry.count > 0 || entry.name);
+        const bag = readBag(live).filter(entry => entry.count > 0 || entry.name);
         const list = el("ul", "cheat-saved");
         for (const entry of bag) {
           const item = el("li", "cheat-item");
@@ -876,7 +857,7 @@ export const getCheatPanel = (): CheatPanel => {
           item.append(info);
           list.append(item);
         }
-        body.append(el("p", "cheat-muted", `가방 ${bag.length}/${allEntries.length}칸 사용 중`), list);
+        body.append(el("p", "cheat-muted", `가방 ${bag.length}/${HL3.SLOTS}칸 사용 중`), list);
       } catch (error) {
         body.append(el("p", "cheat-status error", String(error)));
       }

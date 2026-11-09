@@ -46,14 +46,14 @@ export const displayName = (name: string): string => name.replace(/^[|${}@]/, ""
 export const HL3 = {
   /** u32 소지금 */
   GOLD: 0x01503b54,
-  /** u32 pointer to the game-state block; the bags start BAG_OFFSET bytes in. */
+  /** u32 pointer to the game-state block; the bag array starts BAG_OFFSET bytes in. */
   BAG_PTR: 0x0150d8b0,
   BAG_OFFSET: 0x394,
   RECORD: 60,
   /** Each bag holds BAG_SLOTS records and occupies BAG_STRIDE bytes (16 × 60 + 4 bytes of padding). */
   BAG_SLOTS: 16,
   BAG_STRIDE: 0x3c4,
-  /** s8 number of bags the player owns (1–5; 여행가방 adds one), right after the last bag. */
+  /** s8 number of bags the player owns, right after the last bag. */
   BAG_COUNT_OFFSET: 0x1668,
   MAX_BAGS: 5,
   SLOTS: 80,
@@ -78,13 +78,6 @@ export const HL3 = {
   FINAL2: 0x01503b86,
   /** 게임 모드 (u32): 4 = 필드에서 플레이 중, 5 = 메뉴(상태창·가방·스킬창) 열림, 2·3 = 타이틀/로딩. */
   MODE: 0x01503b00,
-  /** u32 field sub-state: 3 while the player has control, 4 while an NPC or event dialog is on screen. */
-  FIELD_STATE: 0x0150db48,
-  /**
-   * The active buff (one at a time; casting another replaces it): u16 skill id (0xffff = none), u16 ?,
-   * u16 remaining time (counts down about 4 per second), u16 full duration, then the buff's effect values.
-   */
-  BUFF: 0x01503bb8,
   /** 남은 스탯 포인트 (u16). 레벨업마다 +4, 게임 자체 상한 276. */
   STAT_POINTS: 0x01503c12,
   /** 남은 스킬 포인트 (u8). 레벨업마다 +1, 게임 자체 상한 44. */
@@ -120,9 +113,6 @@ export interface BagEntry {
 /** Quick-slot order used by the game's 등록 menu (1키등록 … #키등록); stored per bag record at +0x21, 0xff = none. */
 export const SLOT_ORDER = ["1", "3", "9", "0", "#"] as const;
 const QUICK_SLOT_OFFSET = 0x21;
-/** Bag record byte holding the worn slot a piece is in; 0xff (with +0x30 = 0xff) while it sits in the bag. */
-const WORN_SLOT_OFFSET = 0x33;
-
 /**
  * Quick-slot tables (u8 × 5 each, indexed by slot 0–4 = keys 1,3,9,0,#). The HUD and the key handler read these, not the bag.
  * KIND: 0 empty, 1 skill, 2 item · ITEMLOC: (bag << 5) | bag index · SKILLX: per-skill value the game stores for skills · IDX: skill index (0xff for items).
@@ -174,38 +164,26 @@ const decodeName = (bytes: Uint8Array): string => {
 
 const u16 = (bytes: Uint8Array, offset: number) => bytes[offset] | (bytes[offset + 1] << 8);
 
-/** Pointer to the game-state block, or 0 before a game has been loaded. */
-export const statePointer = (api: CheatApi): number => {
-  const pointer = api.read(HL3.BAG_PTR, 4, false) >>> 0;
-  return pointer < HL3.HEAP_LO || pointer >= HL3.HEAP_HI ? 0 : pointer;
-};
-
 export const bagBase = (api: CheatApi): number => {
-  const pointer = statePointer(api);
-  if (pointer === 0) {
+  const pointer = api.read(HL3.BAG_PTR, 4, false) >>> 0;
+  if (pointer < HL3.HEAP_LO || pointer >= HL3.HEAP_HI) {
     throw new Error("게임이 아직 시작되지 않았어요. 캐릭터로 필드에 나온 뒤 다시 시도하세요.");
   }
   return pointer + HL3.BAG_OFFSET;
 };
 
-/** Number of bags the player owns, clamped to the memory the game reserves for them. */
-export const bagCount = (api: CheatApi, state: number): number => {
-  const count = api.read(state + HL3.BAG_COUNT_OFFSET, 1, false);
-  return Math.max(1, Math.min(HL3.MAX_BAGS, count));
-};
-
-/** Address of bag record `slot` (bag = slot / 16, position = slot % 16) relative to the first bag. */
-export const recordAddress = (base: number, slot: number): number =>
+/** Address of bag record `slot` (bag = slot / 16, position = slot % 16). */
+const recordAddress = (base: number, slot: number): number =>
   base + Math.floor(slot / HL3.BAG_SLOTS) * HL3.BAG_STRIDE + (slot % HL3.BAG_SLOTS) * HL3.RECORD;
 
-/** The game's own location code for a bag record: bag in the high bits, position within the bag in the low five. */
-export const itemLocation = (slot: number): number => (Math.floor(slot / HL3.BAG_SLOTS) << 5) | slot % HL3.BAG_SLOTS;
+/** The game's location code for a bag record: bag in the high bits, position in the low five. */
+const itemLocation = (slot: number): number => (Math.floor(slot / HL3.BAG_SLOTS) << 5) | slot % HL3.BAG_SLOTS;
 
 export const readBag = (api: CheatApi): BagEntry[] => {
   const base = bagBase(api);
-  const slots = bagCount(api, base - HL3.BAG_OFFSET) * HL3.BAG_SLOTS;
+  const bags = Math.max(1, Math.min(HL3.MAX_BAGS, api.read(base - HL3.BAG_OFFSET + HL3.BAG_COUNT_OFFSET, 1, false)));
   const entries: BagEntry[] = [];
-  for (let slot = 0; slot < slots; slot += 1) {
+  for (let slot = 0; slot < bags * HL3.BAG_SLOTS; slot += 1) {
     const address = recordAddress(base, slot);
     const record = api.dump(address, HL3.RECORD);
     if (record.length < HL3.RECORD) break;
@@ -221,7 +199,7 @@ export const readBag = (api: CheatApi): BagEntry[] => {
       category: u16(record, 0x22),
       index: u16(record, 0x24),
       count: u16(record, 0x26),
-      equipped: record[WORN_SLOT_OFFSET] !== 0xff,
+      equipped: record[0x1e] === 1,
       quickSlot: record[QUICK_SLOT_OFFSET] === 0xff ? -1 : record[QUICK_SLOT_OFFSET],
     });
   }
@@ -246,18 +224,17 @@ export const buildRecord = (category: number, item: Hl3Item, count: number): Uin
   const kind = HL3_ITEMS[category]?.kind ?? "use";
   const view = new DataView(record.buffer);
   if (kind === "equip") {
-    record.set([0x01, 0x01, 0x01, 0xff], 0x1e); // equipment, exists, equipment, no quick slot
+    record.set([0x00, 0x01, 0x01, 0xff], 0x1e); // not equipped, exists, equipment type
     view.setUint16(0x22, category, true);
     view.setUint16(0x24, item.i, true);
     view.setUint16(0x26, 1, true);
     view.setUint32(0x28, 0xedae06d0, true);
     view.setUint32(0x2c, 287, true);
-    // +0x30 = 1 and +0x33 = the worn slot while worn; both 0xff while the piece sits in the bag (as the game
-    // writes them when you take a piece off).
+    // Bag piece, not worn: the game keeps +0x30/+0x33 at 0xff until it is put on.
     record[0x30] = 0xff;
     record[0x31] = 0x00;
     record[0x32] = SOCKETS[category] ?? 3;
-    record[WORN_SLOT_OFFSET] = 0xff;
+    record[0x33] = 0xff;
     record.set([0xff, 0x00, 0xff, 0xff, 0x00, 0x00], 0x34);
     view.setUint16(0x3a, item.s ?? 0, true);
   } else {
@@ -285,15 +262,14 @@ export const giveItem = (api: CheatApi, category: number, index: number, count: 
   if (!table || !item) throw new Error("알 수 없는 아이템이에요.");
   const bag = readBag(api);
   if (table.kind === "use") {
-    const existing = bag.find(entry => entry.category === category && entry.index === index && entry.count > 0 && entry.count < 99);
+    const existing = bag.find(entry => entry.category === category && entry.index === index && entry.count > 0);
     if (existing) {
       const total = Math.min(99, existing.count + count);
       api.write(existing.address + 0x26, 2, false, total);
       return { slot: existing.slot, stacked: true, count: total };
     }
   }
-  // The game matches worn gear to bag records by item, so identical copies all show as worn: give one piece.
-  const pieces = 1;
+  const pieces = table.kind === "equip" ? Math.max(1, Math.min(count, 10)) : 1;
   let slot = -1;
   for (let n = 0; n < pieces; n += 1) {
     const empty = bag.find(entry => entry.count === 0 && entry.name === "" && entry.slot > (slot === -1 ? -1 : slot));
@@ -304,7 +280,7 @@ export const giveItem = (api: CheatApi, category: number, index: number, count: 
     api.writeBytes(empty.address, buildRecord(category, item, table.kind === "equip" ? 1 : Math.min(count, 99)));
     slot = empty.slot;
   }
-  return { slot, stacked: false, count: table.kind === "equip" ? 1 : Math.min(count, 99) };
+  return { slot, stacked: false, count: table.kind === "equip" ? pieces : Math.min(count, 99) };
 };
 
 /** Register a bag item to a quick slot (unregistering whatever was there). */
@@ -370,130 +346,6 @@ export const topUpSlotItems = (api: CheatApi, quickSlots: number[], count = 99):
     changed = true;
   }
   return changed;
-};
-
-/** Whether a record's item reference points at an item the game's tables actually contain. */
-const validItemReference = (category: number, index: number): boolean => {
-  if (category > 18) return false;
-  const table = HL3_ITEMS[category];
-  // Category 15 has no extracted table; the game sizes it separately, so leave it alone.
-  return table ? index < table.items.length : category === 15;
-};
-
-/** An unused bag record exactly as the game writes it: no name, item 0xff/0xff, no quick slot. */
-const EMPTY_BAG_RECORD = (() => {
-  const record = new Uint8Array(60).fill(0xff);
-  record.fill(0, 0, 0x21);
-  record.set([0xff, 0x00, 0xff, 0x00, 0x01, 0x00], 0x22);
-  return record;
-})();
-/** An unused worn-equipment record: all 0xff. */
-const EMPTY_WORN_RECORD = new Uint8Array(60).fill(0xff);
-
-const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((value, i) => value === b[i]);
-const hasName = (record: Uint8Array): boolean => record[0] !== 0 && record[0] !== 0xff;
-
-/**
- * Repairs bag and worn-equipment records the game cannot use: records that reference items the game has no
- * data for (they make it dereference garbage, which is fatal) and nameless leftovers that show up as phantom
- * 투구 items. They are rewritten in the game's own empty format, and quick slots pointing at them are cleared.
- * Earlier versions of these cheats wrote records with a wrong bag stride and a wrong empty format.
- * Returns how many records were repaired.
- */
-export const sanitizeInventory = (api: CheatApi): number => {
-  const state = statePointer(api);
-  if (state === 0) return 0;
-  let repaired = 0;
-  const base = state + HL3.BAG_OFFSET;
-  const wiped = new Set<number>();
-  for (let slot = 0; slot < HL3.MAX_BAGS * HL3.BAG_SLOTS; slot += 1) {
-    const address = recordAddress(base, slot);
-    const record = api.dump(address, HL3.RECORD);
-    if (record.length < HL3.RECORD) break;
-    const category = u16(record, 0x22);
-    if (category === 0xff) {
-      if (record[0x1f] === 0 || sameBytes(record, EMPTY_BAG_RECORD)) continue;
-    } else if (record[0x1f] === 1 && hasName(record) && validItemReference(category, u16(record, 0x24))) {
-      continue;
-    }
-    api.writeBytes(address, EMPTY_BAG_RECORD);
-    wiped.add(itemLocation(slot));
-    repaired += 1;
-  }
-  // Several bag pieces claiming the same worn slot (earlier versions of the item cheat gave every piece a worn
-  // slot): the game puts another claimant back on whenever the worn one is taken off. Keep the piece the worn
-  // record points at (+0x20) and return the others to the bag.
-  const wornLinks = new Map<number, number>();
-  for (let wornSlot = 0; wornSlot < HL3.EQUIP_SLOTS; wornSlot += 1) {
-    const record = api.dump(HL3.EQUIP + wornSlot * HL3.RECORD, HL3.RECORD);
-    if (record.length === HL3.RECORD && !sameBytes(record, EMPTY_WORN_RECORD)) wornLinks.set(wornSlot, record[0x20]);
-  }
-  const claims = new Map<number, number[]>();
-  for (let slot = 0; slot < HL3.MAX_BAGS * HL3.BAG_SLOTS; slot += 1) {
-    const record = api.dump(recordAddress(base, slot), HL3.RECORD);
-    if (record.length < HL3.RECORD || record[0x1f] !== 1 || HL3_ITEMS[u16(record, 0x22)]?.kind !== "equip") continue;
-    if (record[WORN_SLOT_OFFSET] === 0xff) continue;
-    claims.set(record[WORN_SLOT_OFFSET], [...(claims.get(record[WORN_SLOT_OFFSET]) ?? []), slot]);
-  }
-  for (const [wornSlot, slots] of claims) {
-    if (slots.length < 2) continue;
-    const link = wornLinks.get(wornSlot);
-    const keep = slots.find(slot => slot === link || itemLocation(slot) === link) ?? slots[0];
-    for (const slot of slots) {
-      if (slot === keep) continue;
-      const address = recordAddress(base, slot);
-      api.write(address + 0x30, 1, false, 0xff);
-      api.write(address + WORN_SLOT_OFFSET, 1, false, 0xff);
-      repaired += 1;
-    }
-  }
-  for (let slot = 0; slot < HL3.EQUIP_SLOTS; slot += 1) {
-    const address = HL3.EQUIP + slot * HL3.RECORD;
-    const record = api.dump(address, HL3.RECORD);
-    if (record.length < HL3.RECORD) break;
-    if (sameBytes(record, EMPTY_WORN_RECORD)) continue;
-    if (hasName(record) && validItemReference(u16(record, 0x22), u16(record, 0x24))) continue;
-    api.writeBytes(address, EMPTY_WORN_RECORD);
-    repaired += 1;
-  }
-  for (let quickSlot = 0; quickSlot < SLOT_ORDER.length; quickSlot += 1) {
-    const snapshot = readSlot(api, quickSlot);
-    if (snapshot.kind !== 2) continue;
-    const bag = snapshot.itemLoc >> 5;
-    const position = snapshot.itemLoc & 31;
-    const record =
-      bag < HL3.MAX_BAGS && position < HL3.BAG_SLOTS ? api.dump(recordAddress(base, bag * HL3.BAG_SLOTS + position), HL3.RECORD) : new Uint8Array();
-    if (!wiped.has(snapshot.itemLoc) && record.length === HL3.RECORD && record[0x1f] === 1) continue;
-    writeSlot(api, quickSlot, { kind: 0, itemLoc: 0, skillX: 0, idx: 0 });
-    repaired += 1;
-  }
-  return repaired;
-};
-
-/**
- * Removes extra copies of the same equipment from the bag, keeping the worn copy (or the first one). The game
- * matches worn gear to bag records by item, so duplicates all show up as equipped. Returns how many were removed.
- */
-export const removeDuplicateEquipment = (api: CheatApi): number => {
-  const base = bagBase(api);
-  const groups = new Map<string, BagEntry[]>();
-  for (const entry of readBag(api)) {
-    if (entry.count <= 0 || HL3_ITEMS[entry.category]?.kind !== "equip") continue;
-    const key = `${entry.category}:${entry.index}`;
-    groups.set(key, [...(groups.get(key) ?? []), entry]);
-  }
-  let removed = 0;
-  for (const entries of groups.values()) {
-    if (entries.length < 2) continue;
-    const keep = entries.find(entry => entry.equipped) ?? entries[0];
-    for (const entry of entries) {
-      if (entry === keep) continue;
-      api.writeBytes(recordAddress(base, entry.slot), EMPTY_BAG_RECORD);
-      removed += 1;
-    }
-  }
-  if (removed > 0) sanitizeInventory(api);
-  return removed;
 };
 
 export const getGold = (api: CheatApi): number => api.read(HL3.GOLD, 4, false) >>> 0;
@@ -595,19 +447,7 @@ export const setLevel = (api: CheatApi, level: number): void => api.write(HL3.LE
 
 export const MODE_FIELD = 4;
 /** True while the player is actually on the field (not in a menu), where quick-slot keys mean skills/items. */
-export const FIELD_CONTROL = 3;
-/** On the field with the player in control: not in a menu, a shop or an NPC/event dialog. */
-export const isOnField = (api: CheatApi): boolean =>
-  (api.read(HL3.MODE, 4, false) >>> 0) === MODE_FIELD && (api.read(HL3.FIELD_STATE, 4, false) >>> 0) === FIELD_CONTROL;
-
-/** Keep the active buff at its full duration so it never runs out. Returns true while a buff is active. */
-export const keepBuff = (api: CheatApi): boolean => {
-  if (api.read(HL3.BUFF, 2, false) === 0xffff) return false;
-  const total = api.read(HL3.BUFF + 6, 2, false);
-  if (total === 0 || total === 0xffff) return false;
-  if (api.read(HL3.BUFF + 4, 2, false) < total) api.write(HL3.BUFF + 4, 2, false, total);
-  return true;
-};
+export const isOnField = (api: CheatApi): boolean => (api.read(HL3.MODE, 4, false) >>> 0) === MODE_FIELD;
 
 export const getStatPoints = (api: CheatApi): number => api.read(HL3.STAT_POINTS, 2, false);
 export const setStatPoints = (api: CheatApi, value: number): void => api.write(HL3.STAT_POINTS, 2, false, Math.max(0, Math.min(value, 9999)));

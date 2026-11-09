@@ -1,7 +1,7 @@
 import type { CheatApi } from "./backend";
 import {
-  HL3, SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, keepBuff, readSkills, readSlot, readVitals, registerSkill, sanitizeInventory,
-  topUpSlotItems, writeSlot,
+  HL3, SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, readSkills, readSlot, readVitals, registerSkill, topUpSlotItems,
+  writeSlot,
 } from "./hl3";
 import { HL3_SKILLS } from "./hl3_skills";
 
@@ -34,8 +34,6 @@ export interface AutoConfig {
   spPercent: number;
   /** Keep the potions registered to hpKey/spKey at 99 pieces. */
   infinitePotions: boolean;
-  /** Keep a cast buff active forever, as if it were a passive. */
-  keepBuffs: boolean;
   skillOn: boolean;
   /** 자동 스킬로 돌릴 단축키 칸. 쿨타임은 게임이 판단하므로 칸을 차례로 눌러 주기만 해요. */
   skillSlots: SlotKey[];
@@ -60,7 +58,6 @@ export const defaultAutoConfig = (): AutoConfig => ({
   spKey: "0",
   spPercent: 30,
   infinitePotions: true,
-  keepBuffs: true,
   skillOn: false,
   skillSlots: ["1", "3"],
   skillGap: 400,
@@ -92,7 +89,6 @@ export const loadAutoConfig = (appId: string): AutoConfig => {
     config.hpPercent = clampNumber(data.hpPercent, 5, 95, config.hpPercent);
     config.spPercent = clampNumber(data.spPercent, 5, 95, config.spPercent);
     config.infinitePotions = data.infinitePotions !== false;
-    config.keepBuffs = data.keepBuffs !== false;
     config.skillOn = data.skillOn === true;
     config.skillGap = clampNumber(data.skillGap, 150, 3000, config.skillGap);
     const slots: unknown = data.skillSlots;
@@ -152,17 +148,12 @@ const ATTACK_GRACE_MS = 1500;
 /** How long after a replaced press we wait for SP to drop before calling the skill dropped, and how often to retry it. */
 const SKILL_CONFIRM_MS = 350;
 const SKILL_MAX_RETRIES = 2;
-const SKILL_SKIP_MS = 3000;
 /** Attack presses needed within ATTACK_BURST_MS to count as fighting; single taps talk to NPCs and confirm dialogs. */
 const ATTACK_BURST_COUNT = 3;
-const SANITIZE_INTERVAL_MS = 1000;
 const ATTACK_BURST_MS = 1500;
 const MAX_BACKOFF_MS = 12_000;
 
 type Listener = (config: AutoConfig) => void;
-
-/** True while one of the app's own panels (settings, cheats, keypad sheet) covers the game. */
-const appPanelOpen = (): boolean => typeof document !== "undefined" && document.querySelector("dialog[open]") !== null;
 
 class Automation {
   private context: AutoContext | undefined;
@@ -177,8 +168,6 @@ class Automation {
   private pendingSkill: { key: string; spBefore: number; at: number; retries: number } | undefined;
   private lastSkillAt = 0;
   private roundRobin = 0;
-  /** Keys whose skill did not go out (cooldown, not enough SP): skipped until the given time. */
-  private skipUntil = new Map<string, number>();
 
   private hp = newPotionState();
   private sp = newPotionState();
@@ -256,7 +245,7 @@ class Automation {
     const now = performance.now();
     let onField = false;
     try {
-      onField = !appPanelOpen() && isOnField(api);
+      onField = isOnField(api);
     } catch {
       onField = false;
     }
@@ -291,10 +280,7 @@ class Automation {
         pending.spBefore = sp;
         this.lastSkillAt = now;
         return pending.key;
-      } else {
-        this.skipUntil.set(pending.key, now + SKILL_SKIP_MS);
-        this.pendingSkill = undefined;
-      }
+      } else this.pendingSkill = undefined;
     }
     if (now - this.lastSkillAt < this.config.skillGap) return undefined;
 
@@ -312,8 +298,7 @@ class Automation {
     for (let offset = 0; offset < candidates.length; offset += 1) {
       const position = (this.roundRobin + offset) % candidates.length;
       const candidate = candidates[position];
-      // The game decides whether the skill can go out (SP, cooldown); one that keeps failing sits out a while.
-      if ((this.skipUntil.get(candidate.key) ?? 0) > now && !candidate.ref) continue;
+      if (candidate.cost * 10 > sp) continue;
       if (candidate.ref) {
         try {
           if (!this.prepareMacroSkill(api, candidate.ref)) continue;
@@ -377,10 +362,7 @@ class Automation {
     this.attackPresses = [];
     this.attackUntil = 0;
     this.pendingSkill = undefined;
-    this.skipUntil.clear();
   }
-
-  private lastSanitize = -Infinity;
 
   private tick() {
     const context = this.context;
@@ -388,23 +370,10 @@ class Automation {
     const api = context.getCheats();
     if (!api) return;
     const now = performance.now();
-    // Records pointing at items the game has no data for crash it; clear them once a save has finished loading.
-    if (now - this.lastSanitize >= SANITIZE_INTERVAL_MS) {
-      this.lastSanitize = now;
-      try {
-        const mode = api.read(HL3.MODE, 4, false) >>> 0;
-        if (mode === 4 || mode === 5) {
-          const cleared = sanitizeInventory(api);
-          if (cleared > 0) console.warn(`[hl3] cleared ${cleared} broken inventory record(s)`);
-        }
-      } catch {
-        // game state not loaded yet
-      }
-    }
     // In menus the quick-slot keys page through screens (◀1 STATUS 3▶, 7/9 tabs), so never press them there.
     let onField = false;
     try {
-      onField = !appPanelOpen() && isOnField(api);
+      onField = isOnField(api);
     } catch {
       onField = false;
     }
@@ -414,13 +383,6 @@ class Automation {
       this.attackPresses = [];
       this.attackUntil = 0;
       this.pendingSkill = undefined;
-    }
-    if (this.config.keepBuffs) {
-      try {
-        if ((api.read(HL3.MODE, 4, false) >>> 0) === 4) keepBuff(api);
-      } catch {
-        // game state not loaded yet
-      }
     }
     if (this.config.potionOn) {
       try {
