@@ -1,6 +1,6 @@
 import type { CheatApi } from "./backend";
 import {
-  HL3, SLOT_ORDER, type SkillState, type SlotSnapshot, getLevel, isOnField, readSkills, readSlot, readVitals, registerSkill, topUpSlotItems,
+  HL3, SLOT_ORDER, type SkillState, type SlotSnapshot, aimAtNearest, getLevel, isOnField, readSkills, readSlot, readVitals, registerSkill, topUpSlotItems,
   writeSlot,
 } from "./hl3";
 import { HL3_SKILLS } from "./hl3_skills";
@@ -42,6 +42,8 @@ export interface AutoConfig {
   /** 스킬 묶음: 패드의 추가 버튼. 등록은 게임 메모리의 단축키 테이블을 잠시 바꿔치기해서 `macroSlot` 키로 발동. */
   macros: MacroConfig[];
   macroSlot: SlotKey;
+  /** 공격·말 걸기 직전에 가까운 몬스터(없으면 NPC) 쪽으로 몸을 돌리기. */
+  aimOn: boolean;
 }
 
 export interface AutoContext {
@@ -63,6 +65,7 @@ export const defaultAutoConfig = (): AutoConfig => ({
   skillGap: 400,
   macros: Array.from({ length: MACRO_COUNT }, () => ({ skills: [], auto: false })),
   macroSlot: "#",
+  aimOn: true,
 });
 
 const storageKey = (appId: string) => `wie_auto_${appId}`;
@@ -90,6 +93,7 @@ export const loadAutoConfig = (appId: string): AutoConfig => {
     config.spPercent = clampNumber(data.spPercent, 5, 95, config.spPercent);
     config.infinitePotions = data.infinitePotions !== false;
     config.skillOn = data.skillOn === true;
+    config.aimOn = data.aimOn !== false;
     config.skillGap = clampNumber(data.skillGap, 150, 3000, config.skillGap);
     const slots: unknown = data.skillSlots;
     if (Array.isArray(slots)) config.skillSlots = SLOT_KEYS.filter(key => slots.includes(key));
@@ -223,6 +227,20 @@ class Automation {
     this.macroQueue.push(...macro.skills);
     this.macroNextAt = 0;
     return true;
+  }
+
+  /**
+   * Called before an attack/talk press reaches the game: turns the hero toward a nearby monster, or a nearby NPC
+   * for the player's own presses (automated presses only aim at monsters).
+   */
+  aim(npcs: boolean) {
+    const api = this.config.aimOn ? this.context?.getCheats() : undefined;
+    if (!api) return;
+    try {
+      aimAtNearest(api, npcs);
+    } catch {
+      // Memory not readable (e.g. while the game loads): attack as is.
+    }
   }
 
   /** Called with every key transition that reaches the game. */

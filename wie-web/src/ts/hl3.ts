@@ -539,3 +539,77 @@ export const autoHealTick = (api: CheatApi, state: { spPeak: number }, ratio = 0
   }
   return healed;
 };
+
+/**
+ * 자동 조준: 공격·말 걸기 직전에 가장 가까운 몬스터(또는 NPC) 쪽으로 몸을 돌려요.
+ * 필드의 캐릭터들은 128바이트 충돌 객체로, 서로 연결 리스트(+0x34/+0x38/+0x3c/+0x40)로 이어져 있어요.
+ */
+export const AIM = {
+  /** u32 pointer to the player's collision object. */
+  PLAYER: 0x0150d654,
+  /** u8 facing: 1 up, 2 down, 3 left, 4 right. Writing it turns the hero in place; the next attack follows it. */
+  FACING: 0x0150d63c,
+  /** u32: 3 while the player has control, 4 while an NPC dialog is open. */
+  FIELD_STATE: 0x0150db48,
+  KIND: 0x04,
+  X: 0x10,
+  Y: 0x12,
+  W: 0x1a,
+  H: 0x1c,
+  LINKS: [0x34, 0x38, 0x3c, 0x40],
+  KIND_MONSTER: 5,
+  KIND_NPC: 6,
+  /** Gap between bounding boxes (px) within which a target counts as "nearby". */
+  MONSTER_RANGE: 48,
+  NPC_RANGE: 24,
+} as const;
+
+const FIELD_CONTROL = 3;
+const AIM_MAX_OBJECTS = 600;
+
+const isObjectPointer = (pointer: number): boolean => pointer >= 0x48000000 && pointer < 0x50000000;
+
+/**
+ * Turns the hero toward the closest monster nearby (or NPC when `npcs`), so the following attack or talk lands
+ * on it. Returns true when the facing was changed.
+ */
+export const aimAtNearest = (api: CheatApi, npcs: boolean): boolean => {
+  if (!isOnField(api) || (api.read(AIM.FIELD_STATE, 4, false) >>> 0) !== FIELD_CONTROL) return false;
+  const player = api.read(AIM.PLAYER, 4, false) >>> 0;
+  if (!isObjectPointer(player)) return false;
+  const px = api.read(player + AIM.X, 2, false) << 16 >> 16;
+  const py = api.read(player + AIM.Y, 2, false) << 16 >> 16;
+  const pw = api.read(player + AIM.W, 2, false);
+  const ph = api.read(player + AIM.H, 2, false);
+
+  let best: { dx: number; dy: number; score: number } | undefined;
+  const seen = new Set<number>([player]);
+  const queue = [player];
+  while (queue.length > 0 && seen.size < AIM_MAX_OBJECTS) {
+    const object = queue.pop() as number;
+    for (const link of AIM.LINKS) {
+      const next = api.read(object + link, 4, false) >>> 0;
+      if (isObjectPointer(next) && !seen.has(next)) {
+        seen.add(next);
+        queue.push(next);
+      }
+    }
+    if (object === player) continue;
+    const kind = api.read(object + AIM.KIND, 2, false) & 0xff;
+    const range = kind === AIM.KIND_MONSTER ? AIM.MONSTER_RANGE : npcs && kind === AIM.KIND_NPC ? AIM.NPC_RANGE : -1;
+    if (range < 0) continue;
+    const dx = (api.read(object + AIM.X, 2, false) << 16 >> 16) - px;
+    const dy = (api.read(object + AIM.Y, 2, false) << 16 >> 16) - py;
+    const gapX = Math.abs(dx) - (pw + api.read(object + AIM.W, 2, false)) / 2;
+    const gapY = Math.abs(dy) - (ph + api.read(object + AIM.H, 2, false)) / 2;
+    if (Math.max(gapX, gapY) > range) continue;
+    // Monsters first; among the same kind, the closest one.
+    const score = Math.hypot(dx, dy) + (kind === AIM.KIND_MONSTER ? 0 : 10000);
+    if (!best || score < best.score) best = { dx, dy, score };
+  }
+  if (!best) return false;
+  const facing = Math.abs(best.dx) > Math.abs(best.dy) ? (best.dx > 0 ? 4 : 3) : best.dy > 0 ? 2 : 1;
+  if ((api.read(AIM.FACING, 2, false) & 0xff) === facing) return false;
+  api.writeBytes(AIM.FACING, Uint8Array.of(facing));
+  return true;
+};

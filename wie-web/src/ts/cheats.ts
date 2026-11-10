@@ -656,6 +656,17 @@ export const getCheatPanel = (): CheatPanel => {
     infiniteCheck.append(infiniteBox, el("span", undefined, "등록한 물약 안 줄어들게 (개수 99 유지)"));
     body.append(infiniteCheck);
 
+    // 자동 조준
+    const aimRow = el("div", "cheat-item-actions");
+    aimRow.append(button(auto.aimOn ? "🎯 자동 조준 끄기" : "🎯 자동 조준 켜기", auto.aimOn ? "primary-command" : "secondary-command", () => {
+      saveAuto({ ...auto, aimOn: !auto.aimOn });
+      setStatus(!auto.aimOn
+        ? "공격(OK)을 누르면 가까운 몬스터 쪽으로, 몬스터가 없으면 바로 옆 NPC 쪽으로 몸을 돌려요."
+        : "자동 조준을 껐어요.");
+    }));
+    body.append(aimRow);
+    body.append(el("p", "cheat-muted", "공격 버튼을 누를 때 근처 몬스터(없으면 옆에 있는 NPC) 쪽으로 돌아서 공격하거나 말을 걸어요. 게임이 4방향이라 대각선에 있으면 더 가까운 쪽으로 돌아요. 방향키를 누르고 있을 땐 손대지 않아요."));
+
     // 자동 스킬
     const skillRow = el("div", "cheat-item-actions");
     skillRow.append(button(auto.skillOn ? "✨ 자동 스킬 끄기" : "✨ 자동 스킬 켜기", auto.skillOn ? "primary-command" : "secondary-command", () => {

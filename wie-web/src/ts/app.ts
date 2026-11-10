@@ -31,6 +31,7 @@ const KEY_MAP: Record<string, string> = {
   NumpadEnter: "OK",
   Space: "OK",
 };
+const DIRECTION_KEYS = new Set(["UP", "DOWN", "LEFT", "RIGHT"]);
 const icons = {
   ArrowDown,
   ArrowLeft,
@@ -113,6 +114,10 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   };
   const setKey = (source: string, key?: string) => {
     if (!session || preparing || suspended || ending) return;
+    // Face the nearest monster (or NPC to talk to) unless the player is steering with a direction key.
+    if (key === "OK" && inputs.get(source) !== "OK" && ![...inputs.values()].some(held => DIRECTION_KEYS.has(held))) {
+      automation.aim(!source.startsWith("auto:"));
+    }
     // While the player mashes attack, the automation turns some of those presses into skill keys.
     if (key === "OK" && !source.startsWith("auto:")) {
       const replacement = automation.interceptAttack();
