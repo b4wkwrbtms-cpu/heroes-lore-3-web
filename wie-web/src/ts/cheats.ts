@@ -8,6 +8,8 @@ import {
   setAllSkillLevels, setGold, setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
+import { INOTIA, readRolledStats, setRolledStats } from "./inotia";
+import { isInotia } from "./pad_profile";
 
 export interface CheatContext {
   appId: string;
@@ -366,6 +368,28 @@ export const getCheatPanel = (): CheatPanel => {
   let hl3Index = 7;
   let hl3Count = 99;
   let hl3ShowBag = false;
+
+  const renderInotia = (live: CheatApi) => {
+    body.append(el("p", "cheat-lead", "🐉 이노티아 전용 치트"));
+    let current = "";
+    try {
+      current = readRolledStats(live).map((value, i) => `${INOTIA.STAT_NAMES[i]} ${value}`).join(" · ");
+    } catch {
+      current = "";
+    }
+    const statRow = el("div", "cheat-item-actions");
+    statRow.append(button("🎲 스탯 전부 20", "primary-command", () => {
+      try {
+        setRolledStats(live, 20);
+        setStatus("STR·DEX·CON·INT·MEN·LUK을 전부 20으로 바꿨어요. 창을 닫고 REROLL 없이 바로 확인을 누르세요.");
+      } catch (error) {
+        setStatus(String(error), true);
+      }
+    }));
+    body.append(statRow);
+    body.append(el("p", "cheat-muted", `새 캐릭터를 만들 때 '스탯 결정' 화면에서 누르세요. REROLL을 누르면 다시 굴려져요.${current ? ` 지금 굴린 값: ${current}` : ""}`));
+    body.append(el("div", "cheat-divider"));
+  };
 
   const renderHl3 = (live: CheatApi) => {
     body.append(el("p", "cheat-lead", "⚔️ 영웅서기3 전용 치트"));
@@ -880,6 +904,8 @@ export const getCheatPanel = (): CheatPanel => {
     title.textContent = "치트";
     if (context && isHeroesLore3(context.appTitle)) {
       renderHl3(live);
+    } else if (context && isInotia({ title: context.appTitle, filename: "" })) {
+      renderInotia(live);
     }
 
     const generic = saved.filter(cheat => cheat.name !== BATTLE_KEY && cheat.name !== AUTO_HEAL_KEY);
