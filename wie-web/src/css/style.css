@@ -503,6 +503,17 @@ html:has(.player-view:not([hidden])) body {
   background: #000;
 }
 
+/* Games with their own pad profile keep their aspect across the full width; the keypad takes any height left over
+   (on shorter screens the screen shrinks and fills what the keypad doesn't use). */
+.player-view[data-pad-profile] .canvas-wrapper {
+  flex: 0 1 auto;
+  aspect-ratio: var(--screen-ratio, 0.75);
+}
+
+.player-view[data-pad-profile] .pad {
+  flex-grow: 1;
+}
+
 #canvas {
   position: absolute;
   inset: 0;
@@ -1007,10 +1018,12 @@ html[data-screen-fit="contain"] #canvas {
     gap: 6px 8px;
   }
 
-  .canvas-wrapper {
+  .canvas-wrapper,
+  .player-view[data-pad-profile] .canvas-wrapper {
     width: 100%;
     height: 100%;
     flex: none;
+    aspect-ratio: auto;
     grid-column: 2;
     grid-row: 1 / span 2;
   }

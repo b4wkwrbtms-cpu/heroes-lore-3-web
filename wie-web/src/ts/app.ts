@@ -5,7 +5,7 @@ import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, 
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
 import { isHeroesLore3, readSkills } from "./hl3";
-import { type PadProfile, applyPadProfile, padProfileFor } from "./pad_profile";
+import { type Direction, applyPadProfile, directionKey, padProfileFor } from "./pad_profile";
 import type { SettingsController } from "./settings";
 
 const KEY_MAP: Record<string, string> = {
@@ -62,6 +62,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   // Some games walk with the number keys or use other quick slots: point the pad at this game's keys.
   const padProfile = padProfileFor(app);
   applyPadProfile(buttons, padProfile);
+  if (padProfile.name) playerView.dataset.padProfile = padProfile.name;
+  else delete playerView.dataset.padProfile;
   // Landscape sizes the screen column from the game's own aspect (240×320, 176×220, ...).
   const gameCanvas = document.getElementById("canvas") as HTMLCanvasElement;
   const updateScreenRatio = () => {
@@ -346,8 +348,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         horizontal = cos > 0.5 ? "RIGHT" : cos < -0.5 ? "LEFT" : undefined;
         vertical = sin > 0.5 ? "DOWN" : sin < -0.5 ? "UP" : undefined;
       }
-      setKey("joystick:h", horizontal && padProfile.directions[horizontal]);
-      setKey("joystick:v", vertical && padProfile.directions[vertical]);
+      setKey("joystick:h", horizontal && directionKey(padProfile, horizontal, gameCanvas));
+      setKey("joystick:v", vertical && directionKey(padProfile, vertical, gameCanvas));
     };
 
     const moveKnob = (x: number, y: number) => {
@@ -425,7 +427,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
 
       const mapped = KEY_MAP[event.code];
       // Arrow keys walk like the joystick does.
-      const key = mapped && DIRECTION_KEYS.has(mapped) ? padProfile.directions[mapped as keyof PadProfile["directions"]] : mapped;
+      const key = mapped && DIRECTION_KEYS.has(mapped) ? directionKey(padProfile, mapped as Direction, gameCanvas) : mapped;
       if (key) {
         event.preventDefault();
         if (!event.repeat) {
