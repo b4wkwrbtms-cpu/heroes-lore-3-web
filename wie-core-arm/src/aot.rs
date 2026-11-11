@@ -7,7 +7,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use wie_core_arm_aot::{
     CompileRequest, CompiledArtifact, CompiledExecutor, CompiledHandle, CompiledRegion, ManifestRegion, PreparationFuture, PreparationState,
     RegionKey,
@@ -34,6 +34,10 @@ pub(crate) struct Aot {
     ranges: Vec<Range<u64>>,
     regions: Vec<CompiledRegion>,
     invalidated: Vec<ManifestRegion>,
+    /// Entry keys known to lie in no invalidated region. The interpreter asks `recompile` at every branch target
+    /// it runs, and a linear scan of all invalidated regions for each one took a large share of the frame once a
+    /// game had flushed its instruction cache. Cleared whenever a region is invalidated again.
+    uncovered: HashSet<RegionKey>,
     recompilations: Vec<Recompilation>,
 }
 
@@ -46,6 +50,7 @@ impl Aot {
             ranges: Vec::new(),
             regions: Vec::new(),
             invalidated: Vec::new(),
+            uncovered: HashSet::new(),
             recompilations: Vec::new(),
         }
     }
@@ -112,6 +117,7 @@ impl Aot {
             }
             self.executor.release(region.handle);
             self.invalidated.push(region.manifest);
+            self.uncovered.clear();
         }
         for pending in &mut self.recompilations {
             pending.invalidated |= overlaps(&pending.manifest);
@@ -119,11 +125,19 @@ impl Aot {
     }
 
     pub fn recompile(&mut self, key: &RegionKey, memory: &EmulatedMemory) {
+        if self.invalidated.is_empty() || self.uncovered.contains(key) {
+            return;
+        }
         let Some(index) = self.invalidated.iter().position(|region| {
             region.entry.thumb == key.thumb
                 && region.entry.cpu_mode == key.cpu_mode
                 && region.code_ranges.iter().any(|range| range.contains(&u64::from(key.pc)))
         }) else {
+            self.uncovered.insert(RegionKey {
+                pc: key.pc,
+                thumb: key.thumb,
+                cpu_mode: key.cpu_mode,
+            });
             return;
         };
         let manifest = self.invalidated.swap_remove(index);
@@ -157,6 +171,7 @@ impl Aot {
                     }
                 }
                 self.invalidated.push(pending.manifest);
+                self.uncovered.clear();
             } else {
                 match result {
                     Ok(artifact) => self.install(artifact),
