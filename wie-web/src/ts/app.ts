@@ -313,6 +313,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     const DEAD_ZONE_PX = 9;
     const HYSTERESIS_DEG = 9;
     const KNOB_LIMIT = 0.62;
+    const ORIGIN_TRAIL = 0.4;
     let activePointer: number | undefined;
     let originX = 0;
     let originY = 0;
@@ -369,14 +370,28 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
 
     const track = (event: PointerEvent) => {
       moveKnob(event.clientX, event.clientY);
+      // Trailing origin: once the thumb is further than ORIGIN_TRAIL of the ring from the origin, the origin follows
+      // it. Turning back then only takes a short slide instead of the whole way back past where the touch began.
+      const dx = event.clientX - originX;
+      const dy = event.clientY - originY;
+      const distance = Math.hypot(dx, dy);
+      const limit = radius * ORIGIN_TRAIL;
+      if (distance > limit) {
+        originX = event.clientX - (dx * limit) / distance;
+        originY = event.clientY - (dy * limit) / distance;
+      }
       applyDirection(event.clientX - originX, event.clientY - originY);
     };
 
     joystick.addEventListener(
       "pointerdown",
       (event) => {
-        if (activePointer !== undefined) return;
         event.preventDefault();
+        // A new touch always takes over. If the browser never delivered the end of the previous one (iOS can drop
+        // it when a touch slides off or another finger lands), ignoring new touches left the stick stuck.
+        if (activePointer !== undefined && activePointer !== event.pointerId && joystick.hasPointerCapture(activePointer)) {
+          joystick.releasePointerCapture(activePointer);
+        }
         const rect = joystick.getBoundingClientRect();
         centerX = rect.left + rect.width / 2;
         centerY = rect.top + rect.height / 2;
@@ -415,6 +430,9 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     joystick.addEventListener("pointerup", endJoystick, { signal: abortController.signal });
     joystick.addEventListener("pointercancel", endJoystick, { signal: abortController.signal });
     joystick.addEventListener("lostpointercapture", endJoystick, { signal: abortController.signal });
+    // Backstop for a release that does not reach the stick itself.
+    window.addEventListener("pointerup", endJoystick, { signal: abortController.signal });
+    window.addEventListener("pointercancel", endJoystick, { signal: abortController.signal });
     abortController.signal.addEventListener("abort", resetJoystick);
   }
 
