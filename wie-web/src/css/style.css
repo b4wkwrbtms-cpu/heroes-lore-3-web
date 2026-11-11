@@ -814,7 +814,7 @@ html[data-screen-fit="contain"] #canvas {
 .ring-o2 { --x: 149; --y: 181; --d: 52; }
 .ring-o3 { --x: 38; --y: 211; --d: 52; }
 
-.ring-i1.key-sub b {
+.player-view:not([data-pad-profile]) .ring-i1.key-sub b {
   font-size: calc(var(--d) * var(--u) * 0.27);
 }
 

@@ -11,6 +11,11 @@ use wie_jvm_support::{WieJavaClassProto, WieJvmContext};
 
 use crate::classes::javax::microedition::midlet::MIDlet;
 
+/// Timers this close to their due time fire on the current check. The queue is only looked at once per host frame, so
+/// a timer falling due just after a check waited a whole extra frame: a game re-arming a short frame timer at the end
+/// of its frame alternated between two and three display frames per game frame.
+const TIMER_SLACK_MS: u64 = 4;
+
 #[repr(i32)]
 #[allow(clippy::enum_variant_names)]
 enum EventQueueEvent {
@@ -232,7 +237,7 @@ impl EventQueue {
                     ],
                     Event::Timer { due, callback } => {
                         // TODO we should wait for timer more efficiently
-                        if due <= now {
+                        if due <= now + TIMER_SLACK_MS {
                             callback()
                                 .or_else(async |x| Err(jvm.exception("net/wie/WieError", &x.to_string()).await))
                                 .await?
@@ -435,7 +440,7 @@ mod test {
         get_protos,
     };
 
-    use super::{EventQueue, EventQueueEvent};
+    use super::{EventQueue, EventQueueEvent, TIMER_SLACK_MS};
 
     struct IdleCallback;
 
@@ -518,6 +523,47 @@ mod test {
         clock.set(32);
         system.tick()?;
         assert!(completed.load(Ordering::SeqCst));
+        Ok(())
+    }
+
+    #[test]
+    fn timers_due_within_the_slack_fire_on_the_current_check() -> Result<()> {
+        let clock = TestClock::new();
+        clock.set(100);
+        let mut system = System::new(Box::new(TestPlatform::with_clock(clock.clone())), "", "", DefaultTaskRunner);
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_task = completed.clone();
+        let system_task = system.clone();
+        system.spawn(async move || {
+            let jvm = JvmSupport::new_jvm(&system_task, None, Box::new([get_protos().into()]), &[], RustJavaJvmImplementation).await?;
+            let queue = jvm
+                .invoke_static("net/wie/EventQueue", "getEventQueue", "()Lnet/wie/EventQueue;", ())
+                .await
+                .unwrap();
+            let event = jvm.instantiate_array("I", 4).await.unwrap();
+            let now = system_task.platform().now();
+            let soon = Arc::new(AtomicBool::new(false));
+            let later = Arc::new(AtomicBool::new(false));
+            for (due, fired) in [(now + TIMER_SLACK_MS, soon.clone()), (now + TIMER_SLACK_MS + 1, later.clone())] {
+                system_task.event_queue().push(Event::timer(due, move || async move {
+                    fired.store(true, Ordering::SeqCst);
+                    Ok(())
+                }));
+            }
+            system_task.event_queue().push(Event::Redraw);
+            let _: () = jvm
+                .invoke_virtual(&queue, "net/wie/EventQueue", "getNextEvent", "([I)V", (event,))
+                .await
+                .unwrap();
+            assert!(soon.load(Ordering::SeqCst), "a timer due within the slack fires now");
+            assert!(!later.load(Ordering::SeqCst), "a timer due after the slack keeps waiting");
+            completed_task.store(true, Ordering::SeqCst);
+            Ok(())
+        });
+
+        while !completed.load(Ordering::SeqCst) {
+            system.tick()?;
+        }
         Ok(())
     }
 
