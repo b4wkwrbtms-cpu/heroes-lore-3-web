@@ -5,6 +5,7 @@ import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, 
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
 import { isHeroesLore3, readSkills } from "./hl3";
+import { type PadProfile, applyPadProfile, padProfileFor } from "./pad_profile";
 import type { SettingsController } from "./settings";
 
 const KEY_MAP: Record<string, string> = {
@@ -58,6 +59,17 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   const keypadSheet = document.getElementById("keypad-sheet") as HTMLElement | null;
   const keypadSheetClose = document.getElementById("keypad-sheet-close") as HTMLButtonElement | null;
   const buttons = playerView.querySelectorAll<HTMLButtonElement>("button[data-key]");
+  // Some games walk with the number keys or use other quick slots: point the pad at this game's keys.
+  const padProfile = padProfileFor(app);
+  applyPadProfile(buttons, padProfile);
+  // Landscape sizes the screen column from the game's own aspect (240×320, 176×220, ...).
+  const gameCanvas = document.getElementById("canvas") as HTMLCanvasElement;
+  const updateScreenRatio = () => {
+    if (gameCanvas.width > 0 && gameCanvas.height > 0) playerView.style.setProperty("--screen-ratio", String(gameCanvas.width / gameCanvas.height));
+  };
+  const screenRatioObserver = new MutationObserver(updateScreenRatio);
+  screenRatioObserver.observe(gameCanvas, { attributes: true, attributeFilter: ["width", "height"] });
+  updateScreenRatio();
 
   const abortController = new AbortController();
   const inputs = new Map<string, string>();
@@ -84,6 +96,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     ending = true;
     clearTimeout(warningTimer);
     abortController.abort();
+    screenRatioObserver.disconnect();
     automation.detach();
     unsubscribeAuto();
     inputs.clear();
@@ -333,8 +346,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         horizontal = cos > 0.5 ? "RIGHT" : cos < -0.5 ? "LEFT" : undefined;
         vertical = sin > 0.5 ? "DOWN" : sin < -0.5 ? "UP" : undefined;
       }
-      setKey("joystick:h", horizontal);
-      setKey("joystick:v", vertical);
+      setKey("joystick:h", horizontal && padProfile.directions[horizontal]);
+      setKey("joystick:v", vertical && padProfile.directions[vertical]);
     };
 
     const moveKnob = (x: number, y: number) => {
@@ -410,7 +423,9 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         return;
       }
 
-      const key = KEY_MAP[event.code];
+      const mapped = KEY_MAP[event.code];
+      // Arrow keys walk like the joystick does.
+      const key = mapped && DIRECTION_KEYS.has(mapped) ? padProfile.directions[mapped as keyof PadProfile["directions"]] : mapped;
       if (key) {
         event.preventDefault();
         if (!event.repeat) {

@@ -1002,7 +1002,7 @@ html[data-screen-fit="contain"] #canvas {
 
   .player-main {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) calc((100dvh - var(--safe-top) - var(--safe-bottom)) * 3 / 4) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) calc((100dvh - var(--safe-top) - var(--safe-bottom)) * var(--screen-ratio, 0.75)) minmax(0, 1fr);
     grid-template-rows: 40px minmax(0, 1fr);
     gap: 6px 8px;
   }
