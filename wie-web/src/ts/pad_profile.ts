@@ -33,13 +33,13 @@ const INOTIA_PROFILE: PadProfile = {
   buttons: {
     "*": { key: "DOWN", title: "지도", caption: "" },
     CALL: { key: "UP", title: "스킬창", caption: "" },
-    // Same order as the game's own quick-slot bar (1 · 7 · * on top, 3 · 9 · # below).
-    "1": { key: "1", title: "1", caption: "단축" },
-    "3": { key: "7", title: "7", caption: "단축" },
-    "9": { key: "*", title: "*", caption: "단축" },
-    "0": { key: "3", title: "3", caption: "단축" },
-    "#": { key: "9", title: "9", caption: "단축" },
-    "7": { key: "#", title: "#", caption: "단축·스킵" },
+    // The game's own quick-slot bar, row by row: 1 · 7 · * on the inner ring around attack, 3 · 9 · # on the outer.
+    "7": { key: "1", title: "1", caption: "단축" },
+    "1": { key: "7", title: "7", caption: "단축" },
+    "3": { key: "*", title: "*", caption: "단축" },
+    "9": { key: "3", title: "3", caption: "단축" },
+    "0": { key: "9", title: "9", caption: "단축" },
+    "#": { key: "#", title: "#", caption: "단축·스킵" },
     OK: { key: "5", title: "공격", caption: "확인 · 대화 (5)" },
     CLR: { key: "CLR", title: "메뉴", caption: "CLR · 뒤로" },
   },

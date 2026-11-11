@@ -503,14 +503,15 @@ html:has(.player-view:not([hidden])) body {
   background: #000;
 }
 
-/* Games with their own pad profile keep their aspect across the full width; the keypad takes any height left over
-   (on shorter screens the screen shrinks and fills what the keypad doesn't use). */
-.player-view[data-pad-profile] .canvas-wrapper {
+/* Unless the player chose to stretch it, the screen keeps the game's own aspect across the full width (square
+   pixels, nothing warped while the map scrolls) and the keypad takes the height left over. On shorter phones the
+   screen shrinks and is letterboxed instead. */
+html:not([data-screen-fit="fill"]) .canvas-wrapper {
   flex: 0 1 auto;
   aspect-ratio: var(--screen-ratio, 0.75);
 }
 
-.player-view[data-pad-profile] .pad {
+html:not([data-screen-fit="fill"]) .pad {
   flex-grow: 1;
 }
 
@@ -610,17 +611,20 @@ html[data-screen-fit="contain"] #canvas {
   padding: 16px;
 }
 
-/* ---- Controller (portrait): tools bar on top, joystick left, action grid right ---- */
+/* ---- Controller (portrait) ----
+   The thumb-zone layout of mobile action games: movement anywhere on the left half, the attack button resting under
+   the right thumb in the bottom corner with the quick slots fanned around it in two rings, and the rarely used tools
+   (map, quick save, menu, ⋯) along the top edge, furthest from both thumbs. */
 .pad {
   position: relative;
   display: grid;
   width: 100%;
-  height: calc(clamp(210px, 30dvh, 280px) + var(--safe-bottom));
+  height: calc(clamp(250px, 34dvh, 330px) + var(--safe-bottom));
   flex: 0 0 auto;
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
-  grid-template-rows: 34px minmax(0, 1fr);
-  gap: 8px 10px;
-  padding: 6px 12px calc(6px + var(--safe-bottom));
+  grid-template-columns: minmax(0, 0.44fr) minmax(0, 0.56fr);
+  grid-template-rows: 40px minmax(0, 1fr);
+  gap: 6px 8px;
+  padding: 6px 12px calc(8px + var(--safe-bottom));
   background: var(--pad-bg);
   touch-action: none;
   user-select: none;
@@ -628,6 +632,7 @@ html[data-screen-fit="contain"] #canvas {
   -webkit-touch-callout: none;
 }
 
+.pad-macros,
 .pad-tools-bar,
 .pad-left,
 .pad-right {
@@ -635,14 +640,34 @@ html[data-screen-fit="contain"] #canvas {
   min-height: 0;
 }
 
-/* Tools live above the action grid, away from the joystick thumb; the left column above the stick stays empty. */
+/* Skill bundles float over the top of the stick zone (the zone runs underneath when there are none). */
+.pad-macros {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  margin: 0;
+  grid-column: 1;
+  grid-row: 1;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.pad-macros[hidden] {
+  display: none;
+}
+
+.pad-macros .key {
+  flex: 1 1 0;
+  border-radius: 12px;
+  pointer-events: auto;
+}
+
 .pad-tools-bar {
   display: flex;
   grid-column: 2;
   grid-row: 1;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
 }
 
 .pad-tools,
@@ -676,16 +701,6 @@ html[data-screen-fit="contain"] #canvas {
   background: rgba(255, 255, 255, 0.2);
 }
 
-.pad-left {
-  grid-column: 1;
-  grid-row: 1 / span 2;
-}
-
-.pad-right {
-  grid-column: 2;
-  grid-row: 2;
-}
-
 .pad-tool {
   width: 44px;
   height: 100%;
@@ -709,37 +724,98 @@ html[data-screen-fit="contain"] #canvas {
   color: #fcd34d;
 }
 
+/* Compact tool keys: icon over a short label. */
 .key-util {
-  flex-direction: row;
-  padding: 0 10px;
-  gap: 6px;
+  width: 46px;
+  flex: 0 0 46px;
+  gap: 1px;
   border-radius: 10px;
   font-size: 0.75rem;
-  font-weight: 600;
 }
 
 .key-util svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   stroke-width: 2;
 }
 
+.key-util span {
+  font-size: 0.55rem;
+}
+
+.key-util.key-menu {
+  width: 58px;
+  flex-basis: 58px;
+}
+
+.key-util.key-menu b {
+  font-size: 0.85rem;
+}
+
+/* The stick zone: the whole left column (under the bundles row). */
 .pad-left {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  container-type: size;
+  touch-action: none;
+}
+
+/* Quick slots and attack are placed on a 240 × 240 grid anchored to the bottom-right corner and scaled to fit. */
+.action-cluster {
+  position: relative;
+  grid-column: 2;
+  grid-row: 2;
   container-type: size;
 }
 
-.action-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+.action-cluster > .key-ring {
+  --u: calc(min(100cqw, 100cqh) / 240);
+  position: absolute;
+  right: calc((var(--x) - var(--d) / 2) * var(--u));
+  bottom: calc((var(--y) - var(--d) / 2) * var(--u));
+  width: calc(var(--d) * var(--u));
+  height: calc(var(--d) * var(--u));
+  border-radius: 50%;
 }
 
-.action-grid.has-macros {
-  grid-template-rows: repeat(4, minmax(0, 1fr));
+.key-ring b {
+  font-size: calc(var(--d) * var(--u) * 0.36);
+  line-height: 1;
+}
+
+.key-ring span {
+  max-width: 88%;
+  overflow: hidden;
+  font-size: max(0.55rem, calc(var(--d) * var(--u) * 0.17));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.key-attack {
+  --x: 58;
+  --y: 62;
+  --d: 92;
+}
+
+.key-attack b {
+  font-size: calc(var(--d) * var(--u) * 0.26);
+}
+
+.key-attack span {
+  font-size: max(0.6rem, calc(var(--d) * var(--u) * 0.12));
+}
+
+/* Inner ring (radius 90 around attack, 195° → 105°) and outer ring (radius 150, 172.5° → 82.5°). */
+.ring-i1 { --x: 145; --y: 39; --d: 56; }
+.ring-i2 { --x: 136; --y: 107; --d: 56; }
+.ring-i3 { --x: 81; --y: 149; --d: 56; }
+.ring-o1 { --x: 207; --y: 82; --d: 52; }
+.ring-o2 { --x: 149; --y: 181; --d: 52; }
+.ring-o3 { --x: 38; --y: 211; --d: 52; }
+
+.ring-i1.key-sub b {
+  font-size: calc(var(--d) * var(--u) * 0.27);
 }
 
 .key-macro {
@@ -749,10 +825,15 @@ html[data-screen-fit="contain"] #canvas {
 
 .key-macro b {
   color: #e9d8ff;
+  font-size: 0.8rem;
 }
 
 .key-macro span {
+  max-width: 92%;
+  overflow: hidden;
   color: #c9b3f0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .key-macro:active,
@@ -775,15 +856,15 @@ html[data-screen-fit="contain"] #canvas {
   margin: 0;
   padding: 0;
   color: #f1f5f9;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.05));
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 70%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 14px;
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.55);
   font-size: 1.1rem;
   font-weight: 650;
   line-height: 1.1;
   touch-action: none;
-  transition: background 0.08s ease, transform 0.08s ease;
+  transition: background 0.08s ease, transform 0.08s ease, box-shadow 0.08s ease;
 }
 
 .key b {
@@ -797,72 +878,65 @@ html[data-screen-fit="contain"] #canvas {
   letter-spacing: 0;
 }
 
+/* Pressed: brighter with a glow, so a thumb covering the key still sees it light up around the edge. */
 .key:active,
 .key.pressed {
-  background: linear-gradient(180deg, rgba(251, 191, 36, 0.55), rgba(245, 158, 11, 0.35));
-  border-color: rgba(251, 191, 36, 0.6);
-  transform: translateY(1px);
+  background: radial-gradient(circle at 50% 35%, rgba(253, 230, 138, 0.7), rgba(245, 158, 11, 0.4) 75%);
+  border-color: rgba(251, 191, 36, 0.8);
+  box-shadow: 0 0 14px rgba(251, 191, 36, 0.55);
+  transform: scale(0.95);
 }
 
 .key:disabled {
   opacity: 0.35;
 }
 
-.key-slot b {
-  font-size: 1.25rem;
-}
-
 .key-sub {
   color: #bfdbfe;
-  background: linear-gradient(180deg, rgba(96, 165, 250, 0.32), rgba(37, 99, 235, 0.22));
-  border-color: rgba(96, 165, 250, 0.45);
+  background: radial-gradient(circle at 50% 30%, rgba(96, 165, 250, 0.42), rgba(37, 99, 235, 0.22) 72%);
+  border-color: rgba(96, 165, 250, 0.5);
 }
 
-.key-sub b {
-  font-size: 1rem;
+/* 이노티아 uses that key as an ordinary quick slot. */
+.player-view[data-pad-profile="inotia"] .key-sub {
+  color: #f1f5f9;
+  background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 70%);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
 .key-ok {
   color: #1c1917;
-  background: linear-gradient(180deg, #fcd34d, #f59e0b);
-  border-color: rgba(0, 0, 0, 0.25);
+  background: radial-gradient(circle at 50% 28%, #fde68a, #f59e0b 62%, #d97706);
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.22), 0 4px 14px rgba(0, 0, 0, 0.55);
 }
 
 .key-ok span {
-  color: rgba(28, 25, 23, 0.6);
+  color: rgba(28, 25, 23, 0.65);
 }
 
 .key-ok:active,
 .key-ok.pressed {
-  background: linear-gradient(180deg, #fbbf24, #d97706);
-}
-
-.key-attack {
-  grid-column: 1 / span 2;
-}
-
-.key-attack b {
-  font-size: 1.35rem;
+  background: radial-gradient(circle at 50% 35%, #fef3c7, #fbbf24 60%, #d97706);
+  box-shadow: 0 0 22px rgba(251, 191, 36, 0.75);
 }
 
 .key-clr {
   color: #fecaca;
-  background: linear-gradient(180deg, rgba(248, 113, 113, 0.28), rgba(185, 28, 28, 0.22));
-  border-color: rgba(248, 113, 113, 0.35);
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.3), rgba(185, 28, 28, 0.24));
+  border-color: rgba(248, 113, 113, 0.4);
 }
 
 .key-clr span {
-  color: rgba(254, 202, 202, 0.6);
+  color: rgba(254, 202, 202, 0.65);
 }
 
-.key-menu b {
-  font-size: 1rem;
-}
-
-/* 360° joystick */
+/* Floating joystick: rests dimmed in the lower middle of its zone and jumps to wherever the thumb lands. */
 .joystick {
-  position: relative;
-  width: min(100%, 100cqh, 190px);
+  position: absolute;
+  top: 64%;
+  left: 50%;
+  width: min(84cqw, 64cqh, 160px);
   aspect-ratio: 1 / 1;
   background: radial-gradient(circle at 50% 42%, #2b2b34 0%, #1a1a20 62%, #121216 100%);
   border: 2px solid rgba(255, 255, 255, 0.1);
@@ -871,7 +945,16 @@ html[data-screen-fit="contain"] #canvas {
     inset 0 8px 18px rgba(0, 0, 0, 0.65),
     inset 0 -2px 6px rgba(255, 255, 255, 0.05),
     0 4px 14px rgba(0, 0, 0, 0.55);
-  touch-action: none;
+  opacity: 0.7;
+  pointer-events: none;
+  translate: -50% -50%;
+  transition: left 0.14s ease-out, top 0.14s ease-out, opacity 0.14s ease-out;
+}
+
+.joystick.active {
+  border-color: rgba(251, 191, 36, 0.45);
+  opacity: 1;
+  transition: opacity 0.08s ease-out;
 }
 
 .joystick-arrow {
@@ -915,6 +998,31 @@ html[data-screen-fit="contain"] #canvas {
   transform: translateY(-50%);
 }
 
+/* The direction being sent lights up. */
+.joystick[data-direction="up"] .joystick-arrow-up,
+.joystick[data-direction="down"] .joystick-arrow-down,
+.joystick[data-direction="left"] .joystick-arrow-left,
+.joystick[data-direction="right"] .joystick-arrow-right {
+  opacity: 1;
+  filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.9));
+}
+
+.joystick[data-direction="up"] .joystick-arrow-up {
+  border-bottom-color: #fbbf24;
+}
+
+.joystick[data-direction="down"] .joystick-arrow-down {
+  border-top-color: #fbbf24;
+}
+
+.joystick[data-direction="left"] .joystick-arrow-left {
+  border-right-color: #fbbf24;
+}
+
+.joystick[data-direction="right"] .joystick-arrow-right {
+  border-left-color: #fbbf24;
+}
+
 .joystick-knob {
   position: absolute;
   top: 50%;
@@ -936,10 +1044,6 @@ html[data-screen-fit="contain"] #canvas {
 
 .joystick.active .joystick-knob {
   transition: none;
-}
-
-.joystick.active {
-  border-color: rgba(251, 191, 36, 0.45);
 }
 
 .pad:has(button:disabled) .joystick {
@@ -1004,7 +1108,7 @@ html[data-screen-fit="contain"] #canvas {
   font-size: 0.78rem;
 }
 
-/* ---- Landscape: joystick + tools on the left, screen in the middle, action grid on the right ---- */
+/* ---- Landscape: stick zone on the left, screen in the middle, tools and the attack cluster on the right ---- */
 @media (orientation: landscape) and (max-height: 600px) {
   .player-view {
     padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
@@ -1014,12 +1118,12 @@ html[data-screen-fit="contain"] #canvas {
   .player-main {
     display: grid;
     grid-template-columns: minmax(0, 1fr) calc((100dvh - var(--safe-top) - var(--safe-bottom)) * var(--screen-ratio, 0.75)) minmax(0, 1fr);
-    grid-template-rows: 40px minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr);
     gap: 6px 8px;
   }
 
   .canvas-wrapper,
-  .player-view[data-pad-profile] .canvas-wrapper {
+  html:not([data-screen-fit="fill"]) .canvas-wrapper {
     width: 100%;
     height: 100%;
     flex: none;
@@ -1030,6 +1134,12 @@ html[data-screen-fit="contain"] #canvas {
 
   .pad {
     display: contents;
+  }
+
+  .pad-macros {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 6px 0 0 8px;
   }
 
   .pad-tools-bar {
@@ -1047,15 +1157,14 @@ html[data-screen-fit="contain"] #canvas {
   .pad-left {
     grid-column: 1;
     grid-row: 1 / span 2;
-    padding: 8px;
   }
 
-  .pad-right {
-    align-self: center;
+  .action-cluster {
     height: min(100%, 300px);
+    align-self: end;
     grid-column: 3;
     grid-row: 2;
-    padding: 0 8px 8px;
+    margin: 0 8px 8px 0;
   }
 }
 

@@ -168,7 +168,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   };
   const slotCaptions = new Map<HTMLButtonElement, string>();
   const macroButtons = playerView.querySelectorAll<HTMLButtonElement>("button[data-macro]");
-  const actionGrid = playerView.querySelector<HTMLElement>(".action-grid");
+  const macroBar = playerView.querySelector<HTMLElement>(".pad-macros");
   const skillName = (weapon: "A" | "B", index: number): string => {
     const api = cheatContext.getCheats();
     if (!api) return `${weapon}${index}`;
@@ -190,7 +190,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         if (caption) caption.textContent = macro.skills.map(ref => skillName(ref.weapon, ref.index)).join("·");
       }
     });
-    actionGrid?.classList.toggle("has-macros", anyMacro);
+    if (macroBar) macroBar.hidden = !anyMacro;
     for (const button of buttons) {
       const key = button.dataset.key;
       if (!key || !button.classList.contains("key-slot") || !(SLOT_KEYS as readonly string[]).includes(key)) continue;
@@ -304,116 +304,132 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     button.addEventListener("lostpointercapture", releaseKey, { signal: abortController.signal });
   }
 
-  // 360° joystick with a floating origin: the direction is measured from where the thumb first
-  // touched and mapped to four 90° sectors with a little hysteresis so it never flickers at the
-  // borders. (The game ignores a second held direction, so diagonals would only add noise.)
-  const joystick = playerView.querySelector<HTMLElement>("#joystick");
-  if (joystick) {
+  // iOS turns a held or sliding touch into its own gestures (loupe, callout, pinch zoom) and then cancels the touch:
+  // the stick or a held button would let go on its own. The pad's keys and stick work from pointer events only, so
+  // their touches never need the browser's default handling. (The ⋯ tools still use clicks and keep theirs.)
+  const pad = playerView.querySelector<HTMLElement>(".pad");
+  const keepTouch = (event: TouchEvent) => {
+    if (event.cancelable && event.target instanceof Element && event.target.closest(".key, .joystick-zone")) event.preventDefault();
+  };
+  pad?.addEventListener("touchstart", keepTouch, { passive: false, signal: abortController.signal });
+  pad?.addEventListener("touchmove", keepTouch, { passive: false, signal: abortController.signal });
+  document.addEventListener("gesturestart", event => event.preventDefault(), { signal: abortController.signal });
+
+  // Floating joystick: a touch anywhere in the left zone puts the stick under the thumb, so it never has to be found.
+  // The base follows the thumb only once it pulls past the knob's reach, so relaxing the thumb a little keeps walking;
+  // what the stick shows is exactly what it sends. Directions are four 90° sectors with some hysteresis, sent as one
+  // key at a time (the old key is released before the new one is pressed, so turning never leaves two held).
+  const joystickZone = playerView.querySelector<HTMLElement>(".joystick-zone");
+  const joystick = joystickZone?.querySelector<HTMLElement>("#joystick");
+  if (joystickZone && joystick) {
+    const zone = joystickZone;
     const knob = joystick.querySelector<HTMLElement>(".joystick-knob")!;
-    const DEAD_ZONE_PX = 9;
-    const HYSTERESIS_DEG = 9;
-    const KNOB_LIMIT = 0.62;
-    const ORIGIN_TRAIL = 0.4;
+    const SECTOR_DIRECTIONS: readonly Direction[] = ["RIGHT", "DOWN", "LEFT", "UP"];
+    const ENGAGE_PX = 10;
+    const RELEASE_PX = 6;
+    const HYSTERESIS_DEG = 10;
+    const REACH = 0.7;
     let activePointer: number | undefined;
+    let zoneRect = zone.getBoundingClientRect();
     let originX = 0;
     let originY = 0;
-    let centerX = 0;
-    let centerY = 0;
     let radius = 1;
+    let reach = 1;
     let sector: number | undefined;
-    let horizontal: "LEFT" | "RIGHT" | undefined;
-    let vertical: "UP" | "DOWN" | undefined;
 
     const applyDirection = (dx: number, dy: number) => {
       const magnitude = Math.hypot(dx, dy);
-      if (magnitude < DEAD_ZONE_PX) {
+      if (magnitude < (sector === undefined ? ENGAGE_PX : RELEASE_PX)) {
         sector = undefined;
-        horizontal = undefined;
-        vertical = undefined;
       } else {
-        const sectors = 4;
-        const width = 360 / sectors;
         let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
         if (angle < 0) angle += 360;
-        const nearest = Math.round(angle / width) % sectors;
-        if (sector === undefined || sector >= sectors) sector = nearest;
+        const nearest = Math.round(angle / 90) % 4;
+        if (sector === undefined) sector = nearest;
         else {
-          let delta = angle - sector * width;
+          let delta = angle - sector * 90;
           if (delta > 180) delta -= 360;
           if (delta < -180) delta += 360;
-          if (Math.abs(delta) > width / 2 + HYSTERESIS_DEG) sector = nearest;
+          if (Math.abs(delta) > 45 + HYSTERESIS_DEG) sector = nearest;
         }
-        const heading = sector * width;
-        const cos = Math.cos((heading * Math.PI) / 180);
-        const sin = Math.sin((heading * Math.PI) / 180);
-        horizontal = cos > 0.5 ? "RIGHT" : cos < -0.5 ? "LEFT" : undefined;
-        vertical = sin > 0.5 ? "DOWN" : sin < -0.5 ? "UP" : undefined;
       }
-      setKey("joystick:h", horizontal && padProfile.directions[horizontal]);
-      setKey("joystick:v", vertical && padProfile.directions[vertical]);
+      const direction = sector === undefined ? undefined : SECTOR_DIRECTIONS[sector];
+      joystick.dataset.direction = direction?.toLowerCase() ?? "";
+      setKey("joystick", direction && padProfile.directions[direction]);
     };
 
-    const moveKnob = (x: number, y: number) => {
-      const dx = (x - centerX) / radius;
-      const dy = (y - centerY) / radius;
-      const magnitude = Math.hypot(dx, dy);
-      const scale = magnitude > KNOB_LIMIT ? KNOB_LIMIT / magnitude : 1;
-      knob.style.transform = `translate(${dx * scale * radius}px, ${dy * scale * radius}px)`;
+    const track = (event: PointerEvent) => {
+      let dx = event.clientX - originX;
+      let dy = event.clientY - originY;
+      const distance = Math.hypot(dx, dy);
+      if (distance > reach) {
+        originX = event.clientX - (dx * reach) / distance;
+        originY = event.clientY - (dy * reach) / distance;
+        dx = event.clientX - originX;
+        dy = event.clientY - originY;
+      }
+      // Draw the base where it is, kept mostly inside the zone; the knob sits under the thumb within the ring.
+      const clamp = (value: number, size: number) => Math.min(Math.max(value, radius * 0.6), size - radius * 0.6);
+      const ringX = clamp(originX - zoneRect.left, zoneRect.width);
+      const ringY = clamp(originY - zoneRect.top, zoneRect.height);
+      joystick.style.left = `${ringX}px`;
+      joystick.style.top = `${ringY}px`;
+      let knobX = event.clientX - zoneRect.left - ringX;
+      let knobY = event.clientY - zoneRect.top - ringY;
+      const knobDistance = Math.hypot(knobX, knobY);
+      const knobLimit = radius * 0.72;
+      if (knobDistance > knobLimit) {
+        knobX = (knobX * knobLimit) / knobDistance;
+        knobY = (knobY * knobLimit) / knobDistance;
+      }
+      knob.style.transform = `translate(${knobX}px, ${knobY}px)`;
+      applyDirection(dx, dy);
     };
 
     const resetJoystick = () => {
       activePointer = undefined;
+      sector = undefined;
       joystick.classList.remove("active");
+      joystick.style.left = "";
+      joystick.style.top = "";
       knob.style.transform = "";
       applyDirection(0, 0);
     };
 
-    const track = (event: PointerEvent) => {
-      moveKnob(event.clientX, event.clientY);
-      // Trailing origin: once the thumb is further than ORIGIN_TRAIL of the ring from the origin, the origin follows
-      // it. Turning back then only takes a short slide instead of the whole way back past where the touch began.
-      const dx = event.clientX - originX;
-      const dy = event.clientY - originY;
-      const distance = Math.hypot(dx, dy);
-      const limit = radius * ORIGIN_TRAIL;
-      if (distance > limit) {
-        originX = event.clientX - (dx * limit) / distance;
-        originY = event.clientY - (dy * limit) / distance;
-      }
-      applyDirection(event.clientX - originX, event.clientY - originY);
-    };
-
-    joystick.addEventListener(
+    zone.addEventListener(
       "pointerdown",
       (event) => {
         event.preventDefault();
         // A new touch always takes over. If the browser never delivered the end of the previous one (iOS can drop
         // it when a touch slides off or another finger lands), ignoring new touches left the stick stuck.
-        if (activePointer !== undefined && activePointer !== event.pointerId && joystick.hasPointerCapture(activePointer)) {
-          joystick.releasePointerCapture(activePointer);
+        if (activePointer !== undefined && activePointer !== event.pointerId && zone.hasPointerCapture(activePointer)) {
+          zone.releasePointerCapture(activePointer);
         }
-        const rect = joystick.getBoundingClientRect();
-        centerX = rect.left + rect.width / 2;
-        centerY = rect.top + rect.height / 2;
-        radius = Math.max(1, rect.width / 2);
-        // Floating origin: a touch well inside the ring starts from where the thumb landed; a touch
-        // near the rim is already a direction, so measure that one from the centre.
-        const fromCenter = Math.hypot(event.clientX - centerX, event.clientY - centerY);
-        if (fromCenter < radius * 0.45) {
+        zoneRect = zone.getBoundingClientRect();
+        const ring = joystick.getBoundingClientRect();
+        radius = Math.max(1, ring.width / 2);
+        const ringX = ring.left + radius;
+        const ringY = ring.top + radius;
+        reach = radius * REACH;
+        sector = undefined;
+        // Pressing the resting stick's rim works like a d-pad: that is already a direction from its centre.
+        // Anywhere else the stick comes to the thumb and starts neutral.
+        const fromRing = Math.hypot(event.clientX - ringX, event.clientY - ringY);
+        if (!joystick.classList.contains("active") && fromRing <= radius && fromRing >= radius * 0.45) {
+          originX = ringX;
+          originY = ringY;
+        } else {
           originX = event.clientX;
           originY = event.clientY;
-        } else {
-          originX = centerX;
-          originY = centerY;
         }
         activePointer = event.pointerId;
-        joystick.setPointerCapture(event.pointerId);
+        zone.setPointerCapture(event.pointerId);
         joystick.classList.add("active");
         track(event);
       },
       { signal: abortController.signal },
     );
-    joystick.addEventListener(
+    zone.addEventListener(
       "pointermove",
       (event) => {
         if (event.pointerId !== activePointer) return;
@@ -427,9 +443,9 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       event.preventDefault();
       resetJoystick();
     };
-    joystick.addEventListener("pointerup", endJoystick, { signal: abortController.signal });
-    joystick.addEventListener("pointercancel", endJoystick, { signal: abortController.signal });
-    joystick.addEventListener("lostpointercapture", endJoystick, { signal: abortController.signal });
+    zone.addEventListener("pointerup", endJoystick, { signal: abortController.signal });
+    zone.addEventListener("pointercancel", endJoystick, { signal: abortController.signal });
+    zone.addEventListener("lostpointercapture", endJoystick, { signal: abortController.signal });
     // Backstop for a release that does not reach the stick itself.
     window.addEventListener("pointerup", endJoystick, { signal: abortController.signal });
     window.addEventListener("pointercancel", endJoystick, { signal: abortController.signal });

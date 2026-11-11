@@ -59,20 +59,21 @@ export const initializeSettings = async (backend: Wie): Promise<SettingsControll
       }
     });
   }
-  // Screen fit (fill the phone screen vs. keep the 3:4 ratio). Stored locally; applied via <html data-screen-fit>.
+  // Screen fit: the game's own aspect (default; pixels stay square and the keypad gets the rest of the height) or
+  // stretched over everything the keypad leaves. Stored locally; applied via <html data-screen-fit>.
   const screenFit = document.getElementById("screen-fit") as HTMLSelectElement | null;
   if (screenFit) {
     const SCREEN_FIT_KEY = "wie_screen_fit";
     const applyScreenFit = (value: string) => {
-      document.documentElement.dataset.screenFit = value === "contain" ? "contain" : "fill";
+      document.documentElement.dataset.screenFit = value === "fill" ? "fill" : "contain";
     };
-    let stored = "fill";
+    let stored = "contain";
     try {
-      stored = window.localStorage.getItem(SCREEN_FIT_KEY) ?? "fill";
+      stored = window.localStorage.getItem(SCREEN_FIT_KEY) ?? "contain";
     } catch {
       // storage unavailable; keep default
     }
-    screenFit.value = stored === "contain" ? "contain" : "fill";
+    screenFit.value = stored === "fill" ? "fill" : "contain";
     applyScreenFit(screenFit.value);
     screenFit.addEventListener("change", () => {
       applyScreenFit(screenFit.value);

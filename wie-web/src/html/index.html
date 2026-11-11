@@ -133,6 +133,12 @@
         <p id="player-warning" class="player-warning" role="status" hidden></p>
 
         <div class="button-container pad" aria-label="게임 컨트롤러">
+          <!-- Skill bundles (영웅서기3 automation) sit above the stick, out of the attack thumb's way. -->
+          <p class="pad-macros" hidden>
+            <button class="key key-macro" data-macro="0" hidden><b>묶음 A</b><span>스킬</span></button>
+            <button class="key key-macro" data-macro="1" hidden><b>묶음 B</b><span>스킬</span></button>
+            <button class="key key-macro" data-macro="2" hidden><b>묶음 C</b><span>스킬</span></button>
+          </p>
           <div class="pad-tools-bar">
             <p id="pad-tools" class="pad-tools" hidden>
               <button id="back-to-library" class="icon-button pad-tool" type="button" title="라이브러리" data-i18n-title="library" aria-label="라이브러리로 돌아가기" data-i18n-aria-label="backToLibrary">
@@ -151,12 +157,14 @@
             <p class="pad-utils">
               <button class="key key-util" data-key="*"><i data-lucide="map"></i><span>미니맵</span></button>
               <button class="key key-util" data-key="CALL"><i data-lucide="save"></i><span>퀵세이브</span></button>
+              <button class="key key-util key-clr key-menu" data-key="CLR"><b>메뉴</b><span>CLR</span></button>
               <button id="pad-more" class="icon-button pad-tool pad-tool-more" type="button" title="메뉴" aria-label="설정·치트·나가기 메뉴" aria-expanded="false">
                 <i data-lucide="ellipsis"></i>
               </button>
             </p>
           </div>
-          <div class="pad-left">
+          <!-- Touch anywhere on the left half: the stick comes to the thumb. -->
+          <div class="pad-left joystick-zone">
             <div id="joystick" class="joystick" role="application" aria-label="조이스틱">
               <span class="joystick-arrow joystick-arrow-up" aria-hidden="true"></span>
               <span class="joystick-arrow joystick-arrow-down" aria-hidden="true"></span>
@@ -165,18 +173,15 @@
               <div class="joystick-knob"></div>
             </div>
           </div>
-          <div class="pad-right action-grid">
-            <button class="key key-macro" data-macro="0" hidden><b>묶음 A</b><span>스킬</span></button>
-            <button class="key key-macro" data-macro="1" hidden><b>묶음 B</b><span>스킬</span></button>
-            <button class="key key-macro" data-macro="2" hidden><b>묶음 C</b><span>스킬</span></button>
-            <button class="key key-slot" data-key="1"><b>1</b><span>단축</span></button>
-            <button class="key key-slot" data-key="3"><b>3</b><span>단축</span></button>
-            <button class="key key-slot" data-key="9"><b>9</b><span>단축</span></button>
-            <button class="key key-slot" data-key="0"><b>0</b><span>단축</span></button>
-            <button class="key key-slot" data-key="#"><b>#</b><span>단축·스킵</span></button>
-            <button class="key key-sub" data-key="7"><b>보조</b><span>7</span></button>
-            <button class="key key-ok key-attack" data-key="OK"><b>공격</b><span>확인 · 대화</span></button>
-            <button class="key key-clr key-menu" data-key="CLR"><b>메뉴</b><span>CLR</span></button>
+          <!-- Attack rests under the right thumb; the quick slots fan around it in two rings (inner ring nearer). -->
+          <div class="pad-right action-cluster">
+            <button class="key key-ring key-slot ring-o3" data-key="#"><b>#</b><span>단축·스킵</span></button>
+            <button class="key key-ring key-slot ring-o2" data-key="0"><b>0</b><span>단축</span></button>
+            <button class="key key-ring key-slot ring-o1" data-key="9"><b>9</b><span>단축</span></button>
+            <button class="key key-ring key-slot ring-i3" data-key="3"><b>3</b><span>단축</span></button>
+            <button class="key key-ring key-slot ring-i2" data-key="1"><b>1</b><span>단축</span></button>
+            <button class="key key-ring key-sub ring-i1" data-key="7"><b>보조</b><span>7</span></button>
+            <button class="key key-ring key-ok key-attack" data-key="OK"><b>공격</b><span>확인 · 대화</span></button>
           </div>
         </div>
 
@@ -228,8 +233,8 @@
             <i data-lucide="maximize"></i>
             <span>화면</span>
             <select id="screen-fit" class="screen-fit">
-              <option value="fill">꽉 채우기</option>
-              <option value="contain">비율 유지 (3:4)</option>
+              <option value="contain">원래 비율 (권장)</option>
+              <option value="fill">꽉 채우기 (늘어남)</option>
             </select>
           </label>
           <label>
