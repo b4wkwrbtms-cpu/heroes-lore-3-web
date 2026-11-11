@@ -27,6 +27,22 @@ const MUSIC_RESUME_SECONDS = 20;
 /** The FM worklet starts a score this long after it is asked to (matches its START_DELAY_SECONDS). */
 const MUSIC_START_DELAY_SECONDS = 0.06;
 
+/** The scheduling worker's events are mapped onto the audio clock from one anchor; re-anchor when the audio clock has
+ *  drifted this far from it (iOS audio clocks run slow against the system clock, which made sounds ever later). */
+const CLOCK_RESYNC_SECONDS = 0.04;
+
+function waveBuffer(ctx: AudioContext, channels: number, samplingRate: number, samples: Int16Array): AudioBuffer {
+  const frameCount = Math.floor(samples.length / channels);
+  const buffer = ctx.createBuffer(channels, frameCount, samplingRate);
+  for (let channel = 0; channel < channels; channel++) {
+    const data = buffer.getChannelData(channel);
+    for (let frame = 0; frame < frameCount; frame++) {
+      data[frame] = samples[frame * channels + channel] / 32768;
+    }
+  }
+  return buffer;
+}
+
 /** Cheap content fingerprint (FNV-1a) to recognise the same song coming back on a new clip. */
 function fingerprint(data: Uint8Array): number {
   let hash = 0x811c9dc5;
@@ -182,6 +198,11 @@ export class AudioPlayer {
         if (!state || this.disposed) return;
 
         const output = message.data;
+        const now = performance.timeOrigin + performance.now();
+        if (Math.abs(state.clockAudioTime + (now - state.clockPerformanceTime) / 1000 - state.ctx.currentTime) > CLOCK_RESYNC_SECONDS) {
+          state.clockAudioTime = state.ctx.currentTime;
+          state.clockPerformanceTime = now;
+        }
         const time = Math.max(state.ctx.currentTime, state.clockAudioTime + (output.deadline - state.clockPerformanceTime) / 1000);
 
         if (output.type === "event") {
@@ -193,17 +214,8 @@ export class AudioPlayer {
           const [, , channels, samplingRate, samples] = output.event;
           if (channels === 0 || samplingRate === 0) return;
 
-          const frameCount = Math.floor(samples.length / channels);
-          const buffer = state.ctx.createBuffer(channels, frameCount, samplingRate);
-          for (let channel = 0; channel < channels; channel++) {
-            const data = buffer.getChannelData(channel);
-            for (let frame = 0; frame < frameCount; frame++) {
-              data[frame] = samples[frame * channels + channel] / 32768;
-            }
-          }
-
           const source = state.ctx.createBufferSource();
-          source.buffer = buffer;
+          source.buffer = waveBuffer(state.ctx, channels, samplingRate, samples);
           source.connect(state.pcmGain);
           const sources = state.pcmSources.get(output.handle) ?? new Set<AudioBufferSourceNode>();
           sources.add(source);
@@ -241,6 +253,38 @@ export class AudioPlayer {
   private music: { handle: number; key: number; startedAt: number; offset: number; duration: number } | undefined;
   /** Where the last stopped looping score left off; the same score played again soon after resumes there. */
   private musicResume: { key: number; position: number; at: number } | undefined;
+  /** One-shot sampled clips started directly on this thread, by handle. */
+  private readonly waves = new Map<number, Set<AudioBufferSourceNode>>();
+
+  /**
+   * Starts a one-shot clip of sampled sound (attack shouts, hits, ...) right away. Through the scheduling worker it took
+   * two thread hops and an audio-clock mapping, and arrived noticeably after the hit it belongs to.
+   */
+  private startWaves(state: AudioState, handle: number, events: WaveEvent[], lead: number): void {
+    this.stopWaves(handle);
+    const start = state.ctx.currentTime + lead;
+    const sources = new Set<AudioBufferSourceNode>();
+    for (const [time, , channels, samplingRate, samples] of events) {
+      if (channels === 0 || samplingRate === 0) continue;
+      const source = state.ctx.createBufferSource();
+      source.buffer = waveBuffer(state.ctx, channels, samplingRate, samples);
+      source.connect(state.pcmGain);
+      source.onended = () => {
+        sources.delete(source);
+        if (sources.size === 0 && this.waves.get(handle) === sources) this.waves.delete(handle);
+      };
+      sources.add(source);
+      source.start(start + time / 1000);
+    }
+    if (sources.size > 0) this.waves.set(handle, sources);
+  }
+
+  private stopWaves(handle: number): void {
+    const sources = this.waves.get(handle);
+    if (!sources) return;
+    this.waves.delete(handle);
+    for (const source of sources) source.stop();
+  }
 
   private scoreFor(key: number, source: Uint8Array): Ma3Score | null {
     const cached = this.scores.get(key);
@@ -276,11 +320,17 @@ export class AudioPlayer {
           this.musicResume = undefined;
           this.music = { handle, key, startedAt: state.ctx.currentTime + MUSIC_START_DELAY_SECONDS, offset, duration: score.duration };
         }
+        let lead = 0;
         if (score && key !== undefined && state && (await state.ma3.play(handle, key, score, repeat, offset))) {
           scheduled = events.filter(event => event[1] === "wave");
           if (scheduled.length === 0) return;
+          lead = MUSIC_START_DELAY_SECONDS;
         }
         if (this.disposed) return;
+        if (state && !repeat && scheduled.length > 0 && scheduled.every(event => event[1] === "wave")) {
+          this.startWaves(state, handle, scheduled as WaveEvent[], lead);
+          return;
+        }
         const buffers = scheduled.map(event => (event[1] === "midi" ? event[2].buffer : event[4].buffer));
         this.worker.postMessage({ type: "play", handle, duration, events: scheduled, repeat }, buffers);
       })
@@ -299,6 +349,7 @@ export class AudioPlayer {
           this.music = undefined;
         }
         if (state) void state.ma3.stop(handle);
+        this.stopWaves(handle);
         this.worker.postMessage({ type: "stop", handle });
       })
       .catch(error => console.warn("Failed to stop audio playback:", error));
