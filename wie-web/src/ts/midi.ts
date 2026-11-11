@@ -170,7 +170,8 @@ export class AudioPlayer {
     });
   private commands: Promise<void> = Promise.resolve();
   private disposed = false;
-  /** Parsed MA-3 scores by clip handle; null marks clips that play as General MIDI. */
+  /** Parsed MA-3 scores by content fingerprint; null marks clips that play as General MIDI. The game recreates its
+   *  clips all the time (every sound effect recreates the background music), so they are parsed once. */
   private readonly scores = new Map<number, Ma3Score | null>();
 
   constructor() {
@@ -241,17 +242,18 @@ export class AudioPlayer {
   /** Where the last stopped looping score left off; the same score played again soon after resumes there. */
   private musicResume: { key: number; position: number; at: number } | undefined;
 
-  private scoreFor(handle: number, source: Uint8Array | undefined): Ma3Score | null {
-    const cached = this.scores.get(handle);
+  private scoreFor(key: number, source: Uint8Array): Ma3Score | null {
+    const cached = this.scores.get(key);
     if (cached !== undefined) return cached;
-    const score = source ? parseMa3Score(source) : null;
-    if (this.scores.size >= 64) this.scores.delete(this.scores.keys().next().value as number);
-    this.scores.set(handle, score);
+    const score = parseMa3Score(source);
+    if (this.scores.size >= 256) this.scores.delete(this.scores.keys().next().value as number);
+    this.scores.set(key, score);
     return score;
   }
 
   public play(handle: number, duration: number, events: TransportEvent[], repeat: boolean, source?: Uint8Array): void {
-    const score = bgmEngine === "fm" ? this.scoreFor(handle, source) : null;
+    const key = bgmEngine === "fm" && source && source.length > 0 ? fingerprint(source) : undefined;
+    const score = key !== undefined && source ? this.scoreFor(key, source) : null;
     this.commands = this.commands
       .then(async () => {
         const state = await this.audioReady;
@@ -268,14 +270,13 @@ export class AudioPlayer {
         // The game has a single sound channel: every sound effect stops the background music and plays it again
         // afterwards, which on the FM path restarted the song each time. Resume it where it left off instead.
         let offset = 0;
-        if (score && state && repeat && source) {
-          const key = fingerprint(source);
+        if (score && state && repeat && key !== undefined) {
           const resume = this.musicResume;
           if (resume && resume.key === key && state.ctx.currentTime - resume.at < MUSIC_RESUME_SECONDS) offset = resume.position;
           this.musicResume = undefined;
           this.music = { handle, key, startedAt: state.ctx.currentTime + MUSIC_START_DELAY_SECONDS, offset, duration: score.duration };
         }
-        if (score && state && (await state.ma3.play(handle, score, repeat, offset))) {
+        if (score && key !== undefined && state && (await state.ma3.play(handle, key, score, repeat, offset))) {
           scheduled = events.filter(event => event[1] === "wave");
           if (scheduled.length === 0) return;
         }

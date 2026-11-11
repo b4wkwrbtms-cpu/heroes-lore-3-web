@@ -681,14 +681,21 @@ class Ma3Processor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.sequences = [];
+    /** Parsed scores by content key; the main thread sends each one once. */
+    this.scores = new Map();
     this.limiter = 1;
     this.port.onmessage = event => {
       const message = event.data;
       if (message.type === "play") {
         this.stopHandle(message.handle);
-        const sequence = new Sequence(message.handle, message.score, message.repeat, globalThis.sampleRate);
+        if (message.score) this.scores.set(message.key, message.score);
+        const score = this.scores.get(message.key);
+        if (!score) return;
+        const sequence = new Sequence(message.handle, score, message.repeat, globalThis.sampleRate);
         if (message.offsetMs > 0) sequence.seek(message.offsetMs);
         this.sequences.push(sequence);
+      } else if (message.type === "forget") {
+        this.scores.delete(message.key);
       } else if (message.type === "stop") {
         this.stopHandle(message.handle);
       } else if (message.type === "stopAll") {

@@ -188,7 +188,9 @@ export class HqDisplay {
 
   private fitScreen(): void {
     if (!this.enabled) return;
-    const ratio = Math.min(window.devicePixelRatio || 1, 3);
+    // Twice the CSS size is already several times the game's own pixels; a 3× phone screen would make every frame
+    // run the upscaling passes over more than twice as many pixels for no visible gain.
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const width = Math.max(1, Math.round(this.cssWidth * ratio));
     const height = Math.max(1, Math.round(this.cssHeight * ratio));
     if (this.screen.width !== width) this.screen.width = width;
