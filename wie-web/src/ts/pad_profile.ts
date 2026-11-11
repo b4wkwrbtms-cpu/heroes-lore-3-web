@@ -8,13 +8,8 @@ export interface PadProfile {
   name?: string;
   /** Key sent for each joystick direction. */
   directions: Record<Direction, string>;
-  /** Directions used instead while the game shows its field (games whose title menus only follow the arrows). */
-  field?: {
-    detect: (screen: HTMLCanvasElement) => boolean;
-    directions: Record<Direction, string>;
-    /** Pad keys pressed as another key there (e.g. attack is 5 on the field but OK confirms in menus). */
-    keys?: Record<string, string>;
-  };
+  /** Keys pressed as another key (keyboard and pad), e.g. a game that confirms and attacks with 5 instead of OK. */
+  keys?: Record<string, string>;
   /** Pad buttons, keyed by their default `data-key`: the key they press instead and their label. */
   buttons: Record<string, { key: string; title: string; caption: string }>;
   /** Full-keypad sheet buttons, keyed by their default `data-key`: the key they press instead and their label. */
@@ -26,36 +21,15 @@ const DEFAULT_PROFILE: PadProfile = {
   buttons: {},
 };
 
-/** Left edges of 이노티아's quick-slot frames (1·7·*·3·9·#) on its 176×220 screen; the 4th is drawn differently. */
-const INOTIA_SLOT_EDGES = [19, 42, 65, 114, 137];
-
 /**
- * 이노티아's field always shows its quick-slot bar at the bottom (also under the in-field menus): each slot has a
- * black left edge and a white number tag beside it. Title, pop-up and story screens don't.
- */
-const inotiaShowsField = (screen: HTMLCanvasElement): boolean => {
-  if (screen.width !== 176 || screen.height !== 220) return false;
-  const context = screen.getContext("2d");
-  if (!context) return false;
-  const rows = context.getImageData(0, 201, 176, 10).data;
-  const brightness = (x: number, y: number) => {
-    const i = ((y - 201) * 176 + x) * 4;
-    return rows[i] + rows[i + 1] + rows[i + 2];
-  };
-  const slots = INOTIA_SLOT_EDGES.filter(x => brightness(x, 210) < 150 && brightness(x + 1, 201) > 700).length;
-  return slots >= 4;
-};
-
-/**
- * 이노티아 연대기 (Com2uS, 2007): walks with 2/4/6/8 only, and on the field the arrow keys are shortcuts
- * (↑ skills, ↓ map); its title and pop-up menus only follow the arrows. So the joystick sends the arrows until the
- * field's quick-slot bar is on screen. There it attacks with 5 (OK only confirms). Quick slots are 1·7·*·3·9·#,
- * CLR opens the menu and goes back.
+ * 이노티아 연대기 (Com2uS, 2007): every screen (title menus, pop-ups, dialogs with 승낙/거절, the field and its menus)
+ * moves with 2/4/6/8 and confirms, talks and attacks with 5; OK is ignored in quest windows, and on the field the
+ * arrow keys are shortcuts (↑ skills, ↓ map). Quick slots are 1·7·*·3·9·#, CLR opens the menu and goes back.
  */
 const INOTIA_PROFILE: PadProfile = {
   name: "inotia",
-  directions: DEFAULT_PROFILE.directions,
-  field: { detect: inotiaShowsField, directions: { UP: "2", DOWN: "8", LEFT: "4", RIGHT: "6" }, keys: { OK: "5" } },
+  directions: { UP: "2", DOWN: "8", LEFT: "4", RIGHT: "6" },
+  keys: { OK: "5" },
   buttons: {
     "*": { key: "DOWN", title: "지도", caption: "" },
     CALL: { key: "UP", title: "스킬창", caption: "" },
@@ -65,7 +39,7 @@ const INOTIA_PROFILE: PadProfile = {
     "0": { key: "*", title: "*", caption: "단축" },
     "#": { key: "#", title: "#", caption: "단축·스킵" },
     "7": { key: "7", title: "7", caption: "단축" },
-    OK: { key: "OK", title: "공격", caption: "확인 · 대화" },
+    OK: { key: "5", title: "공격", caption: "확인 · 대화 (5)" },
     CLR: { key: "CLR", title: "메뉴", caption: "CLR · 뒤로" },
   },
   // The game ignores the right soft key; its cancel/back key is CLR.
@@ -105,12 +79,5 @@ export const applyPadProfile = (buttons: Iterable<HTMLButtonElement>, profile: P
   }
 };
 
-/** Key a pad button for `key` presses with `screen` showing what it shows now. */
-export const buttonKey = (profile: PadProfile, key: string, screen: HTMLCanvasElement): string => {
-  const mapped = profile.field?.keys?.[key];
-  return mapped !== undefined && profile.field?.detect(screen) ? mapped : key;
-};
-
-/** Key the joystick (or a keyboard arrow) sends for `direction` with `screen` showing what it shows now. */
-export const directionKey = (profile: PadProfile, direction: Direction, screen: HTMLCanvasElement): string =>
-  profile.field?.detect(screen) ? profile.field.directions[direction] : profile.directions[direction];
+/** Key a keyboard key mapped to `key` presses in this game. */
+export const remapKey = (profile: PadProfile, key: string): string => profile.keys?.[key] ?? key;

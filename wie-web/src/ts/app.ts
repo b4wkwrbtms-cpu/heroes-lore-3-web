@@ -5,7 +5,7 @@ import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, 
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
 import { isHeroesLore3, readSkills } from "./hl3";
-import { type Direction, applyPadProfile, buttonKey, directionKey, padProfileFor } from "./pad_profile";
+import { type Direction, applyPadProfile, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
 
 const KEY_MAP: Record<string, string> = {
@@ -290,7 +290,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         event.preventDefault();
         button.setPointerCapture(event.pointerId);
         button.classList.add("pressed");
-        setKey(`pointer:${event.pointerId}`, buttonKey(padProfile, key, gameCanvas));
+        setKey(`pointer:${event.pointerId}`, key);
       },
       { signal: abortController.signal },
     );
@@ -348,8 +348,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         horizontal = cos > 0.5 ? "RIGHT" : cos < -0.5 ? "LEFT" : undefined;
         vertical = sin > 0.5 ? "DOWN" : sin < -0.5 ? "UP" : undefined;
       }
-      setKey("joystick:h", horizontal && directionKey(padProfile, horizontal, gameCanvas));
-      setKey("joystick:v", vertical && directionKey(padProfile, vertical, gameCanvas));
+      setKey("joystick:h", horizontal && padProfile.directions[horizontal]);
+      setKey("joystick:v", vertical && padProfile.directions[vertical]);
     };
 
     const moveKnob = (x: number, y: number) => {
@@ -427,7 +427,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
 
       const mapped = KEY_MAP[event.code];
       // Arrow keys walk like the joystick does.
-      const key = mapped && DIRECTION_KEYS.has(mapped) ? directionKey(padProfile, mapped as Direction, gameCanvas) : mapped && buttonKey(padProfile, mapped, gameCanvas);
+      const key = mapped && DIRECTION_KEYS.has(mapped) ? padProfile.directions[mapped as Direction] : mapped && remapKey(padProfile, mapped);
       if (key) {
         event.preventDefault();
         if (!event.repeat) {
