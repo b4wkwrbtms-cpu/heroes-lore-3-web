@@ -19,6 +19,7 @@ const SVC_CATEGORY_MISSING_JAVA_VTABLE_ENTRY: u32 = 6;
 
 pub use globals::SUPPORT_CONTEXT_BASE;
 pub use java::{LgtJvmSupport, exception};
+pub use wipi_c::clear_archive_resources;
 
 pub fn with_arm_context(core: &ArmCore, error: WieError) -> WieError {
     match error {

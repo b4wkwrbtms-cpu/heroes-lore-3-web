@@ -7,7 +7,7 @@ use wipi_types::{
     wipic::{WIPICDisplayInfo, WIPICFramebuffer, WIPICIndirectPtr, WIPICWord},
 };
 
-use wie_backend::canvas::{ArgbPixel, Clip, Color, Image, PixelType, VecImageBuffer};
+use wie_backend::canvas::{ArgbPixel, Clip, Color, Image, PixelType, Rgb565Pixel, VecImageBuffer};
 use wie_core_arm::{Allocator, ArmCore};
 use wie_util::{Result, WieError, read_generic, write_generic};
 use wie_wipi_c::{
@@ -196,10 +196,25 @@ fn presentation_image(image: &dyn Image, view: LgtGraphicsView, width: u32, heig
     let mut pixels = vec![ArgbPixel::from_color(Color { a: 0xff, r: 0, g: 0, b: 0 }); pixel_count];
     let destination_x = (width - view.width) / 2;
     let destination_y = (height - view.height) / 2;
-    for y in 0..view.height {
-        for x in 0..view.width {
-            let destination = ((destination_y + y) * width + destination_x + x) as usize;
-            pixels[destination] = ArgbPixel::from_color(image.get_pixel(view.x + x as i32, view.y + y as i32));
+    // This runs on every LCD flush (about 30 a second): decode the RGB565 backing a row at a time from its raw
+    // bytes rather than through a virtual per-pixel lookup.
+    if image.bytes_per_pixel() == 2 {
+        let raw = image.raw();
+        let stride = image.width() as usize * 2;
+        for y in 0..view.height as usize {
+            let source = (view.y as usize + y) * stride + view.x as usize * 2;
+            let row = &raw[source..source + view.width as usize * 2];
+            let destination = (destination_y as usize + y) * width as usize + destination_x as usize;
+            for (pixel, bytes) in pixels[destination..destination + view.width as usize].iter_mut().zip(row.chunks_exact(2)) {
+                *pixel = ArgbPixel::from_color(Rgb565Pixel::to_color(u16::from_le_bytes([bytes[0], bytes[1]])));
+            }
+        }
+    } else {
+        for y in 0..view.height {
+            for x in 0..view.width {
+                let destination = ((destination_y + y) * width + destination_x + x) as usize;
+                pixels[destination] = ArgbPixel::from_color(image.get_pixel(view.x + x as i32, view.y + y as i32));
+            }
         }
     }
     Ok(VecImageBuffer::<ArgbPixel>::from_raw(width, height, pixels))

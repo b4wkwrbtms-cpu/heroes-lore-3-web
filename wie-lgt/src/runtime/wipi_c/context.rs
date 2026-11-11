@@ -1,4 +1,12 @@
-use alloc::{boxed::Box, format, string::ToString, vec, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    format,
+    string::{String, ToString},
+    sync::Arc,
+    vec,
+    vec::Vec,
+};
 
 use jvm::{
     Jvm,
@@ -13,6 +21,15 @@ use wie_wipi_c::{WIPICContext, WIPICMethodBody};
 
 use crate::runtime::with_arm_context;
 
+/// Application-archive resources already read, by (pid, name); `None` when the archive has no such entry. Every lookup
+/// through the class loader re-parses the whole archive, so a map change that loads dozens of resources stalled for
+/// hundreds of milliseconds. Archive entries never change while an app runs; a new app load clears this.
+static ARCHIVE_RESOURCES: spin::Mutex<BTreeMap<(String, String), Option<Arc<Vec<u8>>>>> = spin::Mutex::new(BTreeMap::new());
+
+pub fn clear_archive_resources() {
+    ARCHIVE_RESOURCES.lock().clear();
+}
+
 // mostly same as ktf's one, can we merge those?
 #[derive(Clone)]
 pub struct LgtWIPICContext {
@@ -24,6 +41,24 @@ pub struct LgtWIPICContext {
 impl LgtWIPICContext {
     pub fn new(core: ArmCore, system: System, jvm: Jvm) -> Self {
         Self { core, system, jvm }
+    }
+
+    async fn archive_resource(&self, name: &str) -> Option<Arc<Vec<u8>>> {
+        let key = (self.system.pid().to_string(), name.to_string());
+        let cached = ARCHIVE_RESOURCES.lock().get(&key).cloned();
+        if let Some(cached) = cached {
+            return cached;
+        }
+
+        let class_loader = JavaLangClassLoader::get_system_class_loader(&self.jvm).await.unwrap();
+        let stream = JavaLangClassLoader::get_resource_as_stream(&self.jvm, &class_loader, name).await.unwrap();
+        let data = match stream {
+            Some(stream) => Some(Arc::new(JavaIoInputStream::read_until_end(&self.jvm, &stream).await.unwrap())),
+            None => None,
+        };
+        ARCHIVE_RESOURCES.lock().insert(key, data.clone());
+
+        data
     }
 }
 
@@ -93,16 +128,8 @@ impl WIPICContext for LgtWIPICContext {
     }
 
     async fn get_resource_size(&self, name: &str) -> Result<Option<usize>> {
-        let class_loader = JavaLangClassLoader::get_system_class_loader(&self.jvm).await.unwrap();
-        let stream = JavaLangClassLoader::get_resource_as_stream(&self.jvm, &class_loader, name).await.unwrap();
-
-        if let Some(stream) = stream {
-            let available: i32 = self
-                .jvm
-                .invoke_virtual(&stream, "java/io/InputStream", "available", "()I", ())
-                .await
-                .unwrap();
-            return Ok(Some(available as _));
+        if let Some(data) = self.archive_resource(name).await {
+            return Ok(Some(data.len()));
         }
         self.jvm.collect_garbage().map_err(|error| WieError::FatalError(error.to_string()))?;
 
@@ -110,11 +137,8 @@ impl WIPICContext for LgtWIPICContext {
     }
 
     async fn read_resource(&self, name: &str) -> Result<Vec<u8>> {
-        let class_loader = JavaLangClassLoader::get_system_class_loader(&self.jvm).await.unwrap();
-        let stream = JavaLangClassLoader::get_resource_as_stream(&self.jvm, &class_loader, name).await.unwrap();
-
-        if let Some(stream) = stream {
-            return Ok(JavaIoInputStream::read_until_end(&self.jvm, &stream).await.unwrap());
+        if let Some(data) = self.archive_resource(name).await {
+            return Ok((*data).clone());
         }
 
         let Some(size) = self.system.filesystem().size(name).await else {

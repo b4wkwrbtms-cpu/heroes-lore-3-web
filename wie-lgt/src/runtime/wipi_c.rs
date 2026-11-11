@@ -17,6 +17,8 @@ use wie_wipi_c::{
 
 use context::LgtWIPICContext;
 
+pub use context::clear_archive_resources;
+
 use crate::runtime::{SVC_CATEGORY_WIPIC, svc_ids::WIPICSvcId};
 
 struct WIPICMethodResult {

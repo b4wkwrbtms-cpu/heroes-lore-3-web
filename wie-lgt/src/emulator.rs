@@ -21,7 +21,7 @@ use wie_core_arm::{Allocator, ArmCore};
 use wie_jvm_support::JvmSupport;
 use wie_util::{ByteRead, ByteWrite, Result, WieError, write_generic};
 
-use crate::runtime::{LgtJvmSupport, SUPPORT_CONTEXT_BASE, exception, init::load_native};
+use crate::runtime::{LgtJvmSupport, SUPPORT_CONTEXT_BASE, clear_archive_resources, exception, init::load_native};
 
 struct LgtTaskRunner {
     core: ArmCore,
@@ -130,6 +130,7 @@ impl LgtEmulator {
     ) -> Result<Self> {
         let mut core = ArmCore::new(options)?;
         let system = System::new(platform, pid, aid, LgtTaskRunner { core: core.clone() });
+        clear_archive_resources();
 
         for (filename, data) in files {
             let filename = filename.trim_start_matches("P/");
