@@ -5,7 +5,7 @@ import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, 
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
 import { isHeroesLore3, readSkills } from "./hl3";
-import { type Direction, applyPadProfile, directionKey, padProfileFor } from "./pad_profile";
+import { type Direction, applyPadProfile, buttonKey, directionKey, padProfileFor } from "./pad_profile";
 import type { SettingsController } from "./settings";
 
 const KEY_MAP: Record<string, string> = {
@@ -290,7 +290,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         event.preventDefault();
         button.setPointerCapture(event.pointerId);
         button.classList.add("pressed");
-        setKey(`pointer:${event.pointerId}`, key);
+        setKey(`pointer:${event.pointerId}`, buttonKey(padProfile, key, gameCanvas));
       },
       { signal: abortController.signal },
     );
@@ -427,7 +427,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
 
       const mapped = KEY_MAP[event.code];
       // Arrow keys walk like the joystick does.
-      const key = mapped && DIRECTION_KEYS.has(mapped) ? directionKey(padProfile, mapped as Direction, gameCanvas) : mapped;
+      const key = mapped && DIRECTION_KEYS.has(mapped) ? directionKey(padProfile, mapped as Direction, gameCanvas) : mapped && buttonKey(padProfile, mapped, gameCanvas);
       if (key) {
         event.preventDefault();
         if (!event.repeat) {

@@ -9,9 +9,16 @@ export interface PadProfile {
   /** Key sent for each joystick direction. */
   directions: Record<Direction, string>;
   /** Directions used instead while the game shows its field (games whose title menus only follow the arrows). */
-  field?: { detect: (screen: HTMLCanvasElement) => boolean; directions: Record<Direction, string> };
+  field?: {
+    detect: (screen: HTMLCanvasElement) => boolean;
+    directions: Record<Direction, string>;
+    /** Pad keys pressed as another key there (e.g. attack is 5 on the field but OK confirms in menus). */
+    keys?: Record<string, string>;
+  };
   /** Pad buttons, keyed by their default `data-key`: the key they press instead and their label. */
   buttons: Record<string, { key: string; title: string; caption: string }>;
+  /** Full-keypad sheet buttons, keyed by their default `data-key`: the key they press instead and their label. */
+  sheet?: Record<string, { key: string; label: string }>;
 }
 
 const DEFAULT_PROFILE: PadProfile = {
@@ -42,12 +49,13 @@ const inotiaShowsField = (screen: HTMLCanvasElement): boolean => {
 /**
  * 이노티아 연대기 (Com2uS, 2007): walks with 2/4/6/8 only, and on the field the arrow keys are shortcuts
  * (↑ skills, ↓ map); its title and pop-up menus only follow the arrows. So the joystick sends the arrows until the
- * field's quick-slot bar is on screen. Quick slots are 1·7·*·3·9·#, CLR opens the menu.
+ * field's quick-slot bar is on screen. There it attacks with 5 (OK only confirms). Quick slots are 1·7·*·3·9·#,
+ * CLR opens the menu and goes back.
  */
 const INOTIA_PROFILE: PadProfile = {
   name: "inotia",
   directions: DEFAULT_PROFILE.directions,
-  field: { detect: inotiaShowsField, directions: { UP: "2", DOWN: "8", LEFT: "4", RIGHT: "6" } },
+  field: { detect: inotiaShowsField, directions: { UP: "2", DOWN: "8", LEFT: "4", RIGHT: "6" }, keys: { OK: "5" } },
   buttons: {
     "*": { key: "DOWN", title: "지도", caption: "" },
     CALL: { key: "UP", title: "스킬창", caption: "" },
@@ -60,6 +68,8 @@ const INOTIA_PROFILE: PadProfile = {
     OK: { key: "OK", title: "공격", caption: "확인 · 대화" },
     CLR: { key: "CLR", title: "메뉴", caption: "CLR · 뒤로" },
   },
+  // The game ignores the right soft key; its cancel/back key is CLR.
+  sheet: { SOFT2: { key: "CLR", label: "취소 (CLR)" } },
 };
 
 export const isInotia = (app: Pick<LibraryApp, "title" | "filename">): boolean =>
@@ -74,6 +84,14 @@ export const padProfileFor = (app: Pick<LibraryApp, "title" | "filename">): PadP
  */
 export const applyPadProfile = (buttons: Iterable<HTMLButtonElement>, profile: PadProfile) => {
   for (const button of buttons) {
+    if (button.closest(".keypad-sheet")) {
+      button.dataset.defaultKey ??= button.dataset.key ?? "";
+      button.dataset.defaultText ??= button.textContent ?? "";
+      const override = profile.sheet?.[button.dataset.defaultKey];
+      button.dataset.key = override?.key ?? button.dataset.defaultKey;
+      button.textContent = override?.label ?? button.dataset.defaultText;
+      continue;
+    }
     if (!button.closest(".pad")) continue;
     const title = button.querySelector("b") ?? button.querySelector("span");
     const caption = button.querySelector("b") ? button.querySelector("span") : null;
@@ -85,6 +103,12 @@ export const applyPadProfile = (buttons: Iterable<HTMLButtonElement>, profile: P
     if (title) title.textContent = override?.title ?? title.dataset.defaultText ?? "";
     if (caption) caption.textContent = override ? override.caption : (caption.dataset.defaultText ?? "");
   }
+};
+
+/** Key a pad button for `key` presses with `screen` showing what it shows now. */
+export const buttonKey = (profile: PadProfile, key: string, screen: HTMLCanvasElement): string => {
+  const mapped = profile.field?.keys?.[key];
+  return mapped !== undefined && profile.field?.detect(screen) ? mapped : key;
 };
 
 /** Key the joystick (or a keyboard arrow) sends for `direction` with `screen` showing what it shows now. */

@@ -1,6 +1,15 @@
-use alloc::{boxed::Box, rc::Rc, string::ToString, vec};
+use alloc::{
+    boxed::Box,
+    rc::Rc,
+    string::{String, ToString},
+    sync::Arc,
+    vec,
+    vec::Vec,
+};
 use core::cell::RefCell;
 use core::cmp::{max, min};
+
+use hashbrown::HashMap;
 
 use wie_backend::Filesystem;
 
@@ -15,6 +24,10 @@ fn make_key(pid: &str, path: &str) -> StoreKey {
 
 pub struct WebFilesystem {
     store: Rc<RefCell<Option<Store>>>,
+    /// Contents of files this session has touched (`None`: known not to exist). Games read resource files in many
+    /// small seeks and reads; going to IndexedDB for each one turned a map load into seconds of waiting.
+    /// Writes go to IndexedDB first and then here, so the store stays the source of truth.
+    cache: Rc<RefCell<HashMap<(String, String), Option<Arc<Vec<u8>>>>>>,
 }
 
 // single threaded wasm; RefCell + Rc are only touched sequentially.
@@ -25,7 +38,24 @@ impl WebFilesystem {
     pub fn new() -> Self {
         Self {
             store: Rc::new(RefCell::new(None)),
+            cache: Rc::new(RefCell::new(HashMap::new())),
         }
+    }
+
+    async fn get(&self, pid: &str, path: &str) -> Option<Arc<Vec<u8>>> {
+        let cache_key = (pid.to_string(), path.to_string());
+        let cached = self.cache.borrow().get(&cache_key).cloned();
+        if let Some(entry) = cached {
+            return entry;
+        }
+        let data = self.store().await.get(make_key(pid, path)).await.map(Arc::new);
+        self.cache.borrow_mut().insert(cache_key, data.clone());
+        data
+    }
+
+    async fn put(&self, pid: &str, path: &str, data: Vec<u8>) {
+        self.store().await.set(make_key(pid, path), &data).await;
+        self.cache.borrow_mut().insert((pid.to_string(), path.to_string()), Some(Arc::new(data)));
     }
 
     async fn store(&self) -> Store {
@@ -41,12 +71,11 @@ impl WebFilesystem {
 #[async_trait::async_trait]
 impl Filesystem for WebFilesystem {
     async fn remove(&self, pid: &str, path: &str) -> bool {
-        let store = self.store().await;
-        let key = make_key(pid, path);
-        if store.get(key.clone()).await.is_none() {
+        if self.get(pid, path).await.is_none() {
             return false;
         }
-        store.delete(key).await;
+        self.store().await.delete(make_key(pid, path)).await;
+        self.cache.borrow_mut().insert((pid.to_string(), path.to_string()), None);
         true
     }
 
@@ -64,15 +93,15 @@ impl Filesystem for WebFilesystem {
     }
 
     async fn exists(&self, pid: &str, path: &str) -> bool {
-        self.store().await.get(make_key(pid, path)).await.is_some()
+        self.get(pid, path).await.is_some()
     }
 
     async fn size(&self, pid: &str, path: &str) -> Option<usize> {
-        self.store().await.get(make_key(pid, path)).await.map(|v| v.len())
+        self.get(pid, path).await.map(|v| v.len())
     }
 
     async fn read(&self, pid: &str, path: &str, offset: usize, count: usize, buf: &mut [u8]) -> Option<usize> {
-        let data = self.store().await.get(make_key(pid, path)).await?;
+        let data = self.get(pid, path).await?;
 
         if offset >= data.len() {
             return Some(0);
@@ -84,28 +113,24 @@ impl Filesystem for WebFilesystem {
     }
 
     async fn write(&self, pid: &str, path: &str, offset: usize, data: &[u8]) -> usize {
-        let key = make_key(pid, path);
-        let store = self.store().await;
-        let existing = store.get(key.clone()).await.unwrap_or_default();
+        let existing = self.get(pid, path).await.unwrap_or_default();
         let new_len = max(existing.len(), offset + data.len());
 
         let mut next = vec![0u8; new_len];
         next[..existing.len()].copy_from_slice(&existing);
         next[offset..offset + data.len()].copy_from_slice(data);
 
-        store.set(key, &next).await;
+        self.put(pid, path, next).await;
         data.len()
     }
 
     async fn truncate(&self, pid: &str, path: &str, len: usize) {
-        let key = make_key(pid, path);
-        let store = self.store().await;
-        let existing = store.get(key.clone()).await.unwrap_or_default();
+        let existing = self.get(pid, path).await.unwrap_or_default();
 
         let mut next = vec![0u8; len];
         let copy_len = min(existing.len(), len);
         next[..copy_len].copy_from_slice(&existing[..copy_len]);
 
-        store.set(key, &next).await;
+        self.put(pid, path, next).await;
     }
 }
