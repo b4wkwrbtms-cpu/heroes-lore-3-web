@@ -1,5 +1,5 @@
 // 영웅서기5 player: runs the game's ARM library in hl5core.wasm and presents it on an iPhone in landscape.
-const VERSION = "3";
+const VERSION = "4";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -797,6 +797,7 @@ const WATCHES = [
   ["_ZN13StateMainMenu11SetSubStateEa", "menuSubState"],
   ["_ZN3Npc4DrawEiii", "npcDraw"],
   ["_ZN6Spirit4DrawEiii", "spiritDraw"],
+  ["_Z9mainPaintv", "paint"],
 ];
 
 class Core {
@@ -861,8 +862,10 @@ class Core {
   call(name) { return this.ex.app_call(this.cstr(name)); }
   regs() { return new Int32Array(this.mem.buffer, this.ex.cpu_state(), 4); }
   rd32(a) { return new Int32Array(this.mem.buffer)[(this.ex.guest_base() + (a & 0x3ffffff)) >> 2]; }
-  // Draws the current game state with some 32-bit guest values temporarily replaced and returns a view
-  // of the picture (same layout as the uploaded frame), or null. Everything is restored afterwards.
+  // Drawing advances the game's animation counters, so in-between frames start from the state saved
+  // when the game began drawing its last frame (slot 0, see the "paint" watch); that gives exactly the
+  // poses of the real frame. Draws it with some 32-bit guest values replaced and returns a view of the
+  // picture (same layout as the uploaded frame), or null. The live state (slot 1) is put back afterwards.
   paintWith(writes, stride, h) {
     const ex = this.ex;
     if (this.outSize !== stride * h) {
@@ -870,12 +873,15 @@ class Core {
       this.out = ex.host_alloc(stride * h * 2);
       this.outSize = stride * h;
     }
-    if (!this.out || ex.snap_save() !== 0) return null;
-    const i32 = new Int32Array(this.mem.buffer), base = ex.guest_base();
-    for (let i = 0; i < writes.length; i += 2) i32[(base + writes[i]) >> 2] = writes[i + 1];
-    this.quiet = true;
+    if (!this.out || ex.snap_save(1) !== 0) return null;
     let r;
-    try { r = ex.paint_only(this.out, stride, h); } finally { this.quiet = false; ex.snap_restore(); }
+    try {
+      ex.snap_restore(0);
+      const i32 = new Int32Array(this.mem.buffer), base = ex.guest_base();
+      for (let i = 0; i < writes.length; i += 2) i32[(base + writes[i]) >> 2] = writes[i + 1];
+      this.quiet = true;
+      r = ex.paint_only(this.out, stride, h);
+    } finally { this.quiet = false; ex.snap_restore(1); }
     return r === 0 ? new Uint16Array(this.mem.buffer, this.out, stride * h) : null;
   }
   frame() {
@@ -1047,6 +1053,9 @@ function onCoreEvent(kind, a, b, c) {
       motion.drawn.set(obj, [x, y]);
       return 0;
     }
+    case 110: // mainPaint: the game starts drawing a frame; keep this state for the in-between frames
+      if (prefs.motion === "smooth") motion.prePaint = core.ex.snap_save(0) === 0;
+      return 0;
     case 108: // Npc::Draw, Spirit::Draw: positions for in-between frames
     case 109: {
       const obj = core.regs()[0] >>> 0;
@@ -1110,6 +1119,7 @@ const motion = {
   prev: null, cur: null, t0: 0, t1: 0,
   period: 48, rafDt: 16.7,
   pending: false, // the real frame of `cur` has not been shown yet
+  prePaint: false, // slot 0 holds the state from the start of the last real drawing
   lastFrac: 0,
   cost: 0, paints: 0,
 };
@@ -1144,7 +1154,9 @@ function motionWrites(prev, cur, frac) {
   return w.length ? w : null;
 }
 function onGameFrame(t, f) {
-  const st = prefs.motion === "smooth" ? readMotionState() : null;
+  const st = prefs.motion === "smooth" && motion.prePaint ? readMotionState() : null;
+  if (!st) motion.drawn = new Map();
+  motion.prePaint = false;
   if (motion.t1 && t - motion.t1 < 250) motion.period += (t - motion.t1 - motion.period) * 0.2;
   motion.prev = motion.cur;
   motion.cur = st;
