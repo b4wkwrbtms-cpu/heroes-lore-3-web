@@ -10,8 +10,8 @@ import {
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
 import {
-  type ExpWatch, GOLD_MAX, INOTIA, countDamagedItems, getGold as getInotiaGold, healParty, isInItemTable, keepGold, multiplyExp,
-  readRolledStats, repairItems, setGold as setInotiaGold, setRolledStats,
+  type ExpWatch, GOLD_MAX, INOTIA, countDamagedItems, getGold as getInotiaGold, healParty, isInItemTable, keepElixirFree, keepGold,
+  multiplyExp, readRolledStats, repairItems, setGold as setInotiaGold, setRolledStats,
 } from "./inotia";
 import { isInotia } from "./pad_profile";
 
@@ -108,6 +108,7 @@ const startTicks = (context: CheatContext, cheats: SavedCheat[]) => {
       const watch: ExpWatch = [];
       ticks.push(api => multiplyExp(api, watch, EXP_FACTOR));
     }
+    if (loadGamePreference(context.appId, "elixir_free", "on") !== "off") ticks.push(keepElixirFree);
   }
   if (ticks.length === 0) return;
   tickContextId = context.appId;
@@ -505,6 +506,19 @@ export const getCheatPanel = (): CheatPanel => {
     }));
     body.append(expRow);
     body.append(el("p", "cheat-muted", "경험치 바가 다 차면 남은 몫은 다음 사냥 때 레벨업한 뒤에 마저 들어와요."));
+
+    // 초월의 영약: 6번째부터 게임이 네트워크 접속을 요구함
+    const elixirOn = loadGamePreference(context?.appId, "elixir_free", "on") !== "off";
+    const elixirRow = el("div", "cheat-item-actions");
+    elixirRow.append(button(elixirOn ? "🧪 초월의 영약 계속 먹기: 켜짐" : "🧪 초월의 영약 계속 먹기: 꺼짐", elixirOn ? "primary-command" : "secondary-command", () => {
+      storeGamePreference(context?.appId, "elixir_free", elixirOn ? "off" : "on");
+      if (context) startTicks(context, saved);
+      setStatus(elixirOn
+        ? "껐어요. 원래 게임처럼 5번 마신 뒤에는 '네트워크에 접속한 상태에서만 이용가능합니다'가 떠요."
+        : "켰어요. 초월의 영약을 몇 번이든 마실 수 있고, 마실 때마다 스탯이 1씩 올라요.");
+    }));
+    body.append(elixirRow);
+    body.append(el("p", "cheat-muted", "원래 게임은 5번까지만 그냥 마실 수 있고, 그다음부터는 휴대폰 네트워크 접속을 요구해요. 에뮬레이터에는 네트워크가 없어서, 켜 두면 마신 횟수를 5번 아래로 유지해요."));
 
     // 스탯 결정
     let current = "";

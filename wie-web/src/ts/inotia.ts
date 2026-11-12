@@ -17,6 +17,8 @@ import type { CheatApi } from "./backend";
  * - A state word reads ON_FIELD while the player walks the field; menus, the map and dialogs use other values.
  * - A record starts 0x10 before the fields above, with the EXP earned within the current level. Leaving level L takes
  *   expToNextLevel(L) and carries the rest over; the game checks for a level up only when EXP comes in.
+ * - Bits 16–23 of ELIXIR_WORD count the 초월의 영약 drunk. The first ELIXIR_FREE_USES always raise the stat; after that
+ *   the game asks for a network connection ("네트워크에 접속한 상태에서만 이용가능합니다.") before it even tries.
  */
 export const INOTIA = {
   ROLL: 0x00184880,
@@ -45,9 +47,18 @@ export const INOTIA = {
   MONSTER_LAST: 52,
   STATE: 0x0016f600,
   ON_FIELD: 2,
+  ELIXIR_WORD: 0x0017fd80,
+  ELIXIR_FREE_USES: 5,
 } as const;
 
 export const GOLD_MAX = 9_999_999;
+
+/** Holds the 초월의 영약 count one under the free uses, so every elixir works without the network the emulator lacks. */
+export const keepElixirFree = (api: CheatApi) => {
+  const word = api.read(INOTIA.ELIXIR_WORD, 4, false);
+  if (((word >>> 16) & 0xff) < INOTIA.ELIXIR_FREE_USES) return;
+  api.write(INOTIA.ELIXIR_WORD, 4, false, ((word & ~0xff0000) | ((INOTIA.ELIXIR_FREE_USES - 1) << 16)) >>> 0);
+};
 
 export const readRolledStats = (api: CheatApi): number[] =>
   INOTIA.STAT_NAMES.map((_, i) => api.read(INOTIA.ROLL + i * 4, 4, false));
