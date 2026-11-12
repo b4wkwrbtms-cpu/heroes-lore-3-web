@@ -10,6 +10,8 @@ import { Hl3Feedback } from "./hl3_feedback";
 import { InotiaHunt } from "./inotia_hunt";
 import { type Direction, applyPadProfile, isInotia, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
+import { OCTANT_DIRECTIONS, pickOctant, pickStraight } from "./stick";
+import { type SaveResult, ZERO_SAVE_KEY, readZeroState, saveZero } from "./zero";
 
 const KEY_MAP: Record<string, string> = {
   Digit1: "1",
@@ -85,6 +87,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   let preparing = true;
   let suspended = false;
   let ending = false;
+  /** A one-tap save is walking the game's menu. */
+  let saving = false;
   let start: Promise<PlayerSession | undefined>;
   let warningTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -140,6 +144,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   };
   const setKey = (source: string, key?: string) => {
     if (!session || preparing || suspended || ending) return;
+    // While a save walks the game's menu, the player's presses would land in it.
+    if (saving && key && !source.startsWith("auto:")) return;
     // Face the nearest monster (or NPC to talk to) unless the player is steering with a direction key.
     if (key === "OK" && inputs.get(source) !== "OK" && ![...inputs.values()].some(held => DIRECTION_KEYS.has(held))) {
       automation.aim(!source.startsWith("auto:"));
@@ -198,6 +204,52 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       directions: padProfile.directions,
     })
     : undefined;
+  const SAVE_NOTICES: Record<Exclude<SaveResult, "stopped">, string> = {
+    saved: "저장했어요",
+    "not-field": "필드에서 저장 버튼을 눌러 주세요 (메뉴·대화 중에는 저장하지 않아요)",
+    unreadable: "이 화면에서는 저장 버튼을 쓸 수 없어요. 메뉴 → 7 시스템 → 세이브로 저장해 주세요",
+    failed: "저장 창이 예상과 달라 멈췄어요. 메뉴 → 7 시스템 → 세이브로 저장해 주세요",
+  };
+  /** One-tap save through the game's own menu (영웅서기 제로), checking every window before the next key. */
+  const saveFromField = async () => {
+    const current = session;
+    if (saving || !current || preparing || suspended || ending) return;
+    saving = true;
+    releaseKeys();
+    const alive = () => session === current && !ending && !suspended;
+    let result: SaveResult = "stopped";
+    try {
+      result = await saveZero({
+        press: async key => {
+          if (!alive()) return;
+          flashKey(key);
+          setKey("auto:save", key);
+          await new Promise(resolve => window.setTimeout(resolve, 90));
+          setKey("auto:save");
+          await new Promise(resolve => window.setTimeout(resolve, 60));
+        },
+        frame: () => {
+          if (backend.rendering !== "canvas") return undefined;
+          try {
+            return gameCanvas.getContext("2d")?.getImageData(0, 0, gameCanvas.width, gameCanvas.height) ?? undefined;
+          } catch {
+            return undefined;
+          }
+        },
+        sleep: ms => new Promise(resolve => window.setTimeout(resolve, ms)),
+        alive,
+        state: () => readZeroState(cheatContext.getCheats()),
+      });
+    } finally {
+      saving = false;
+      if (alive()) setKey("auto:save");
+    }
+    if (result === "stopped" || ending) return;
+    clearTimeout(warningTimer);
+    playerWarning.textContent = SAVE_NOTICES[result];
+    playerWarning.hidden = false;
+    warningTimer = setTimeout(() => { playerWarning.hidden = true; }, result === "saved" ? 2000 : 5000);
+  };
   let autoPressId = 0;
   const pressKey = (key: string, holdMs = 90) => {
     const source = `auto:${key}:${autoPressId++}`;
@@ -333,6 +385,11 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         event.preventDefault();
         button.setPointerCapture(event.pointerId);
         button.classList.add("pressed");
+        // Page actions are never sent to the game as keys.
+        if (key === ZERO_SAVE_KEY) {
+          void saveFromField();
+          return;
+        }
         setKey(`pointer:${event.pointerId}`, key);
       },
       { signal: abortController.signal },
@@ -379,7 +436,70 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     let radius = 1;
     let sector: number | undefined;
 
+    // Games that walk diagonally (영웅서기 제로) get eight sectors and hold both keys of a diagonal, each from its own
+    // source: turning from up to up-right only adds right, and from up-right to right only lets go of up. Keys that
+    // go away are released before new ones are pressed. In the game's cursor windows (menu, shop, choices) the stick
+    // is a d-pad instead: one straight direction, pressed again every REPEAT_MS while held, since those windows move
+    // one step per press and would otherwise need a flick per item.
+    const REPEAT_DELAY_MS = 380;
+    const REPEAT_MS = 130;
+    const REPEAT_GAP_MS = 40;
+    let held: [string, string | undefined][] = [];
+    let repeatSector: number | undefined;
+    let repeatTimer: number | undefined;
+    const windowed = () => padProfile.windowed?.(cheatContext.getCheats()) ?? false;
+    const stopRepeat = () => {
+      window.clearTimeout(repeatTimer);
+      repeatTimer = undefined;
+      repeatSector = undefined;
+    };
+    const repeat = () => {
+      repeatTimer = undefined;
+      if (sector === undefined || sector !== repeatSector || !windowed()) {
+        repeatSector = undefined;
+        return;
+      }
+      const keys = held;
+      for (const [source] of keys) setKey(source);
+      repeatTimer = window.setTimeout(() => {
+        repeatTimer = undefined;
+        if (sector !== repeatSector) return;
+        for (const [source, key] of keys) if (key) setKey(source, key);
+        repeatTimer = window.setTimeout(repeat, REPEAT_MS - REPEAT_GAP_MS);
+      }, REPEAT_GAP_MS);
+    };
+    const applyOctant = (dx: number, dy: number) => {
+      const magnitude = Math.hypot(dx, dy);
+      const cursor = windowed();
+      if (magnitude < (sector === undefined ? ENGAGE_PX : RELEASE_PX)) {
+        sector = undefined;
+      } else {
+        let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+        if (angle < 0) angle += 360;
+        sector = cursor ? pickStraight(angle, sector) : pickOctant(angle, sector);
+      }
+      const directions = sector === undefined ? [] : OCTANT_DIRECTIONS[sector];
+      joystick.dataset.direction = directions.map(direction => direction.toLowerCase()).join(" ");
+      const vertical = directions.find(direction => direction === "UP" || direction === "DOWN");
+      const horizontal = directions.find(direction => direction === "LEFT" || direction === "RIGHT");
+      held = [
+        ["joystick:v", vertical && padProfile.directions[vertical]],
+        ["joystick:h", horizontal && padProfile.directions[horizontal]],
+      ];
+      if (sector !== repeatSector) stopRepeat();
+      for (const [source, key] of held) if (inputs.get(source) !== key) setKey(source);
+      for (const [source, key] of held) if (key) setKey(source, key);
+      if (cursor && sector !== undefined && repeatSector === undefined) {
+        repeatSector = sector;
+        repeatTimer = window.setTimeout(repeat, REPEAT_DELAY_MS);
+      }
+    };
+
     const applyDirection = (dx: number, dy: number) => {
+      if (padProfile.diagonals) {
+        applyOctant(dx, dy);
+        return;
+      }
       const magnitude = Math.hypot(dx, dy);
       if (magnitude < (sector === undefined ? ENGAGE_PX : RELEASE_PX)) {
         sector = undefined;
@@ -424,6 +544,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     const resetJoystick = () => {
       activePointer = undefined;
       sector = undefined;
+      if (padProfile.diagonals) stopRepeat();
       joystick.classList.remove("active");
       joystick.style.left = "";
       joystick.style.top = "";

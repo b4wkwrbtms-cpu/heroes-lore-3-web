@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 const ts = require("typescript");
 
-const HL3 = "PD119037", INOTIA = "PD005362"; // app_info / __adf__ from the actual archives
+const HL3 = "PD119037", INOTIA = "PD005362", ZERO = "PD005576"; // app_info / __adf__ from the actual archives
 function modules(globals = {}) {
   const cache = new Map();
   function load(name) {
@@ -35,6 +35,37 @@ test("game identity ignores misleading titles and filenames; controls follow the
   assert.equal(hl3.isHeroesLore3Binary({ read: () => 0 }), false);
   assert.equal(hl3.isHeroesLore3Binary({ read: () => { throw Error("unmapped"); } }), false);
   assert.equal(hl3.isHeroesLore3Binary({ read: addr => addr === 0x38620 ? 0x307eb500 : 0xb0a8b5f0 }), true);
+});
+
+test("영웅서기 제로 gets its own pad by PID while the other games keep theirs", () => {
+  const load = modules();
+  const pad = load("pad_profile"), zero = load("zero");
+  const renamedZero = { id: ZERO, title: "영웅서기3", filename: "heroes-lore-3.zip" };
+  const hl3Pad = pad.padProfileFor({ id: HL3 }), inotiaPad = pad.padProfileFor({ id: INOTIA }), zeroPad = pad.padProfileFor(renamedZero);
+  assert.equal(pad.isZero(renamedZero), true);
+  for (const other of [HL3, INOTIA]) {
+    assert.equal(pad.isZero({ id: other }), false);
+    assert.equal(zero.isZero(other), false);
+  }
+  // 영웅서기3 and 이노티아 keep exactly the pads they had.
+  assert.equal(hl3Pad.name, undefined);
+  assert.equal(hl3Pad.diagonals, undefined);
+  assert.equal(hl3Pad.windowed, undefined);
+  assert.deepEqual({ ...hl3Pad.directions }, { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT" });
+  assert.equal(Object.keys(hl3Pad.buttons).length, 0);
+  assert.equal(inotiaPad.name, "inotia");
+  assert.equal(inotiaPad.diagonals, undefined);
+  assert.deepEqual({ ...inotiaPad.directions }, { UP: "2", DOWN: "8", LEFT: "4", RIGHT: "6" });
+  assert.equal(pad.remapKey(inotiaPad, "OK"), "5");
+  assert.equal(inotiaPad.buttons.CALL.key, "UP");
+  // 제로: arrows (its menus take 2/4/6/8 as entry shortcuts), diagonals, OK attacks, the save key never reaches the game.
+  assert.equal(zeroPad.name, "zero");
+  assert.equal(zeroPad.diagonals, true);
+  assert.deepEqual({ ...zeroPad.directions }, { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT" });
+  assert.equal(pad.remapKey(zeroPad, "OK"), "OK");
+  assert.deepEqual(["1", "3", "7", "9", "0", "#"].map(key => zeroPad.buttons[key].key), ["1", "3", "7", "9", "0", "#"]);
+  assert.equal(zeroPad.buttons.CALL.key, zero.ZERO_SAVE_KEY);
+  assert.equal(zeroPad.windowed(undefined), false);
 });
 
 test("legacy presentation choices migrate only to their owner; switching games preserves separate values", () => {

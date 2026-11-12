@@ -1,4 +1,5 @@
-import type { LibraryApp } from "./backend";
+import type { CheatApi, LibraryApp } from "./backend";
+import { ZERO_SAVE_KEY, inZeroWindow, isZero as isZeroPid } from "./zero";
 
 export type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
 
@@ -19,6 +20,17 @@ export interface PadProfile {
    * top, and the keys around attack laid out like the phone's keypad (1 3 / 5 / 7 CLR 9 / * 0 #).
    */
   layout?: "keypad";
+  /**
+   * The game walks diagonally while two directions are held, so the stick has eight sectors and holds both keys of a
+   * diagonal. Without it the stick has four sectors and holds one key at a time.
+   */
+  diagonals?: boolean;
+  /**
+   * With `diagonals`: whether the game shows a cursor window (menu, shop, a conversation's choices) instead of the
+   * field. There the stick takes one straight direction at a time and repeats it while held, as such windows move
+   * their cursor once per press.
+   */
+  windowed?: (api: CheatApi | undefined) => boolean;
 }
 
 const DEFAULT_PROFILE: PadProfile = {
@@ -53,11 +65,35 @@ const INOTIA_PROFILE: PadProfile = {
   sheet: { SOFT2: { key: "CLR", label: "취소 (CLR)" } },
 };
 
+/**
+ * 영웅서기 제로 (Hands-On Mobile, 2007): the arrows move everywhere and walk diagonally when two are held, while in
+ * its menus the number keys pick entries directly, so the stick sends arrows only. Skills are 1·3·7·9 (the four
+ * keys nearest attack), recovery items 0 and # (# also skips scenes). The top bar's save key saves through the
+ * game's own menu.
+ */
+const ZERO_PROFILE: PadProfile = {
+  name: "zero",
+  diagonals: true,
+  windowed: inZeroWindow,
+  directions: { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT" },
+  buttons: {
+    "7": { key: "7", title: "7", caption: "스킬" },
+    "1": { key: "1", title: "1", caption: "스킬" },
+    "3": { key: "3", title: "3", caption: "스킬" },
+    "9": { key: "9", title: "9", caption: "스킬" },
+    "0": { key: "0", title: "0", caption: "회복" },
+    "#": { key: "#", title: "#", caption: "회복" },
+    OK: { key: "OK", title: "공격", caption: "확인 · 대화" },
+    CALL: { key: ZERO_SAVE_KEY, title: "저장", caption: "" },
+  },
+};
+
 /** PID from the KTF __adf__; a renamed archive must not select another game's controls. */
 export const isInotia = (app: Pick<LibraryApp, "id">): boolean => app.id === "PD005362";
+export const isZero = (app: Pick<LibraryApp, "id">): boolean => isZeroPid(app.id);
 
 export const padProfileFor = (app: Pick<LibraryApp, "id">): PadProfile =>
-  isInotia(app) ? INOTIA_PROFILE : DEFAULT_PROFILE;
+  isInotia(app) ? INOTIA_PROFILE : isZero(app) ? ZERO_PROFILE : DEFAULT_PROFILE;
 
 /**
  * Points the pad buttons at the profile's keys and labels. The markup's own key and labels are kept in data
