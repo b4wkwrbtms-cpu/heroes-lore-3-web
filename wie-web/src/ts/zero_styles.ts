@@ -49,3 +49,26 @@ export const openHiddenStyles = (api: Pick<CheatApi, "read" | "write" | "dump" |
   }
   return found;
 };
+
+/**
+ * 정령사 is the style built around the spirit, yet the menu keeps 정령 (SPIRIT) shut until the fourth main quest, where
+ * Carmen joins. Opening the menu stores that check in a static boolean that only the menu reads: entry 5 shows
+ * "아직 사용할 수 없습니다." while it is false and the cursor skips the entry. Raising it while a 정령사's menu is up
+ * opens the spirit window as the quest would: its skills take skill points and go on 7/9 like the class skills, and
+ * on the field they cast with the 마력 that attacks build up. The quests and the save are left untouched.
+ *
+ * Statics sit at fixed addresses of the data segment; JOB is the hero's battle style, loaded from the save.
+ */
+export const ZERO_SPIRIT = {
+  JOB: 0x001bb67c,
+  SPIRITUALIST: 5,
+  OPEN: 0x001bbc7c,
+} as const;
+
+/** In a 정령사's menu, opens the spirit entry. Returns whether it is open. */
+export const openSpirit = (api: Pick<CheatApi, "read" | "write">): boolean => {
+  const read = (address: number) => api.read(address, 4, false) >>> 0;
+  if (!isZeroBinary(api) || read(ZERO.STATE) !== ZERO.MENU || read(ZERO_SPIRIT.JOB) !== ZERO_SPIRIT.SPIRITUALIST) return false;
+  if (read(ZERO_SPIRIT.OPEN) !== 1) api.write(ZERO_SPIRIT.OPEN, 4, false, 1);
+  return true;
+};

@@ -14,7 +14,7 @@ import type { SettingsController } from "./settings";
 import { OCTANT_DIRECTIONS, pickOctant, pickStraight } from "./stick";
 import { type SaveResult, ZERO_SAVE_KEY, readZeroState, saveZero } from "./zero";
 import { ZeroFeedback } from "./zero_feedback";
-import { openHiddenStyles } from "./zero_styles";
+import { openHiddenStyles, openSpirit } from "./zero_styles";
 
 const KEY_MAP: Record<string, string> = {
   Digit1: "1",
@@ -81,14 +81,17 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     : isHeroesLore3(app.id) ? new Hl3Feedback(gameCanvas, app.id)
     : isZero(app) ? new ZeroFeedback(gameCanvas, app.id)
     : undefined;
-  // 영웅서기 제로: its new-game screen also offers the two hidden battle styles (checked twice a second).
+  // 영웅서기 제로: its new-game screen also offers the two hidden battle styles (checked twice a second), and a
+  // 정령사's menu opens the spirit from the start (every frame, so the entry is open before 5 can be pressed).
   let stylesCheckedAt = 0;
   const openStyles = isZero(app) ? () => {
     const api = session?.cheats;
-    const now = performance.now();
-    if (!api || now - stylesCheckedAt < 500) return;
-    stylesCheckedAt = now;
+    if (!api) return;
     try {
+      openSpirit(api);
+      const now = performance.now();
+      if (now - stylesCheckedAt < 500) return;
+      stylesCheckedAt = now;
       openHiddenStyles(api);
     } catch {
       // Memory not readable while the game loads; the next frame tries again.

@@ -262,3 +262,29 @@ test("the new-game style screen also offers 검총사 and 정령사, writing onl
   assert.equal(styles.openHiddenStyles(api), false);
   assert.equal(api.read(screen + S.COUNT), 4);
 });
+
+test("a 정령사's menu opens the spirit entry; other styles, other screens and other builds keep the game's own check", () => {
+  const styles = load("zero_styles");
+  const P = styles.ZERO_SPIRIT;
+  const words = new Map(Object.entries(BINARY).map(([address, word]) => [Number(address), word]));
+  const writes = [];
+  const api = {
+    read: address => words.get(address) ?? 0,
+    write: (address, width, bigEndian, value) => { writes.push([address, width, bigEndian, value]); words.set(address, value); },
+  };
+  words.set(zero.ZERO.STATE, zero.ZERO.MENU);
+  words.set(P.JOB, P.SPIRITUALIST);
+  assert.equal(styles.openSpirit(api), true);
+  assert.deepEqual(writes, [[P.OPEN, 4, false, 1]]);
+  assert.equal(styles.openSpirit(api), true);
+  assert.equal(writes.length, 1, "an open entry is not written again");
+  words.set(P.OPEN, 0);
+  for (const [address, value] of [[P.JOB, 0], [zero.ZERO.STATE, zero.ZERO.FIELD], [0x00101000, 0]]) {
+    const previous = words.get(address);
+    words.set(address, value);
+    assert.equal(styles.openSpirit(api), false);
+    words.set(address, previous);
+  }
+  assert.equal(writes.length, 1);
+  assert.equal(words.get(P.OPEN), 0);
+});
