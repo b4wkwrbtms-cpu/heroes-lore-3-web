@@ -175,6 +175,17 @@ test("character text, boundaries, title/menu/loading and Inotia/Zero isolation",
   assert.throws(() => parseQuestScene(8, bytes(fixture.scene8).slice(0, -1)));
 });
 
+test("field state reads ignore adjacent guest flags", () => {
+  const r = resources(), m = memory(); m.apply(fixture.snapshots[1]);
+  // Native field dispatch uses LDRB; scene loading sets the next two bytes independently.
+  for (const flags of [0x00010100, 0x01ff0100, 0xffffff00]) {
+    m.write(0x150db48, (flags | 3) >>> 0);
+    assert.equal(readHl3Quests("PD119037", m.api, r)?.selected?.title, "Quest A");
+    m.write(0x150db48, (flags | 4) >>> 0);
+    assert.equal(readHl3Quests("PD119037", m.api, r), undefined, "dialog still hides the tracker");
+  }
+});
+
 test("HUD updates from guest state, throttles reads, supports folding and tears down before another game", () => {
   class Element extends EventTarget {
     hidden = false; textContent = ""; value = ""; dataset = {}; style = {}; children = []; attributes = {};
@@ -202,6 +213,7 @@ test("HUD updates from guest state, throttles reads, supports folding and tears 
   const m = memory(), guide = new Hl3QuestGuide({ parentElement: parent }, "PD119037");
   const session = { cheats: m.api, readResources: () => archive() };
   guide.attach(session); m.apply(fixture.snapshots[1]); m.write(G + 0x9e08, 8, 2); m.write(G + 0x9e1c, 6);
+  m.write(0x150db48, 0x00010103);
   guide.sample(session, 0);
   const [marker, root] = parent.children, [toggle, title, objective, direction, details] = root.children;
   assert.equal(root.hidden, false); assert.equal(title.textContent, "Quest A"); assert.match(objective.textContent, /0\/5/);

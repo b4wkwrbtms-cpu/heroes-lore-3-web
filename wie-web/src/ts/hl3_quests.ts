@@ -183,7 +183,8 @@ function reachable(resources: Hl3QuestResources, start: number, state: QuestCond
 export function readHl3Quests(appId: string, api: CheatApi, resources: Hl3QuestResources, selectedId?: number): QuestSnapshot | undefined {
   if (!isHeroesLore3(appId) || !isHeroesLore3Binary(api)) return undefined;
   const read = (a: number, width = 4) => api.read(a, width, false);
-  if (read(G + 0x50) !== 4 || read(0x0150db48) !== 3) return undefined;
+  // 0x3b1ba reads one byte; the following bytes are independent scene/event flags.
+  if (read(G + 0x50) !== 4 || read(0x0150db48, 1) !== 3) return undefined;
   const menu = read(G + 0x9e00), map = read(G + 0x9c68), collider = read(G + 0x9ba4);
   if (!heap(menu) || !heap(map) || !heap(collider)) return undefined;
   const count = read(menu + 0x5c, 1), character = read(G + 0xa314);
