@@ -15,6 +15,8 @@ import type { CheatApi } from "./backend";
  *   the current map. Each has its tile position, and the hero the index of its current target, which the game sets on
  *   an attack press and clears as soon as the hero walks.
  * - A state word reads ON_FIELD while the player walks the field; menus, the map and dialogs use other values.
+ * - A record starts 0x10 before the fields above, with the EXP earned within the current level. Leaving level L takes
+ *   expToNextLevel(L) and carries the rest over; the game checks for a level up only when EXP comes in.
  */
 export const INOTIA = {
   ROLL: 0x00184880,
@@ -30,6 +32,7 @@ export const INOTIA = {
   PARTY: 0x00171050,
   PARTY_STRIDE: 0x424,
   PARTY_SIZE: 6,
+  EXP: -0x10,
   LEVEL: 0x18,
   MAX_HP: 0x3c,
   MAX_MP: 0x40,
@@ -146,3 +149,48 @@ export const heroTarget = (api: CheatApi): number => api.read(character(0) + INO
 
 export const isMonsterAlive = (api: CheatApi, index: number): boolean =>
   index >= INOTIA.MONSTER_FIRST && index <= INOTIA.MONSTER_LAST && (api.read(character(index) + INOTIA.HP, 4, false) | 0) > 0;
+
+/** The EXP a character needs to leave `level`, as the status screen shows it after the slash; it is the same for every job. */
+export const expToNextLevel = (level: number): number => Math.floor((level ** 3 + 210 * level ** 2 + 1200 * level) / 3);
+
+interface ExpSeen {
+  level: number;
+  exp: number;
+  /** Extra EXP still owed, held back until the level's bar has room for it. */
+  owed: number;
+}
+
+/** What multiplyExp saw of each party slot on its last call. */
+export type ExpWatch = Array<ExpSeen | undefined>;
+
+/**
+ * Multiplies the EXP the party earns on the field: every gain since the last call is paid `factor` − 1 more times.
+ * The extra never fills a bar (it stops one short and waits), so the game's own level up — stats, skill points and
+ * all — happens on the next kill, and what is left is paid after it. Off the field (menus, saves, hiring) gains are not
+ * multiplied, and a slot whose level jumps loses what it was owed.
+ */
+export const multiplyExp = (api: CheatApi, watch: ExpWatch, factor: number) => {
+  const onField = isOnField(api);
+  for (let i = 0; i < INOTIA.PARTY_SIZE; i++) {
+    const member = character(i);
+    const level = api.read(member + INOTIA.LEVEL, 4, false);
+    if (level === 0) {
+      watch[i] = undefined;
+      continue;
+    }
+    let exp = api.read(member + INOTIA.EXP, 4, false);
+    const seen = watch[i];
+    let owed = 0;
+    if (seen && (level === seen.level || level === seen.level + 1)) {
+      owed = seen.owed;
+      const gained = level === seen.level ? exp - seen.exp : exp + expToNextLevel(seen.level) - seen.exp;
+      if (onField && gained > 0) owed += gained * (factor - 1);
+    }
+    const paid = Math.min(owed, Math.max(0, expToNextLevel(level) - 1 - exp));
+    if (paid > 0) {
+      exp += paid;
+      api.write(member + INOTIA.EXP, 4, false, exp);
+    }
+    watch[i] = { level, exp, owed: owed - paid };
+  }
+};

@@ -1193,14 +1193,20 @@ html[data-screen-fit="contain"] #canvas {
     ". up ."
     "left ok right"
     ". down .";
-  grid-template-columns: repeat(3, 42px);
-  grid-template-rows: repeat(3, 36px);
-  gap: 3px;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(3, 44px);
+  gap: 4px;
   justify-content: center;
 }
 
 .player-view[data-pad-layout="keypad"] .pad-left {
   grid-row: 2;
+}
+
+/* The bigger d-pad leaves the stick a shorter zone; let the stick take more of it. */
+.player-view[data-pad-layout="keypad"] .joystick {
+  top: 56%;
+  width: min(84cqw, 76cqh, 160px);
 }
 
 .player-view[data-pad-layout="keypad"] .pad-tools-bar {
@@ -1241,15 +1247,20 @@ html[data-screen-fit="contain"] #canvas {
   display: flex;
 }
 
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="1"] { --x: 200; --y: 205; --d: 54; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="3"] { --x: 40; --y: 205; --d: 54; }
-.player-view[data-pad-layout="keypad"] .action-cluster > .key-attack { --x: 120; --y: 168; --d: 80; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="7"] { --x: 200; --y: 100; --d: 54; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="CLR"] { --x: 120; --y: 96; --d: 52; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="9"] { --x: 40; --y: 100; --d: 54; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="*"] { --x: 200; --y: 32; --d: 50; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="0"] { --x: 120; --y: 30; --d: 50; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="#"] { --x: 40; --y: 32; --d: 50; }
+/* Big keys: the grid is 240 wide and 272 tall here, so the keys use the column's full height as well. */
+.player-view[data-pad-layout="keypad"] .action-cluster > .key-ring {
+  --u: calc(min(100cqw / 240, 100cqh / 272));
+}
+
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="1"] { --x: 200; --y: 200; --d: 70; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="3"] { --x: 40; --y: 200; --d: 70; }
+.player-view[data-pad-layout="keypad"] .action-cluster > .key-attack { --x: 120; --y: 224; --d: 92; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="7"] { --x: 200; --y: 118; --d: 70; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="CLR"] { --x: 120; --y: 118; --d: 66; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="9"] { --x: 40; --y: 118; --d: 70; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="*"] { --x: 200; --y: 36; --d: 66; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="0"] { --x: 120; --y: 36; --d: 66; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="#"] { --x: 40; --y: 36; --d: 66; }
 
 .player-view[data-pad-layout="keypad"] .action-cluster > .key-clr b {
   font-size: calc(var(--d) * var(--u) * 0.27);

@@ -10,8 +10,8 @@ import {
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
 import {
-  GOLD_MAX, INOTIA, countDamagedItems, getGold as getInotiaGold, healParty, isInItemTable, keepGold, readRolledStats, repairItems,
-  setGold as setInotiaGold, setRolledStats,
+  type ExpWatch, GOLD_MAX, INOTIA, countDamagedItems, getGold as getInotiaGold, healParty, isInItemTable, keepGold, multiplyExp,
+  readRolledStats, repairItems, setGold as setInotiaGold, setRolledStats,
 } from "./inotia";
 import { isInotia } from "./pad_profile";
 
@@ -72,8 +72,10 @@ const storageKey = (appId: string) => `wie_cheats_${appId}`;
 const BATTLE_KEY = "전투 능력치 최대 고정";
 const AUTO_HEAL_KEY = "자동 회복";
 const GOLD_KEY = "소지금 유지";
+const EXP_KEY = "경험치 3배";
+const EXP_FACTOR = 3;
 /** Saved toggles that run in the background rather than freezing an address. */
-const TOGGLE_KEYS: string[] = [BATTLE_KEY, AUTO_HEAL_KEY, GOLD_KEY];
+const TOGGLE_KEYS: string[] = [BATTLE_KEY, AUTO_HEAL_KEY, GOLD_KEY, EXP_KEY];
 
 const isInotiaContext = (context: CheatContext) => isInotia({ id: context.appId });
 
@@ -102,6 +104,10 @@ const startTicks = (context: CheatContext, cheats: SavedCheat[]) => {
   if (isInotiaContext(context)) {
     if (on(AUTO_HEAL_KEY)) ticks.push(api => healParty(api));
     if (on(GOLD_KEY)) ticks.push(api => keepGold(api, GOLD_MAX));
+    if (on(EXP_KEY)) {
+      const watch: ExpWatch = [];
+      ticks.push(api => multiplyExp(api, watch, EXP_FACTOR));
+    }
   }
   if (ticks.length === 0) return;
   tickContextId = context.appId;
@@ -486,6 +492,19 @@ export const getCheatPanel = (): CheatPanel => {
       setStatus(healOn ? "파티 자동 회복을 껐어요." : "주인공과 용병의 HP·MP가 35% 아래로 떨어지면 바로 가득 채워요. 쓰러진 동료는 그대로 둬요. 게임을 켤 때마다 자동 적용.");
     }));
     body.append(healRow);
+
+    // 경험치 3배
+    const expOn = saved.some(cheat => cheat.name === EXP_KEY) && tickTimer !== undefined;
+    const expRow = el("div", "cheat-item-actions");
+    expRow.append(button(expOn ? "⭐ 경험치 3배 끄기" : "⭐ 경험치 3배 켜기", expOn ? "primary-command" : "secondary-command", () => {
+      saved = saved.filter(cheat => cheat.name !== EXP_KEY);
+      if (!expOn) saved.push({ name: EXP_KEY, address: INOTIA.PARTY, width: 4, bigEndian: false, value: EXP_FACTOR, freeze: false });
+      persist();
+      if (context) startTicks(context, saved);
+      setStatus(expOn ? "경험치 3배를 껐어요. 이제 원래대로 받아요." : "몬스터를 잡고 얻는 경험치가 주인공·용병 모두 3배가 돼요. 레벨업은 게임이 직접 해서 능력치도 그대로 올라요. 게임을 켤 때마다 자동 적용.");
+    }));
+    body.append(expRow);
+    body.append(el("p", "cheat-muted", "경험치 바가 다 차면 남은 몫은 다음 사냥 때 레벨업한 뒤에 마저 들어와요."));
 
     // 스탯 결정
     let current = "";
