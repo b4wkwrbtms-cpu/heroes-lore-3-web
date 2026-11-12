@@ -9,6 +9,7 @@ import { isHeroesLore3, isHeroesLore3Binary, readSkills } from "./hl3";
 import { Hl3Feedback } from "./hl3_feedback";
 import { Hl3QuestGuide } from "./hl3_quest_guide";
 import { Hl4Feedback } from "./hl4_feedback";
+import { Hl4SlotIcons } from "./hl4_slots";
 import { InotiaHunt } from "./inotia_hunt";
 import { type Direction, HL4_DODGE_KEY, applyPadProfile, isHeroesLore4, isInotia, isZero, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
@@ -83,6 +84,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     : isZero(app) ? new ZeroFeedback(gameCanvas, app.id)
     : isHeroesLore4(app) ? new Hl4Feedback(gameCanvas, app.id, ms => session?.hold?.(ms))
     : undefined;
+  const slotIcons = backend.rendering === "canvas" && isHeroesLore4(app) ? new Hl4SlotIcons(gameCanvas, buttons) : undefined;
   // 영웅서기 제로: its new-game screen also offers the two hidden battle styles (checked twice a second), and a
   // 정령사's menu opens the spirit from the start (every frame, so the entry is open before 5 can be pressed).
   let stylesCheckedAt = 0;
@@ -135,6 +137,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     abortController.abort();
     screenRatioObserver.disconnect();
     feedback?.dispose();
+    slotIcons?.dispose();
     questGuide?.dispose();
     automation.detach();
     hunt?.stop();
@@ -697,6 +700,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       case "frame":
         if (!preparing && !suspended) {
           feedback?.sample(session?.cheats);
+          slotIcons?.update();
           openStyles?.();
           questGuide?.sample(session);
         }

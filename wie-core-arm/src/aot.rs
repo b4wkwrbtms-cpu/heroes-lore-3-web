@@ -9,8 +9,8 @@ use core::{
 
 use hashbrown::{HashMap, HashSet};
 use wie_core_arm_aot::{
-    CompileRequest, CompiledArtifact, CompiledExecutor, CompiledHandle, CompiledRegion, ManifestRegion, PreparationFuture, PreparationState,
-    RegionKey,
+    CodeImage, CompileRequest, CompiledArtifact, CompiledExecutor, CompiledHandle, CompiledRegion, ManifestRegion, PreparationFuture,
+    PreparationState, RegionKey,
 };
 use wie_util::Result;
 
@@ -23,8 +23,16 @@ const MAX_REGION_BLOCKS: usize = 512;
 
 struct Recompilation {
     manifest: ManifestRegion,
+    /// The code the request was built from.
+    images: Arc<[CodeImage]>,
     future: PreparationFuture,
     invalidated: bool,
+}
+
+/// A compiled region and the code it was compiled from.
+struct InstalledRegion {
+    region: CompiledRegion,
+    images: Arc<[CodeImage]>,
 }
 
 pub(crate) struct Aot {
@@ -32,7 +40,9 @@ pub(crate) struct Aot {
     pub state: PreparationState,
     pub entries: HashMap<RegionKey, CompiledHandle>,
     ranges: Vec<Range<u64>>,
-    regions: Vec<CompiledRegion>,
+    /// The code the initial preparation was built from, until its regions are installed.
+    preparing: Option<Arc<[CodeImage]>>,
+    regions: Vec<InstalledRegion>,
     invalidated: Vec<ManifestRegion>,
     /// Entry keys known to lie in no invalidated region. The interpreter asks `recompile` at every branch target
     /// it runs, and a linear scan of all invalidated regions for each one took a large share of the frame once a
@@ -48,6 +58,7 @@ impl Aot {
             state: PreparationState::Loading,
             entries: HashMap::new(),
             ranges: Vec::new(),
+            preparing: None,
             regions: Vec::new(),
             invalidated: Vec::new(),
             uncovered: HashSet::new(),
@@ -71,6 +82,7 @@ impl Aot {
             return Ok(None);
         }
         self.state = PreparationState::Preparing;
+        self.preparing = Some(request.images.clone());
         Ok(Some(self.executor.prepare(request)))
     }
 
@@ -79,8 +91,9 @@ impl Aot {
             return false;
         }
         self.state = PreparationState::Ready;
+        let images = self.preparing.take().unwrap_or_else(|| Vec::new().into());
         match result {
-            Ok(artifact) => self.install(artifact),
+            Ok(artifact) => self.install(artifact, images),
             Err(error) => {
                 tracing::warn!(%error, "ARM AOT preparation failed; using interpreter");
                 return false;
@@ -90,7 +103,7 @@ impl Aot {
         true
     }
 
-    fn install(&mut self, artifact: CompiledArtifact) {
+    fn install(&mut self, artifact: CompiledArtifact, images: Arc<[CodeImage]>) {
         for region in artifact.regions {
             self.entries.extend(
                 region
@@ -99,19 +112,26 @@ impl Aot {
                     .iter()
                     .map(|&pc| (RegionKey { pc, ..region.manifest.entry }, region.handle)),
             );
-            self.regions.push(region);
+            self.regions.push(InstalledRegion {
+                region,
+                images: images.clone(),
+            });
         }
     }
 
-    pub fn invalidate(&mut self, range: Range<u64>) {
+    /// An instruction-cache invalidation of `range`. Compiled code is a function of the instruction bytes alone, so a
+    /// region only goes stale where they changed: games also flush the whole cache after loading data, and dropping
+    /// every region then left them in the interpreter, recompiling one region after another during play.
+    pub fn invalidate(&mut self, range: Range<u64>, memory: &EmulatedMemory) {
         let overlaps = |manifest: &ManifestRegion| manifest.code_ranges.iter().any(|code| code.start < range.end && range.start < code.end);
+        let stale = |manifest: &ManifestRegion, images: &[CodeImage]| overlaps(manifest) && !holds_code(memory, images, &manifest.code_ranges);
         let mut index = 0;
         while index < self.regions.len() {
-            if !overlaps(&self.regions[index].manifest) {
+            if !stale(&self.regions[index].region.manifest, &self.regions[index].images) {
                 index += 1;
                 continue;
             }
-            let region = self.regions.swap_remove(index);
+            let InstalledRegion { region, .. } = self.regions.swap_remove(index);
             for &pc in &region.manifest.instruction_pcs {
                 self.entries.remove(&RegionKey { pc, ..region.manifest.entry });
             }
@@ -120,7 +140,7 @@ impl Aot {
             self.uncovered.clear();
         }
         for pending in &mut self.recompilations {
-            pending.invalidated |= overlaps(&pending.manifest);
+            pending.invalidated |= stale(&pending.manifest, &pending.images);
         }
     }
 
@@ -150,6 +170,7 @@ impl Aot {
         };
         self.recompilations.push(Recompilation {
             manifest,
+            images: request.images.clone(),
             future: self.executor.prepare(request),
             invalidated: false,
         });
@@ -174,12 +195,33 @@ impl Aot {
                 self.uncovered.clear();
             } else {
                 match result {
-                    Ok(artifact) => self.install(artifact),
+                    Ok(artifact) => self.install(artifact, pending.images),
                     Err(error) => tracing::warn!(%error, "ARM AOT recompilation failed; using interpreter"),
                 }
             }
         }
     }
+}
+
+/// Whether memory still holds, over all of `ranges`, the code `images` captured.
+fn holds_code(memory: &EmulatedMemory, images: &[CodeImage], ranges: &[Range<u64>]) -> bool {
+    ranges.iter().all(|range| {
+        let mut covered = 0;
+        for image in images {
+            let image_start = u64::from(image.address);
+            let start = image_start.max(range.start);
+            let end = (image_start + image.bytes.len() as u64).min(range.end);
+            if start >= end {
+                continue;
+            }
+            let offset = (start - image_start) as usize;
+            if !memory.holds(start as u32, &image.bytes[offset..offset + (end - start) as usize]) {
+                return false;
+            }
+            covered += end - start;
+        }
+        covered == range.end - range.start
+    })
 }
 
 fn compile_request(memory: &EmulatedMemory, mut ranges: Vec<Range<u64>>, mode: Option<bool>) -> Result<CompileRequest> {

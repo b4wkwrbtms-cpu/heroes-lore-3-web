@@ -102,3 +102,20 @@ test("the HL4 tracker stays silent off the field, on a new map, on broken links 
   assert.equal(otherBuild.sample({ read: address => (address === 0x4e328 ? 0 : memory.api.read(address)) }, () => hits.push(1), () => {}), false);
   assert.deepEqual(hits, []);
 });
+
+test("the HL4 pad copies slot icons only from frames that show the slot bar, and knows an empty slot", () => {
+  const { HL4_SLOT_ICONS, showsSlotBar, isEmptySlot } = load("hl4_slots");
+  // The slot bar strip (x 50..190, y 293..311) of a field frame: black slot insides, frame colour beside them.
+  const strip = new Uint8ClampedArray(140 * 19 * 4);
+  const put = (x, y, rgb) => strip.set([...rgb, 255], ((y - 293) * 140 + (x - 50)) * 4);
+  for (const left of Object.values(HL4_SLOT_ICONS)) put(left + 16, 300, [74, 73, 58]);
+  for (const x of [60, 100, 140, 180]) put(x, 311, [8, 8, 8]);
+  assert.equal(showsSlotBar(strip), true);
+  assert.equal(isEmptySlot(strip, HL4_SLOT_ICONS["1"]), true);
+  put(HL4_SLOT_ICONS.OK + 7, 303, [90, 200, 60]); // the sword on 5
+  assert.equal(isEmptySlot(strip, HL4_SLOT_ICONS.OK), false);
+  assert.equal(isEmptySlot(strip, HL4_SLOT_ICONS["3"]), true);
+  // A scene or menu drawn over the bottom of the screen is not the slot bar.
+  put(HL4_SLOT_ICONS["9"] + 16, 300, [200, 180, 150]);
+  assert.equal(showsSlotBar(strip), false);
+});

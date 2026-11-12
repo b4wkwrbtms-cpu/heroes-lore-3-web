@@ -188,7 +188,7 @@ impl ArmEngine for Arm32CpuEngine {
                         start..start + 32
                     }
                 };
-                aot.invalidate(range);
+                aot.invalidate(range, &self.mem);
                 lookup_entry = true;
             }
             lookup_entry |= recheck_after_step;
@@ -404,6 +404,26 @@ impl EmulatedMemory {
         }
 
         Ok(())
+    }
+
+    /// Whether memory holds `bytes` at `address`; false where any of it is unmapped.
+    pub fn holds(&self, address: u32, bytes: &[u8]) -> bool {
+        let mut index = 0;
+        let mut current_address = address;
+        while index < bytes.len() {
+            let page_address = current_address & !PAGE_MASK;
+            let Some(page_data) = self.pages[page_address as usize / PAGE_SIZE].bytes.as_ref() else {
+                return false;
+            };
+            let offset = (current_address - page_address) as usize;
+            let available_bytes = (PAGE_SIZE - offset).min(bytes.len() - index);
+            if page_data[offset..offset + available_bytes] != bytes[index..index + available_bytes] {
+                return false;
+            }
+            index += available_bytes;
+            current_address = current_address.wrapping_add(available_bytes as u32);
+        }
+        true
     }
 
     pub(crate) fn code_image(&self, address: u32, size: usize) -> Result<CodeImage> {
@@ -705,7 +725,7 @@ mod tests {
         }
         engine.mem_write(0x1000, &[2, 0x30]).unwrap();
         engine.mem.as_arm32cpu_memory().w16(0x1000, 0x3003);
-        engine.aot.as_mut().unwrap().invalidate(0x1020..0x1040);
+        engine.aot.as_mut().unwrap().invalidate(0x1020..0x1040, &engine.mem);
         assert!(engine.aot.as_ref().unwrap().entries.contains_key(&key));
 
         // MVA addresses any byte in the cache line, not only the region's entry PC.
@@ -735,7 +755,7 @@ mod tests {
 
         // A second explicit flush supersedes a pending snapshot; no page versions are needed.
         engine.mem.as_arm32cpu_memory().w16(0x1000, 0x3004);
-        engine.aot.as_mut().unwrap().invalidate(0x1000..0x1020);
+        engine.aot.as_mut().unwrap().invalidate(0x1000..0x1020, &engine.mem);
         let stale = artifact(&responses.lock().requests[1], 1);
         assert!(responses.lock().ready.take().unwrap().send(Ok(stale)).is_ok());
         engine.reg_write(ArmRegister::PC, 0x1001);
@@ -753,8 +773,14 @@ mod tests {
         assert_eq!(engine.aot.as_ref().unwrap().entries.get(&key).unwrap().module, 2);
         assert_eq!(responses.lock().executed.as_slice(), &[0, 0, 2, 2]);
 
-        engine.aot.as_mut().unwrap().invalidate(0..TOTAL_MEMORY);
-        assert!(engine.aot.as_ref().unwrap().entries.is_empty());
+        // A whole-cache flush that changed no instruction (games also flush after loading data) keeps every region.
+        engine.aot.as_mut().unwrap().invalidate(0..TOTAL_MEMORY, &engine.mem);
+        assert!(engine.aot.as_ref().unwrap().entries.contains_key(&key));
+        // It drops only the regions whose instructions changed.
+        engine.mem.as_arm32cpu_memory().w16(0x1000, 0x3005);
+        engine.aot.as_mut().unwrap().invalidate(0..TOTAL_MEMORY, &engine.mem);
+        assert!(!engine.aot.as_ref().unwrap().entries.contains_key(&key));
+        assert!(engine.aot.as_ref().unwrap().entries.contains_key(&RegionKey { pc: 0x1040, ..key }));
         engine.reg_write(ArmRegister::PC, 0x1001);
         engine.run(0x2000, 10).unwrap();
         assert!(
@@ -1004,6 +1030,8 @@ mod tests {
             let compiled = artifact(&responses.lock().requests[0], 0);
             assert!(responses.lock().ready.take().unwrap().send(Ok(compiled)).is_ok());
             engine.finish_preparation(futures::executor::block_on(preparation));
+            // The instructions in the line at 0x20020 change after compilation; an unchanged region would be kept.
+            engine.mem_write(0x20022, &[0x71, 0x47]).unwrap();
             engine.reg_write(ArmRegister::Cpsr, cpsr);
             engine.reg_write(ArmRegister::PC, 0x1000);
             engine.cpu.reg_set(Mode::User, register, 0x30000);
@@ -1375,7 +1403,7 @@ mod tests {
 
             // Install the original bytes again before testing the next CP15 operation.
             engines.native.mem_write(0x1000, &[1, 0x20]).unwrap();
-            engines.native.aot.as_mut().unwrap().invalidate(0x1000..0x1020);
+            engines.native.aot.as_mut().unwrap().invalidate(0x1000..0x1020, &engines.native.mem);
             engines.reset(0x1001, 0x3f, &[]);
             engines.native.run(0x8000, 2).unwrap();
             let deadline = Instant::now() + Duration::from_secs(10);

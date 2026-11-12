@@ -1074,18 +1074,92 @@ html[data-screen-fit="contain"] #canvas {
   --y: 39;
   --d: 58;
   display: flex;
-  color: #a5f3fc;
-  background: radial-gradient(circle at 50% 30%, rgba(34, 211, 238, 0.42), rgba(8, 145, 178, 0.22) 72%);
-  border-color: rgba(34, 211, 238, 0.5);
 }
 
 .player-view[data-pad-profile="hl4"] .action-cluster > .key-dodge b {
   font-size: calc(var(--d) * var(--u) * 0.27);
 }
 
-.player-view[data-pad-profile="hl4"] .action-cluster > .key-dodge.pressed {
-  background: radial-gradient(circle at 50% 35%, rgba(165, 243, 252, 0.75), rgba(34, 211, 238, 0.45) 75%);
-  border-color: rgba(103, 232, 249, 0.85);
+/* The look of the series' smartphone pads (as in the 영웅서기5 player): translucent dark keys that light up orange,
+   an orange attack key, and the game's own slot icons on the quick-slot keys with the number as a small badge. */
+.player-view[data-pad-profile="hl4"] .pad .key {
+  color: #e7e5e4;
+  background: rgba(30, 30, 34, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.player-view[data-pad-profile="hl4"] .pad .key span {
+  color: rgba(231, 229, 228, 0.6);
+}
+
+.player-view[data-pad-profile="hl4"] .pad .key.pressed,
+.player-view[data-pad-profile="hl4"] .pad .key:active {
+  color: #fff;
+  background: rgba(232, 121, 43, 0.8);
+  border-color: rgba(255, 196, 150, 0.9);
+  box-shadow: 0 0 14px rgba(232, 121, 43, 0.55);
+}
+
+.player-view[data-pad-profile="hl4"] .pad .key-attack {
+  color: #fff;
+  background: radial-gradient(circle at 50% 30%, #ffb27a, #e8792b 58%, #a8461a);
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.22), 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+.player-view[data-pad-profile="hl4"] .pad .key-attack.pressed {
+  background: radial-gradient(circle at 50% 35%, #ffd2b0, #f08a40 60%, #b9531a);
+  box-shadow: 0 0 22px rgba(232, 121, 43, 0.8);
+}
+
+.player-view[data-pad-profile="hl4"] .pad .key-attack span {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.player-view[data-pad-profile="hl4"] .pad .key-dodge {
+  border: 2px solid rgba(232, 121, 43, 0.75);
+}
+
+.player-view[data-pad-profile="hl4"] .action-cluster .slot-icon {
+  width: 46%;
+  height: auto;
+  aspect-ratio: 15 / 13;
+  border-radius: 3px;
+  image-rendering: pixelated;
+}
+
+.player-view[data-pad-profile="hl4"] .action-cluster > .key-slot .slot-icon,
+.player-view[data-pad-profile="hl4"] .action-cluster > .key-sub .slot-icon {
+  width: 58%;
+}
+
+.player-view[data-pad-profile="hl4"] .action-cluster .slot-icon[hidden] {
+  display: none;
+}
+
+.player-view[data-pad-profile="hl4"] .action-cluster > .key-ring:not(.key-attack) .slot-icon:not([hidden]) ~ b {
+  position: absolute;
+  top: 4%;
+  left: 8%;
+  font-size: calc(var(--d) * var(--u) * 0.22);
+  text-shadow: 0 1px 2px #000;
+}
+
+.player-view[data-pad-profile="hl4"] .action-cluster > .key-ring:not(.key-attack) .slot-icon:not([hidden]) ~ span {
+  display: none;
+}
+
+.player-view[data-pad-profile="hl4"] .action-cluster > .key-attack .slot-icon:not([hidden]) ~ span {
+  display: none;
+}
+
+.player-view[data-pad-profile="hl4"] .joystick.active {
+  border-color: rgba(232, 121, 43, 0.5);
+}
+
+.player-view[data-pad-profile="hl4"] .joystick-knob {
+  background: radial-gradient(circle at 36% 30%, #ffc9a0 0%, #e8792b 50%, #8f3d12 100%);
 }
 
 .player-view[data-pad-profile="hl4"] .action-cluster > [data-default-key="7"] { --x: 207; --y: 82; --d: 52; }

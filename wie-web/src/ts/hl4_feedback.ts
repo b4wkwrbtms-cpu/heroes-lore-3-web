@@ -8,10 +8,12 @@ import { HL4_FIELD, type Hl4Hit, Hl4HitTracker } from "./hl4_hits";
  */
 const HEAVY_RATIO = 1.35;
 const HEAVY_SHARE = 0.5;
-/** Hit-stop: the game is held still for a moment so a blow lands with weight. */
-const HOLD_HIT_MS = 24;
-const HOLD_HEAVY_MS = 50;
-const HOLD_KILL_MS = 60;
+/**
+ * Hit-stop: the game is held still for a moment so a heavy blow or the last blow lands with weight. Plain hits do not
+ * stop the game: several a second read as stutter.
+ */
+const HOLD_HEAVY_MS = 40;
+const HOLD_KILL_MS = 50;
 const MAX_SPARKS = 180;
 /** A sprite stands at its feet; its body is about this far above. */
 const BODY = 14;
@@ -143,7 +145,7 @@ export class Hl4Feedback {
       this.rings.push({ x, y, radius: 4, speed: 2.6, life: 1, decay: 0.05, hue: 22 });
       this.rings.push({ x, y, radius: 2, speed: 1.7, life: 1, decay: 0.045, hue: 42 });
     }
-    this.kick(hit.killed ? 2.4 : heavy ? 2.6 : 1.1, hit.killed ? HOLD_KILL_MS : heavy ? HOLD_HEAVY_MS : HOLD_HIT_MS);
+    this.kick(hit.killed ? 2.4 : heavy ? 2.6 : 1.1, hit.killed ? HOLD_KILL_MS : heavy ? HOLD_HEAVY_MS : 0);
     this.start();
   };
 
