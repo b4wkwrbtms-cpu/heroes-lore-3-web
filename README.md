@@ -17,6 +17,15 @@
 
 - `wie-web/src/ts/ma3/`, `wie-web/public/ma3_processor.js`: MA-3 SMAF BGM을 원본 FM 음색으로 직접 합성 (GM 사운드폰트 대신)
 
+## 화면 품질과 렌더링
+- 설정 → 화질 → **고화질 (화면 크기에 맞춰 선명하게)**: 화면 크기에 따라 EPX 확대를 0~2회 적용하고 마지막에 선명한 보간을 적용합니다.
+- 고정 해상도에서는 RGBA 버퍼, JavaScript ImageData, GPU 텍스처를 재사용해 매 프레임의 큰 메모리 할당을 줄입니다.
+- GPU 컨텍스트가 사라지면 원본 캔버스로 표시하고, 복구되면 고화질 표시를 다시 시작합니다.
+- 원본 스킬·타격 애니메이션, 전투 속도와 판정을 유지합니다. 이 개선은 원본에 없는 애니메이션 프레임을 생성하거나 60 FPS를 보장하지 않습니다.
+- 웹앱 업데이트이므로 저장 후 페이지를 새로 열면 적용됩니다. 게임 ZIP을 다시 가져올 필요가 없습니다.
+
+렌더러 회귀 검사: `node --test wie-web/tests/display.test.cjs`
+
 ## Credits
 This project is based on [wie](https://github.com/dlunch/wie), created by Inseok Lee.
 

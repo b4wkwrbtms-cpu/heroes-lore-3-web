@@ -2,7 +2,7 @@
  * Optional WebGL presenter for the 240×320 game image.
  *
  * The emulator paints into its own canvas with putImageData; when "고화질" is on we treat that canvas as a
- * texture, run two Scale2x (EPX) passes (→ 4× pixels with smoothed diagonals) and finally draw it with a
+ * texture, run only the Scale2x (EPX) passes needed for the display size and finally draw it with a
  * "sharp bilinear" filter, which keeps pixels crisp at the fractional scale factors phones end up with
  * instead of the uneven columns `image-rendering: pixelated` produces.
  */
@@ -83,15 +83,19 @@ interface Target {
   height: number;
 }
 
-const EPX_PASSES = 2;
+const MAX_EPX_PASSES = 2;
 
 export class HqDisplay {
   private gl: WebGL2RenderingContext | undefined;
   private epx: Pass | undefined;
   private sharp: Pass | undefined;
   private source: WebGLTexture | undefined;
+  private sourceWidth = 0;
+  private sourceHeight = 0;
   private targets: Target[] = [];
   private enabled = false;
+  private requested = false;
+  private contextLost = false;
   private readonly observer: ResizeObserver | undefined;
   private cssWidth = 0;
   private cssHeight = 0;
@@ -100,6 +104,8 @@ export class HqDisplay {
     private readonly game: HTMLCanvasElement,
     private readonly screen: HTMLCanvasElement,
   ) {
+    screen.addEventListener("webglcontextlost", this.onContextLost);
+    screen.addEventListener("webglcontextrestored", this.onContextRestored);
     if (typeof ResizeObserver !== "undefined") {
       this.observer = new ResizeObserver(entries => {
         for (const entry of entries) {
@@ -117,7 +123,8 @@ export class HqDisplay {
   }
 
   setEnabled(on: boolean): void {
-    if (on && !this.gl) this.init();
+    this.requested = on;
+    if (on && !this.contextLost && !this.gl) this.init();
     this.enabled = on && this.gl !== undefined;
     this.screen.hidden = !this.enabled;
     this.game.classList.toggle("hq-source", this.enabled);
@@ -135,12 +142,22 @@ export class HqDisplay {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.source);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.game);
+    if (this.sourceWidth !== srcWidth || this.sourceHeight !== srcHeight) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.game);
+      this.sourceWidth = srcWidth;
+      this.sourceHeight = srcHeight;
+    } else {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.game);
+    }
 
+    const view = this.viewport(srcWidth, srcHeight);
+    // A small viewport needs only 0–1 passes; always expanding to 4× softens it again on downsampling.
+    const scale = Math.max(view.width / srcWidth, view.height / srcHeight);
+    const passes = Math.min(MAX_EPX_PASSES, Math.max(0, Math.ceil(Math.log2(scale))));
     let texture = this.source;
     let width = srcWidth;
     let height = srcHeight;
-    for (let pass = 0; pass < EPX_PASSES; pass += 1) {
+    for (let pass = 0; pass < passes; pass += 1) {
       const target = this.target(pass, width * 2, height * 2);
       gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
       gl.viewport(0, 0, target.width, target.height);
@@ -156,7 +173,6 @@ export class HqDisplay {
     }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    const view = this.viewport(srcWidth, srcHeight);
     gl.viewport(0, 0, this.screen.width, this.screen.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -172,9 +188,43 @@ export class HqDisplay {
 
   dispose(): void {
     this.observer?.disconnect();
+    this.screen.removeEventListener("webglcontextlost", this.onContextLost);
+    this.screen.removeEventListener("webglcontextrestored", this.onContextRestored);
+    this.setEnabled(false);
+    this.release();
+  }
+
+  private readonly onContextLost = (event: Event): void => {
+    event.preventDefault();
+    this.contextLost = true;
+    // Keep the game visible on its 2D canvas while iOS restores GPU resources.
     this.enabled = false;
     this.screen.hidden = true;
     this.game.classList.remove("hq-source");
+    this.release();
+  };
+
+  private readonly onContextRestored = (): void => {
+    this.contextLost = false;
+    this.setEnabled(this.requested);
+  };
+
+  private release(): void {
+    if (this.gl && !this.contextLost) {
+      for (const target of this.targets) {
+        this.gl.deleteTexture(target.texture);
+        this.gl.deleteFramebuffer(target.framebuffer);
+      }
+      if (this.source) this.gl.deleteTexture(this.source);
+      if (this.epx) this.gl.deleteProgram(this.epx.program);
+      if (this.sharp) this.gl.deleteProgram(this.sharp.program);
+    }
+    this.targets = [];
+    this.source = undefined;
+    this.epx = undefined;
+    this.sharp = undefined;
+    this.gl = undefined;
+    this.sourceWidth = this.sourceHeight = 0;
   }
 
   private viewport(srcWidth: number, srcHeight: number): { x: number; y: number; width: number; height: number } {
@@ -201,18 +251,23 @@ export class HqDisplay {
   private init(): void {
     const gl = this.screen.getContext("webgl2", { alpha: false, antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: false });
     if (!gl) return;
+    this.gl = gl;
     try {
       this.epx = this.compile(gl, EPX_FRAGMENT);
       this.sharp = this.compile(gl, SHARP_FRAGMENT);
     } catch (error) {
       console.warn("HQ display unavailable:", error);
+      this.release();
       return;
     }
     const source = gl.createTexture();
-    if (!source) return;
+    if (!source) {
+      this.release();
+      return;
+    }
     gl.bindTexture(gl.TEXTURE_2D, source);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     this.source = source;
@@ -230,10 +285,9 @@ export class HqDisplay {
     const texture = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    // The last pass is sampled with linear filtering by the sharp-bilinear shader; earlier ones use texelFetch.
-    const filter = index === EPX_PASSES - 1 ? gl.LINEAR : gl.NEAREST;
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    // Any pass can now be the final pass. EPX uses texelFetch, independent of this filter.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const framebuffer = gl.createFramebuffer()!;
@@ -248,19 +302,29 @@ export class HqDisplay {
   private compile(gl: WebGL2RenderingContext, fragmentSource: string): Pass {
     const program = gl.createProgram();
     if (!program) throw new Error("createProgram failed");
-    for (const [type, source] of [
-      [gl.VERTEX_SHADER, VERTEX],
-      [gl.FRAGMENT_SHADER, fragmentSource],
-    ] as const) {
-      const shader = gl.createShader(type);
-      if (!shader) throw new Error("createShader failed");
-      gl.shaderSource(shader, source);
-      gl.compileShader(shader);
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? "shader compile failed");
-      gl.attachShader(program, shader);
+    try {
+      for (const [type, source] of [
+        [gl.VERTEX_SHADER, VERTEX],
+        [gl.FRAGMENT_SHADER, fragmentSource],
+      ] as const) {
+        const shader = gl.createShader(type);
+        if (!shader) throw new Error("createShader failed");
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          const message = gl.getShaderInfoLog(shader) ?? "shader compile failed";
+          gl.deleteShader(shader);
+          throw new Error(message);
+        }
+        gl.attachShader(program, shader);
+        gl.deleteShader(shader);
+      }
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? "program link failed");
+    } catch (error) {
+      gl.deleteProgram(program);
+      throw error;
     }
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? "program link failed");
     return {
       program,
       tex: gl.getUniformLocation(program, "tex"),

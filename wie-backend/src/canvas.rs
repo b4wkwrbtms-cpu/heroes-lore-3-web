@@ -60,6 +60,12 @@ pub trait Image: Send {
     fn get_pixel(&self, x: i32, y: i32) -> Color;
     fn raw(&self) -> Cow<'_, [u8]>;
     fn colors(&self) -> Vec<Color>;
+
+    /// Copy pixels in browser RGBA order, retaining the caller's allocation between frames.
+    fn write_rgba(&self, output: &mut Vec<u8>) {
+        output.clear();
+        output.extend(self.colors().into_iter().flat_map(|c| [c.r, c.g, c.b, c.a]));
+    }
 }
 
 pub trait ImageBuffer: Send {
@@ -281,6 +287,14 @@ where
 
     fn colors(&self) -> Vec<Color> {
         self.data.iter().map(|&x| T::to_color(x)).collect()
+    }
+
+    fn write_rgba(&self, output: &mut Vec<u8>) {
+        output.clear();
+        output.extend(self.data.iter().flat_map(|&pixel| {
+            let c = T::to_color(pixel);
+            [c.r, c.g, c.b, c.a]
+        }));
     }
 }
 
@@ -1043,6 +1057,56 @@ mod tests {
     fn assert_color(image: &dyn Image, x: i32, y: i32, expected: Color) {
         let actual = image.get_pixel(x, y);
         assert_eq!((actual.a, actual.r, actual.g, actual.b), (expected.a, expected.r, expected.g, expected.b));
+    }
+
+    #[test]
+    fn test_rgba_frame_reuse_preserves_pixel_formats_and_resize() {
+        use super::{AbgrPixel, PixelType, Rgb8Pixel, Rgb565Pixel};
+
+        fn check<T: PixelType + 'static>() {
+            let mut image = VecImageBuffer::<T>::new(2, 2);
+            let colors = [
+                Color { r: 255, g: 0, b: 0, a: 255 },
+                Color { r: 0, g: 255, b: 0, a: 128 },
+                Color { r: 0, g: 0, b: 255, a: 0 },
+                Color { r: 17, g: 83, b: 149, a: 32 },
+            ];
+            for (i, c) in colors.iter().enumerate() {
+                image.put_pixel(i as i32 % 2, i as i32 / 2, *c);
+            }
+            let expected = image.colors().into_iter().flat_map(|c| [c.r, c.g, c.b, c.a]).collect::<Vec<_>>();
+            let mut rgba = Vec::with_capacity(16);
+            let allocation = rgba.as_ptr();
+            image.write_rgba(&mut rgba);
+            assert_eq!(rgba, expected);
+            assert_eq!(rgba.as_ptr(), allocation);
+
+            // Same-size animation frames overwrite all pixels without allocating or retaining old colors.
+            image.put_pixel(0, 0, colors[3]);
+            image.write_rgba(&mut rgba);
+            let c = image.get_pixel(0, 0);
+            assert_eq!(&rgba[..4], &[c.r, c.g, c.b, c.a]);
+            assert_eq!(rgba.as_ptr(), allocation);
+
+            let small = VecImageBuffer::<T>::new(1, 1);
+            small.write_rgba(&mut rgba);
+            assert_eq!(rgba.len(), 4);
+            assert_eq!(rgba.as_ptr(), allocation);
+            let large = VecImageBuffer::<T>::new(4, 4);
+            large.write_rgba(&mut rgba);
+            assert_eq!(rgba.len(), 64);
+        }
+
+        check::<Rgb332Pixel>();
+        check::<Rgb565Pixel>();
+        check::<Rgb8Pixel>();
+        check::<ArgbPixel>();
+        check::<AbgrPixel>();
+
+        let image = SharedImageBuffer::new(1, vec![Color { r: 11, g: 22, b: 33, a: 44 }]);
+        let mut rgba = vec![255; 8];
+        image.write_rgba(&mut rgba);
+        assert_eq!(rgba, [11, 22, 33, 44]);
     }
 
     #[derive(Clone)]
