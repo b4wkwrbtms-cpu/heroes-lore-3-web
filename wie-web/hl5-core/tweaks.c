@@ -10,7 +10,7 @@
 //  - SP (기력) never runs out: it stays full
 //  - trait points from quests are tripled too
 //  - the knight walks as fast as the rogue (class move speed 6 -> 8)
-//  - skill books from the skill master cost nothing
+//  - skill books from the skill master cost nothing and can be learned at any level
 //  - refining costs nothing and succeeds at least 80% of the time at every level
 //  - the cash shop gives everything for free (it needed EA's servers): the item, or what a box holds
 //  - on the game-over screen the hero can always revive: the game asks to use a revival charm as if one
@@ -334,6 +334,10 @@ EXPORT(apply_tweaks) int apply_tweaks(u32 seed) {
   n += patch(0x81924, 0xe59b2030u, 0xe3a02000u); // CommonUi::DrawAutoItemSkillShopInfoBox: shown price -> 0
   n += patch(0x119770, 0xe59d2084u, 0xe3a02000u); // StateInNpcMenu::DrawSkillBuy: price under the selected book -> 0
   n += patch(0x119ab0, 0xe59d2084u, 0xe3a02000u); // StateInNpcMenu::DrawSkillBuy: same, other layout
+  // skill books: no level requirement for learning them (the class must still match)
+  n += patch(0x10b8a0, 0xbafffd68u, 0xe1a00000u); // StateInGameMenu::Process (book used from the bag): blt "level too low" -> nop
+  n += patch(0x11a274, 0xba0001e2u, 0xe1a00000u); // StateInNpcMenu::Process (just bought): blt -> nop, offer to learn it at once
+  n += patch(0x1193c8, 0xdaffffbbu, 0xeaffffbbu); // StateInNpcMenu::DrawSkillBuy: ble -> b, no lock over books above the hero's level
   // refining costs nothing: RefineItem::GetItemRefineMoney returns price x (level + 1), price -> 0
   n += patch(0xa0934, 0xe5930030u, 0xe3a00000u);
   if (rd32(LOAD_BASE + REFINE_LOAD) == 0xe92d4ff0u && rd32(LOAD_BASE + REFINE_LOADED) == 0xe28dd00cu) {
