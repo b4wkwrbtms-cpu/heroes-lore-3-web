@@ -282,6 +282,13 @@ EXPORT(apply_tweaks) int apply_tweaks(u32 seed) {
   n += patch(0xdeba0, 0xebff02f5u, 0xe3a00001u); // StateGame::TouchGameOver: same
   n += patch(0xe036c, 0xebfefd02u, 0xe3a00001u); // StateGame::KeyGameOver: same
   n += patch(0xe03b8, 0xebff0657u, 0xe1a00000u); // StateGame::KeyGameOver: bl DeleteBagItemCategoryIndex -> nop
+  // skill master: skill books cost nothing
+  n += patch(0x118e3c, 0xe59d3044u, 0xe3a03000u); // StateInNpcMenu::KeySkillBuy: price for the money check -> 0
+  n += patch(0x118e70, 0xe59d3044u, 0xe3a03000u); // StateInNpcMenu::KeySkillBuy: price in the confirm popup -> 0
+  n += patch(0x11a218, 0xe2611000u, 0xe3a01000u); // StateInNpcMenu::Process: IncreaseMoney(-price) -> IncreaseMoney(0)
+  n += patch(0x81924, 0xe59b2030u, 0xe3a02000u); // CommonUi::DrawAutoItemSkillShopInfoBox: shown price -> 0
+  n += patch(0x119770, 0xe59d2084u, 0xe3a02000u); // StateInNpcMenu::DrawSkillBuy: price under the selected book -> 0
+  n += patch(0x119ab0, 0xe59d2084u, 0xe3a02000u); // StateInNpcMenu::DrawSkillBuy: same, other layout
   if (rd32(LOAD_BASE + CLASS_SPEED) == 0xe5c4311au) { hook_at(LOAD_BASE + CLASS_SPEED, hle_class_speed, "knight_speed"); n++; }
   if (rd32(LOAD_BASE + QUEST_TRAIT) == 0xe0812002u) { hook_at(LOAD_BASE + QUEST_TRAIT, hle_quest_trait, "quest_trait"); n++; }
   fn_new_item = find_symbol("_ZN9ItemTable7NewItemEaa");
