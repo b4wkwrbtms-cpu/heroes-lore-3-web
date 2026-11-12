@@ -1,0 +1,53 @@
+name: hl4 aot check (temporary)
+
+on:
+  push:
+    branches: [hl4-aot-check]
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-wasm-
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Checks
+        run: |
+          mkdir -p out
+          set +e
+          { cargo fmt --all --check; echo "fmt exit $?"; } > out/fmt.log 2>&1
+          { cargo test -p wie-core-arm -p wie-core-arm-aot 2>&1; echo "test exit $?"; } > out/test.log
+          { cargo clippy --workspace 2>&1; echo "clippy exit $?"; } > out/clippy.log
+          npm ci > out/npm.log 2>&1
+          { npm run build:prod 2>&1; echo "build exit $?"; } > out/build.log
+          if [ -d wie-web/dist ]; then cp -r wie-web/dist out/dist; fi
+          tail -5 out/*.log
+      - name: Publish results
+        if: always()
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: out
+          publish_branch: hl4-aot-check-out
+          force_orphan: true
