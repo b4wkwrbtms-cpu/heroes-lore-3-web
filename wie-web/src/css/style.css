@@ -1380,6 +1380,231 @@ html[data-screen-fit="contain"] #canvas {
   opacity: 0.35;
 }
 
+/* ---- 이노티아 look ----
+   Taken from the game's title art, a blue dragon and an amber dragon wound around a magic circle: moving is the blue
+   dragon's sea-teal, acting is the amber one's fire. Keys are dark lacquer with a bronze rim and numerals in the ivory
+   of the game's parchment menus; attack alone wears the magic circle. */
+.player-view[data-pad-profile="inotia"] {
+  --ino-night: #14232e;
+  --ino-deep: #0a141b;
+  --ino-slate: #182833;
+  --ino-slate-hi: #263c4a;
+  --ino-bronze: 186 151 92;
+  --ino-ivory: #f1e8d3;
+  --ino-mist: #93a9b2;
+  --ino-teal: 76 192 204;
+  --ino-amber: 245 187 85;
+  --pad-bg: linear-gradient(180deg, var(--ino-night), var(--ino-deep) 70%);
+}
+
+.player-view[data-pad-profile="inotia"] .pad {
+  border-top: 1px solid rgb(var(--ino-bronze) / 0.28);
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key {
+  color: var(--ino-ivory);
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.09), transparent 60%),
+    linear-gradient(180deg, var(--ino-slate-hi), var(--ino-slate));
+  border: 1px solid rgb(var(--ino-bronze) / 0.36);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.32),
+    0 3px 8px rgba(0, 0, 0, 0.42);
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key b {
+  font-weight: 600;
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key span {
+  color: var(--ino-mist);
+  font-family: system-ui, sans-serif;
+  font-weight: 500;
+}
+
+/* Pressed: the rim turns to fire and the key warms from inside. */
+.player-view[data-pad-profile="inotia"] .pad .key.pressed,
+.player-view[data-pad-profile="inotia"] .pad .key:active {
+  background:
+    radial-gradient(circle at 50% 45%, rgb(var(--ino-amber) / 0.42), rgb(var(--ino-amber) / 0.08) 70%),
+    linear-gradient(180deg, var(--ino-slate-hi), var(--ino-slate));
+  border-color: rgb(var(--ino-amber) / 0.85);
+  box-shadow: 0 0 16px rgb(var(--ino-amber) / 0.45), inset 0 0 10px rgb(var(--ino-amber) / 0.25);
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key:focus-visible {
+  outline: 2px solid rgb(var(--ino-teal));
+  outline-offset: 2px;
+}
+
+/* Top bar: quiet lacquer tabs. */
+.player-view[data-pad-profile="inotia"] .pad .key-util,
+.player-view[data-pad-profile="inotia"] .pad-tool {
+  color: var(--ino-mist);
+  background: rgb(255 255 255 / 0.03);
+  border: 1px solid rgb(var(--ino-bronze) / 0.24);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key-util span {
+  color: var(--ino-mist);
+}
+
+.player-view[data-pad-profile="inotia"] .pad-tools {
+  background: rgb(16 28 37 / 0.97);
+  border-color: rgb(var(--ino-bronze) / 0.3);
+}
+
+/* The phone's d-pad as one cross-shaped plate; a pressed arm lights sea-teal, the colour of moving. */
+.player-view[data-pad-profile="inotia"] .pad-dpad {
+  gap: 0;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.45));
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key-dpad {
+  color: var(--ino-mist);
+  border-radius: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  font-size: 0.78rem;
+  transform: none;
+}
+
+.player-view[data-pad-profile="inotia"] .pad .dpad-up { border-bottom: 0; border-radius: 14px 14px 0 0; }
+.player-view[data-pad-profile="inotia"] .pad .dpad-down { border-top: 0; border-radius: 0 0 14px 14px; }
+.player-view[data-pad-profile="inotia"] .pad .dpad-left { border-right: 0; border-radius: 14px 0 0 14px; }
+.player-view[data-pad-profile="inotia"] .pad .dpad-right { border-left: 0; border-radius: 0 14px 14px 0; }
+
+/* OK is a round seat engraved in the middle of the cross. */
+.player-view[data-pad-profile="inotia"] .pad .dpad-ok {
+  color: var(--ino-ivory);
+  background:
+    radial-gradient(closest-side, var(--ino-slate-hi) 0 74%, rgb(var(--ino-bronze) / 0.55) 77% 80%, transparent 83%),
+    linear-gradient(180deg, #213441, var(--ino-slate));
+  border: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key-dpad.pressed,
+.player-view[data-pad-profile="inotia"] .pad .key-dpad:active {
+  color: #e6fbfd;
+  background:
+    radial-gradient(circle at 50% 50%, rgb(var(--ino-teal) / 0.5), rgb(var(--ino-teal) / 0.12) 75%),
+    linear-gradient(180deg, var(--ino-slate-hi), var(--ino-slate));
+  border-color: rgb(var(--ino-teal) / 0.8);
+  box-shadow: inset 0 0 12px rgb(var(--ino-teal) / 0.35);
+}
+
+/* 취소 keeps a garnet tint so it never reads as another quick slot. */
+.player-view[data-pad-profile="inotia"] .action-cluster > .key-clr {
+  color: #f6dcdc;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.08), transparent 60%),
+    linear-gradient(180deg, #4a2a33, #2e1b22);
+  border-color: rgb(214 120 132 / 0.45);
+}
+
+.player-view[data-pad-profile="inotia"] .action-cluster > .key-clr span {
+  color: rgb(246 220 220 / 0.62);
+}
+
+/* Attack: an amber orb with a magic circle engraved round its face. */
+.player-view[data-pad-profile="inotia"] .pad .key-attack {
+  color: #3b1f08;
+  background: radial-gradient(circle at 50% 28%, #ffe6ad 0%, rgb(var(--ino-amber)) 44%, #c56c1d 100%);
+  border: 1px solid rgb(255 238 196 / 0.65);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.55),
+    inset 0 -6px 12px rgba(112, 46, 0, 0.35),
+    0 6px 18px rgba(0, 0, 0, 0.5),
+    0 0 24px rgb(var(--ino-amber) / 0.16);
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key-attack b {
+  font-weight: 700;
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key-attack span {
+  max-width: 74%;
+  color: rgb(59 31 8 / 0.72);
+  font-size: max(0.55rem, calc(var(--d) * var(--u) * 0.11));
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key-attack::before {
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgb(120 56 10 / 0.38);
+  border-radius: 50%;
+  background: repeating-conic-gradient(rgb(120 56 10 / 0.42) 0 2deg, transparent 2deg 15deg);
+  content: "";
+  mask: radial-gradient(closest-side, #000 0 0, transparent 0 86%, #000 87% 100%);
+  pointer-events: none;
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key-attack.pressed,
+.player-view[data-pad-profile="inotia"] .pad .key-attack:active {
+  background: radial-gradient(circle at 50% 34%, #fff3d1 0%, #ffcb6b 46%, #d9792a 100%);
+  border-color: rgb(255 238 196 / 0.9);
+  box-shadow: 0 0 26px rgb(var(--ino-amber) / 0.7), inset 0 -4px 10px rgba(112, 46, 0, 0.3);
+}
+
+.player-view[data-pad-profile="inotia"] .pad .key-attack.pressed::before,
+.player-view[data-pad-profile="inotia"] .pad .key-attack:active::before {
+  border-color: rgb(255 250 235 / 0.7);
+  background: repeating-conic-gradient(rgb(255 250 235 / 0.75) 0 2deg, transparent 2deg 15deg);
+}
+
+/* The stick: a lacquer disc with a bronze rim and a sea-teal gem for a knob. */
+.player-view[data-pad-profile="inotia"] .joystick {
+  background: radial-gradient(circle at 50% 38%, #1f3240 0%, #142531 58%, #0c1820 100%);
+  border: 1px solid rgb(var(--ino-bronze) / 0.42);
+  box-shadow:
+    inset 0 0 0 9px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 10px rgb(var(--ino-bronze) / 0.16),
+    inset 0 10px 22px rgba(0, 0, 0, 0.55),
+    0 6px 18px rgba(0, 0, 0, 0.5);
+  opacity: 0.88;
+}
+
+.player-view[data-pad-profile="inotia"] .joystick.active {
+  border-color: rgb(var(--ino-teal) / 0.6);
+  opacity: 1;
+}
+
+.player-view[data-pad-profile="inotia"] .joystick-arrow {
+  opacity: 0.55;
+}
+
+.player-view[data-pad-profile="inotia"] .joystick-arrow-up { border-bottom-color: rgb(var(--ino-bronze)); }
+.player-view[data-pad-profile="inotia"] .joystick-arrow-down { border-top-color: rgb(var(--ino-bronze)); }
+.player-view[data-pad-profile="inotia"] .joystick-arrow-left { border-right-color: rgb(var(--ino-bronze)); }
+.player-view[data-pad-profile="inotia"] .joystick-arrow-right { border-left-color: rgb(var(--ino-bronze)); }
+
+.player-view[data-pad-profile="inotia"] .joystick[data-direction~="up"] .joystick-arrow-up,
+.player-view[data-pad-profile="inotia"] .joystick[data-direction~="down"] .joystick-arrow-down,
+.player-view[data-pad-profile="inotia"] .joystick[data-direction~="left"] .joystick-arrow-left,
+.player-view[data-pad-profile="inotia"] .joystick[data-direction~="right"] .joystick-arrow-right {
+  opacity: 1;
+  filter: drop-shadow(0 0 4px rgb(var(--ino-teal) / 0.9));
+}
+
+.player-view[data-pad-profile="inotia"] .joystick[data-direction~="up"] .joystick-arrow-up { border-bottom-color: rgb(var(--ino-teal)); }
+.player-view[data-pad-profile="inotia"] .joystick[data-direction~="down"] .joystick-arrow-down { border-top-color: rgb(var(--ino-teal)); }
+.player-view[data-pad-profile="inotia"] .joystick[data-direction~="left"] .joystick-arrow-left { border-right-color: rgb(var(--ino-teal)); }
+.player-view[data-pad-profile="inotia"] .joystick[data-direction~="right"] .joystick-arrow-right { border-left-color: rgb(var(--ino-teal)); }
+
+.player-view[data-pad-profile="inotia"] .joystick-knob {
+  background: radial-gradient(circle at 38% 30%, #d4f6f8 0%, rgb(var(--ino-teal)) 40%, #155a68 100%);
+  border: 1px solid rgb(222 250 252 / 0.5);
+  box-shadow:
+    0 6px 14px rgba(0, 0, 0, 0.55),
+    inset 0 -4px 8px rgba(0, 32, 40, 0.45),
+    inset 0 2px 4px rgba(255, 255, 255, 0.45);
+}
+
 /* Full keypad: a bottom sheet for the keys that are rarely needed. */
 .keypad-sheet {
   position: fixed;
