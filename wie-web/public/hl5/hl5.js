@@ -1,5 +1,5 @@
 // 영웅서기5 player: runs the game's ARM library in hl5core.wasm and presents it on an iPhone in landscape.
-const VERSION = "7";
+const VERSION = "8";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -1414,7 +1414,23 @@ function startGame() {
   requestAnimationFrame(frameLoop);
 }
 
+// The home-screen app can keep an old index.html for a while; version.txt is always fetched fresh, and
+// when it names a newer version the page reloads once under a new address, which bypasses the cache.
+async function checkForUpdate() {
+  try {
+    const r = await fetch(`version.txt?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return false;
+    const v = (await r.text()).trim();
+    if (!/^\d+$/.test(v) || Number(v) <= Number(VERSION) || sessionStorage.getItem("hl5.update") === v) return false;
+    sessionStorage.setItem("hl5.update", v);
+    location.replace(`./?v=${v}`);
+    return true;
+  } catch { return false; }
+}
+
 async function boot() {
+  $("version").textContent = `버전 ${VERSION}`;
+  if (await checkForUpdate()) return;
   bindInput();
   bindSettings();
   syncSettings();
