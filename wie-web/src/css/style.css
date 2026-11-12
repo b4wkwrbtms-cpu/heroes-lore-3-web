@@ -1047,6 +1047,11 @@ html[data-screen-fit="contain"] #canvas {
   padding-top: 46px;
 }
 
+/* The top bar's save slot opens the skill window in Inotia; its save icon would mislead. */
+.player-view[data-pad-profile="inotia"] .key-util[data-default-key="CALL"] svg {
+  display: none;
+}
+
 /* 취소 lives in the keypad; the top bar keeps only the map, skills and ⋯. */
 .player-view[data-pad-layout="keypad"] .pad-utils .key-menu {
   display: none;
@@ -1376,12 +1381,18 @@ html[data-screen-fit="contain"] #canvas {
 }
 
 .cheat-status {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   min-height: 1.2em;
+  padding: 6px 0;
+  background: Canvas;
   color: #0f766e;
   font-size: 0.85rem;
 }
 
-.cheat-status.error {
+.cheat-status.error,
+.cheat-alert {
   color: #b91c1c;
 }
 

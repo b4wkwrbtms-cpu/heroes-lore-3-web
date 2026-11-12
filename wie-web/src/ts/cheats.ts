@@ -400,10 +400,8 @@ export const getCheatPanel = (): CheatPanel => {
         break;
     }
 
-    if (statusText) {
-      const status = el("p", `cheat-status${statusError ? " error" : ""}`, statusText);
-      body.append(status);
-    }
+    // On top and sticky: the result of a button deep in the list stays in view.
+    if (statusText) body.prepend(el("p", `cheat-status${statusError ? " error" : ""}`, statusText));
   };
 
   let hl3Category = 18;
@@ -451,7 +449,7 @@ export const getCheatPanel = (): CheatPanel => {
       damaged = 0;
     }
     if (damaged > 0) {
-      body.append(el("p", "cheat-status error", `수치가 망가진 아이템이 ${damaged}개 있어요. DMG/DEF가 수백만으로 튀는 원인이에요.`));
+      body.append(el("p", "cheat-alert", `수치가 망가진 아이템이 ${damaged}개 있어요. DMG/DEF가 수백만으로 튀는 원인이에요.`));
       const repairRow = el("div", "cheat-item-actions");
       repairRow.append(button(`🛠 아이템 수치 복구 (${damaged}개)`, "primary-command", () => {
         try {
@@ -832,7 +830,7 @@ export const getCheatPanel = (): CheatPanel => {
     macroSlotRow.append(el("span", undefined, "묶음이 빌려 쓰는 칸"), slotSelect(auto.macroSlot, key => saveAuto({ ...auto, macroSlot: key })), el("span", undefined, "(끝나면 원래대로 돌려놔요)"));
     body.append(macroSlotRow);
     if (auto.potionOn && (auto.macroSlot === auto.hpKey || auto.macroSlot === auto.spKey)) {
-      body.append(el("p", "cheat-status error", "물약 키와 같은 칸이에요. 묶음이 빌려 쓰는 칸을 다른 키로 바꿔 주세요."));
+      body.append(el("p", "cheat-alert", "물약 키와 같은 칸이에요. 묶음이 빌려 쓰는 칸을 다른 키로 바꿔 주세요."));
     }
     auto.macros.forEach((macro, i) => {
       const item = el("div", "cheat-item");
@@ -969,7 +967,7 @@ export const getCheatPanel = (): CheatPanel => {
         }));
       }
     } catch (error) {
-      body.append(el("p", "cheat-status error", String(error)));
+      body.append(el("p", "cheat-alert", String(error)));
     }
 
     // 가방 보기
@@ -995,7 +993,7 @@ export const getCheatPanel = (): CheatPanel => {
         }
         body.append(el("p", "cheat-muted", `가방 ${bag.length}/${HL3.SLOTS}칸 사용 중`), list);
       } catch (error) {
-        body.append(el("p", "cheat-status error", String(error)));
+        body.append(el("p", "cheat-alert", String(error)));
       }
     }
     body.append(el("div", "cheat-divider"));
