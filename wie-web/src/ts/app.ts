@@ -359,9 +359,10 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   document.addEventListener("gesturestart", event => event.preventDefault(), { signal: abortController.signal });
 
   // Floating joystick: a touch anywhere in the left zone puts the stick under the thumb, so it never has to be found.
-  // The base follows the thumb only once it pulls past the knob's reach, so relaxing the thumb a little keeps walking;
-  // what the stick shows is exactly what it sends. Directions are four 90° sectors with some hysteresis, sent as one
-  // key at a time (the old key is released before the new one is pressed, so turning never leaves two held).
+  // The base then stays put for the whole touch: a base that trailed the thumb crept up the screen, and pulling the
+  // thumb back down kept pressing up until it crossed the moved centre. What the stick shows is what it sends.
+  // Directions are four 90° sectors with some hysteresis, sent as one key at a time (the old key is released before
+  // the new one is pressed, so turning never leaves two held).
   const joystickZone = playerView.querySelector<HTMLElement>(".joystick-zone");
   const joystick = joystickZone?.querySelector<HTMLElement>("#joystick");
   if (joystickZone && joystick) {
@@ -371,13 +372,11 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     const ENGAGE_PX = 10;
     const RELEASE_PX = 6;
     const HYSTERESIS_DEG = 10;
-    const REACH = 0.7;
     let activePointer: number | undefined;
     let zoneRect = zone.getBoundingClientRect();
     let originX = 0;
     let originY = 0;
     let radius = 1;
-    let reach = 1;
     let sector: number | undefined;
 
     const applyDirection = (dx: number, dy: number) => {
@@ -402,15 +401,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     };
 
     const track = (event: PointerEvent) => {
-      let dx = event.clientX - originX;
-      let dy = event.clientY - originY;
-      const distance = Math.hypot(dx, dy);
-      if (distance > reach) {
-        originX = event.clientX - (dx * reach) / distance;
-        originY = event.clientY - (dy * reach) / distance;
-        dx = event.clientX - originX;
-        dy = event.clientY - originY;
-      }
+      const dx = event.clientX - originX;
+      const dy = event.clientY - originY;
       // Draw the base where it is, kept mostly inside the zone; the knob sits under the thumb within the ring.
       const clamp = (value: number, size: number) => Math.min(Math.max(value, radius * 0.6), size - radius * 0.6);
       const ringX = clamp(originX - zoneRect.left, zoneRect.width);
@@ -453,7 +445,6 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         radius = Math.max(1, ring.width / 2);
         const ringX = ring.left + radius;
         const ringY = ring.top + radius;
-        reach = radius * REACH;
         sector = undefined;
         // Pressing the resting stick's rim works like a d-pad: that is already a direction from its centre.
         // Anywhere else the stick comes to the thumb and starts neutral.
