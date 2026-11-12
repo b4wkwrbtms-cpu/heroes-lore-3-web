@@ -5,6 +5,7 @@ import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, 
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
 import { isHeroesLore3, readSkills } from "./hl3";
+import { Hl3Feedback } from "./hl3_feedback";
 import { type Direction, applyPadProfile, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
 
@@ -66,6 +67,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   else delete playerView.dataset.padProfile;
   // Landscape sizes the screen column from the game's own aspect (240×320, 176×220, ...).
   const gameCanvas = document.getElementById("canvas") as HTMLCanvasElement;
+  const feedback = backend.rendering === "canvas" && isHeroesLore3(app.title, app.filename) ? new Hl3Feedback(gameCanvas) : undefined;
   const updateScreenRatio = () => {
     if (gameCanvas.width > 0 && gameCanvas.height > 0) playerView.style.setProperty("--screen-ratio", String(gameCanvas.width / gameCanvas.height));
   };
@@ -99,6 +101,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     clearTimeout(warningTimer);
     abortController.abort();
     screenRatioObserver.disconnect();
+    feedback?.dispose();
     automation.detach();
     unsubscribeAuto();
     inputs.clear();
@@ -487,6 +490,9 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   start = backend.startApp(app.id, event => {
     if (ending) return;
     switch (event.type) {
+      case "frame":
+        if (!preparing && !suspended) feedback?.sample(session?.cheats);
+        break;
       case "ready":
         if (preparing) recordPageView(app.title);
         preparing = false;
@@ -496,6 +502,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         break;
       case "suspended":
         suspended = event.suspended;
+        feedback?.clear();
         inputs.clear();
         updateControls();
         break;

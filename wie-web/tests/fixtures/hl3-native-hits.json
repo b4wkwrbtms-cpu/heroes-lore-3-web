@@ -1,0 +1,85 @@
+{
+  "source": "LGT binary.mod, native damage 0x3863c\u21920x38702; camera 0x17080\u21920x17122; draw anchor 0x1c868\u21920x1c882. Only the damage callback is stubbed.",
+  "sha256": "f91c77567f9f241c78f20e7536e536073673dd3d1153b4729a9128bd8c9055dd",
+  "hits": [
+    {
+      "kind": 0,
+      "beforeHp": 100,
+      "requestedDamage": 30,
+      "afterHp": 70,
+      "markerHex": "1e0000000000"
+    },
+    {
+      "kind": 1,
+      "beforeHp": 100,
+      "requestedDamage": 30,
+      "afterHp": 100,
+      "markerHex": "ffff00000100"
+    },
+    {
+      "kind": 2,
+      "beforeHp": 100,
+      "requestedDamage": 30,
+      "afterHp": 100,
+      "markerHex": "ffff00000200"
+    },
+    {
+      "kind": 0,
+      "beforeHp": 10,
+      "requestedDamage": 30,
+      "afterHp": 0,
+      "markerHex": "1e0000000000"
+    },
+    {
+      "kind": 0,
+      "beforeHp": 100,
+      "requestedDamage": 0,
+      "afterHp": 100,
+      "markerHex": "000000000000"
+    }
+  ],
+  "cameras": [
+    {
+      "x": -100,
+      "y": -200,
+      "mapWidth": 640,
+      "mapHeight": 640,
+      "nativeX": -100,
+      "nativeY": -200
+    },
+    {
+      "x": 40,
+      "y": 50,
+      "mapWidth": 640,
+      "mapHeight": 640,
+      "nativeX": 0,
+      "nativeY": 0
+    },
+    {
+      "x": -900,
+      "y": -900,
+      "mapWidth": 640,
+      "mapHeight": 640,
+      "nativeX": -400,
+      "nativeY": -320
+    },
+    {
+      "x": -20,
+      "y": -20,
+      "mapWidth": 160,
+      "mapHeight": 240,
+      "nativeX": 40,
+      "nativeY": 40
+    }
+  ],
+  "anchor": {
+    "worldX": 210,
+    "worldY": 230,
+    "renderX": 3,
+    "renderY": 4,
+    "cameraX": -100,
+    "cameraY": -150,
+    "nativeX": 113,
+    "nativeY": 84
+  }
+}

@@ -121,6 +121,7 @@ export const startWasmSession = (
       if (painted !== presented) {
         presented = painted;
         presentFrame();
+        onEvent({ type: "frame" });
       }
       if (emulator.is_exited()) {
         void session.stop();

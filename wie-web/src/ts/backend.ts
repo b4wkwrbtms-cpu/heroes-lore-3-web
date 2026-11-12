@@ -17,6 +17,7 @@ export interface Settings {
 
 export type SessionEvent =
   | { type: "ready" }
+  | { type: "frame" }
   | { type: "suspended"; suspended: boolean }
   | { type: "warning"; message: string }
   | { type: "stopped"; failed: boolean }
