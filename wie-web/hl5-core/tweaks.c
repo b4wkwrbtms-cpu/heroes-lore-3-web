@@ -8,6 +8,7 @@
 //  - every equipped accessory adds critical +25 on top of its own options
 //  - the hero's buffs (buff skills, stance and spirit buffs) do not run out
 //  - trait points from quests are tripled too
+//  - the knight walks as fast as the rogue (class move speed 6 -> 8)
 //  - the cash shop gives everything for free (it needed EA's servers): the item, or what a box holds
 //  - on the game-over screen the hero can always revive: the game asks to use a revival charm as if one
 //    were in the bag, and reviving does not take one (buying one needs EA's servers, which are gone)
@@ -209,6 +210,17 @@ static void hle_quest_trait(void) {
   cpu_pc = LOAD_BASE + QUEST_TRAIT + 4;
 }
 
+// HERO::LoadResClassInfo stores the class's move speed: strb r3, [r4, #0x11a]. The knight (class 3)
+// gets the rogue's 8 instead of 6.
+#define CLASS_SPEED 0x8c22cu
+static void hle_class_speed(void) {
+  u32 hero = R[4];
+  s32 v = (s8)(R[3] & 0xff);
+  if ((s8)rd8(hero + 0x22c) == 3 && v < 8) v = 8;
+  wr8(hero + 0x11a, (u8)v);
+  cpu_pc = LOAD_BASE + CLASS_SPEED + 4;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Buffs: BATTLER::DecreaseCount(short *timer) counts every buff down; the hero's buff-skill, stance
 // and spirit-buff timers are left alone
@@ -270,6 +282,7 @@ EXPORT(apply_tweaks) int apply_tweaks(u32 seed) {
   n += patch(0xdeba0, 0xebff02f5u, 0xe3a00001u); // StateGame::TouchGameOver: same
   n += patch(0xe036c, 0xebfefd02u, 0xe3a00001u); // StateGame::KeyGameOver: same
   n += patch(0xe03b8, 0xebff0657u, 0xe1a00000u); // StateGame::KeyGameOver: bl DeleteBagItemCategoryIndex -> nop
+  if (rd32(LOAD_BASE + CLASS_SPEED) == 0xe5c4311au) { hook_at(LOAD_BASE + CLASS_SPEED, hle_class_speed, "knight_speed"); n++; }
   if (rd32(LOAD_BASE + QUEST_TRAIT) == 0xe0812002u) { hook_at(LOAD_BASE + QUEST_TRAIT, hle_quest_trait, "quest_trait"); n++; }
   fn_new_item = find_symbol("_ZN9ItemTable7NewItemEaa");
   fn_new_bag_item = find_symbol("_ZN7BagItem10NewBagItemEP8ItemInfoh");
