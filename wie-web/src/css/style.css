@@ -1093,6 +1093,12 @@ html[data-screen-fit="contain"] #canvas {
 .player-view[data-pad-profile="hl4"] .action-cluster > [data-default-key="0"] { --x: 38; --y: 211; --d: 52; }
 .player-view[data-pad-profile="hl4"] .action-cluster > [data-default-key="#"] { --x: 215; --y: 28; --d: 46; }
 
+/* A little more colour and contrast on its muted palette, in the game image only (not the effects over it). */
+.player-view[data-pad-profile="hl4"] #screen,
+.player-view[data-pad-profile="hl4"] #canvas {
+  filter: saturate(1.16) contrast(1.07);
+}
+
 /* ---- Keypad layout (이노티아) ----
    The phone's own d-pad sits above the stick (it scrolls long descriptions and sets up the party), and the keys
    around attack follow the phone's keypad: 1 and 3 on top, 7 · 취소 · 9 under attack, * · 0 · # at the bottom. */

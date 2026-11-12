@@ -1,6 +1,6 @@
 import type { CheatApi } from "./backend";
 import { loadGamePreference, storeGamePreference } from "./game_preferences";
-import type { ZeroHit, ZeroView } from "./zero_hits";
+import { ZERO_FIELD, type ZeroHit, ZeroHitTracker } from "./zero_hits";
 
 const HIT_MS = 260;
 const STRONG_HIT_MS = 300;
@@ -20,25 +20,13 @@ interface Burst {
   killed: boolean;
 }
 
-/** One game's read-only view of its own field combat (영웅서기 제로, 영웅서기4). */
-export interface FieldHitSource {
-  /** Screen size and camera: screen = map + (x, y). */
-  readonly view: ZeroView;
-  /** Height of the status window at the bottom of the screen, kept clear of the accents. */
-  readonly statusBar: number;
-  /** From the map position a hit reports to the middle of the monster's body. */
-  readonly aim: { readonly x: number; readonly y: number };
-  /** Called after a new guest frame; false when the field is not showing. */
-  sample(api: Pick<CheatApi, "read" | "dump">, hit: (hit: ZeroHit) => void, hurt: (share: number) => void): boolean;
-  reset(): void;
-}
-
 /**
- * Short accents drawn over the game on hits the game already dealt — a flash, ring and sparks on a monster that
- * loses HP (bigger for heavy hits, a double ring when it falls) and a red edge when the hero is hurt. The game's own
- * image, animation frames, timing and damage are untouched; it can be turned off in the settings.
+ * 영웅서기 제로: short accents drawn over the game on hits the game already dealt — a flash, ring and sparks on a
+ * monster that loses HP (bigger for heavy hits, a double ring when it falls) and a red edge when the hero is hurt.
+ * The game's own image, animation frames, timing and damage are untouched; it can be turned off in the settings.
  */
-export class FieldFeedback {
+export class ZeroFeedback {
+  private readonly tracker = new ZeroHitTracker();
   private readonly canvas = document.createElement("canvas");
   private readonly context: CanvasRenderingContext2D | null;
   private readonly observer: ResizeObserver;
@@ -60,7 +48,7 @@ export class FieldFeedback {
   private left = 0;
   private top = 0;
 
-  constructor(private readonly game: HTMLCanvasElement, appId: string, private readonly tracker: FieldHitSource) {
+  constructor(private readonly game: HTMLCanvasElement, appId: string) {
     this.canvas.id = "hit-effects-canvas";
     this.canvas.hidden = true;
     this.canvas.setAttribute("aria-hidden", "true");
@@ -118,9 +106,9 @@ export class FieldFeedback {
 
   private readonly addHit = (hit: ZeroHit): void => {
     const burst = this.bursts[this.next];
-    // The sprite stands on its position and rises above it; aim at its body.
-    burst.x = hit.x + this.tracker.aim.x;
-    burst.y = hit.y + this.tracker.aim.y;
+    // The sprite stands on its tile and rises above it; aim at its body.
+    burst.x = hit.x + ZERO_FIELD.TILE / 2;
+    burst.y = hit.y - 6;
     burst.born = performance.now();
     burst.killed = hit.killed;
     burst.size = hit.killed ? 1.5 : hit.share >= STRONG ? 1.25 : 1;
@@ -150,7 +138,7 @@ export class FieldFeedback {
     ctx.save();
     ctx.setTransform(this.scaleX, 0, 0, this.scaleY, this.left, this.top);
     const view = this.tracker.view;
-    const field = view.height - this.tracker.statusBar;
+    const field = view.height - ZERO_FIELD.STATUS_BAR;
     ctx.beginPath();
     ctx.rect(0, 0, view.width, field); // Keep the original slot bar and HP/SP gauges clear.
     ctx.clip();

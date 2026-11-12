@@ -1,6 +1,4 @@
 import type { CheatApi } from "./backend";
-import type { FieldHitSource } from "./field_feedback";
-import type { ZeroHit, ZeroView } from "./zero_hits";
 
 /**
  * Read-only observer of 영웅서기4 - 환영의 가면 (LGT v1.0.1) combat, for presentation only.
@@ -49,11 +47,26 @@ export const isHeroesLore4Binary = (api: Pick<CheatApi, "read">): boolean => {
   }
 };
 
-export class Hl4HitTracker implements FieldHitSource {
-  readonly view: ZeroView = { x: 0, y: 0, width: SCREEN_WIDTH, height: SCREEN_HEIGHT };
-  readonly statusBar = HL4_FIELD.STATUS_BAR;
-  /** A record stands at its feet; the body is about one sprite half above. */
-  readonly aim = { x: 0, y: -14 };
+/** Screen size and camera: screen = map + (x, y). */
+export interface Hl4View {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Hl4Hit {
+  /** Map pixels where the monster stands (its feet). */
+  x: number;
+  y: number;
+  damage: number;
+  /** Damage as a share of the monster's max HP (0..1). */
+  share: number;
+  killed: boolean;
+}
+
+export class Hl4HitTracker {
+  readonly view: Hl4View = { x: 0, y: 0, width: SCREEN_WIDTH, height: SCREEN_HEIGHT };
   private supported: boolean | undefined;
   private mapWidth = 0;
   private mapHeight = 0;
@@ -72,7 +85,7 @@ export class Hl4HitTracker implements FieldHitSource {
    * Called after a new guest frame. Reports monsters whose HP dropped since the last frame and damage the hero took
    * (as a share of its max HP). Returns false when the field is not showing; transient effects should be cleared.
    */
-  sample(api: Pick<CheatApi, "read">, hit: (hit: ZeroHit) => void, hurt: (share: number) => void): boolean {
+  sample(api: Pick<CheatApi, "read">, hit: (hit: Hl4Hit) => void, hurt: (share: number) => void): boolean {
     const read = (address: number) => api.read(address, 4, false) >>> 0;
     // Fail closed for another build instead of interpreting arbitrary guest memory as monsters.
     this.supported ??= isHeroesLore4Binary(api);

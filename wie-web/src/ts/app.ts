@@ -4,18 +4,17 @@ import { recordPageView } from "./analytics";
 import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, skillSlotKeys } from "./automation";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
-import { FieldFeedback } from "./field_feedback";
 import { loadGamePreference } from "./game_preferences";
 import { isHeroesLore3, isHeroesLore3Binary, readSkills } from "./hl3";
 import { Hl3Feedback } from "./hl3_feedback";
 import { Hl3QuestGuide } from "./hl3_quest_guide";
-import { Hl4HitTracker } from "./hl4_hits";
+import { Hl4Feedback } from "./hl4_feedback";
 import { InotiaHunt } from "./inotia_hunt";
 import { type Direction, HL4_DODGE_KEY, applyPadProfile, isHeroesLore4, isInotia, isZero, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
 import { OCTANT_DIRECTIONS, pickOctant, pickStraight } from "./stick";
 import { type SaveResult, ZERO_SAVE_KEY, readZeroState, saveZero } from "./zero";
-import { ZeroHitTracker } from "./zero_hits";
+import { ZeroFeedback } from "./zero_feedback";
 import { openHiddenStyles, openSpirit } from "./zero_styles";
 
 const KEY_MAP: Record<string, string> = {
@@ -81,8 +80,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   const questGuide = backend.rendering === "canvas" && isHeroesLore3(app.id) ? new Hl3QuestGuide(gameCanvas, app.id) : undefined;
   const feedback = backend.rendering !== "canvas" ? undefined
     : isHeroesLore3(app.id) ? new Hl3Feedback(gameCanvas, app.id)
-    : isZero(app) ? new FieldFeedback(gameCanvas, app.id, new ZeroHitTracker())
-    : isHeroesLore4(app) ? new FieldFeedback(gameCanvas, app.id, new Hl4HitTracker())
+    : isZero(app) ? new ZeroFeedback(gameCanvas, app.id)
+    : isHeroesLore4(app) ? new Hl4Feedback(gameCanvas, app.id, ms => session?.hold?.(ms))
     : undefined;
   // 영웅서기 제로: its new-game screen also offers the two hidden battle styles (checked twice a second), and a
   // 정령사's menu opens the spirit from the start (every frame, so the entry is open before 5 can be pressed).

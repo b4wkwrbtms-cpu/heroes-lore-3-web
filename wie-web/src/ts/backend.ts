@@ -45,6 +45,8 @@ export interface PlayerSession {
   cheats?: CheatApi;
   /** Original imported resources; available on the browser/WASM backend. */
   readResources?(prefixes: string[]): Map<string, Uint8Array>;
+  /** Holds the game still for a moment (a hit-stop); available on the browser/WASM backend. */
+  hold?(ms: number): void;
 }
 
 export interface Wie {

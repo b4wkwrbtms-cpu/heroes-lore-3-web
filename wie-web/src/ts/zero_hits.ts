@@ -63,9 +63,6 @@ export interface ZeroHit {
 
 export class ZeroHitTracker {
   readonly view: ZeroView = { x: 0, y: 0, width: SCREEN_WIDTH, height: SCREEN_HEIGHT };
-  readonly statusBar = ZERO_FIELD.STATUS_BAR;
-  /** The sprite stands on its tile; its body is over the tile's middle. */
-  readonly aim = { x: ZERO_FIELD.TILE / 2, y: -6 };
   private supported: boolean | undefined;
   private map = 0;
   private monsters = new Map<number, number>();
