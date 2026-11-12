@@ -13,6 +13,7 @@ import type { SettingsController } from "./settings";
 import { OCTANT_DIRECTIONS, pickOctant, pickStraight } from "./stick";
 import { type SaveResult, ZERO_SAVE_KEY, readZeroState, saveZero } from "./zero";
 import { ZeroFeedback } from "./zero_feedback";
+import { openHiddenStyles } from "./zero_styles";
 
 const KEY_MAP: Record<string, string> = {
   Digit1: "1",
@@ -78,6 +79,19 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     : isHeroesLore3(app.id) ? new Hl3Feedback(gameCanvas, app.id)
     : isZero(app) ? new ZeroFeedback(gameCanvas, app.id)
     : undefined;
+  // 영웅서기 제로: its new-game screen also offers the two hidden battle styles (checked twice a second).
+  let stylesCheckedAt = 0;
+  const openStyles = isZero(app) ? () => {
+    const api = session?.cheats;
+    const now = performance.now();
+    if (!api || now - stylesCheckedAt < 500) return;
+    stylesCheckedAt = now;
+    try {
+      openHiddenStyles(api);
+    } catch {
+      // Memory not readable while the game loads; the next frame tries again.
+    }
+  } : undefined;
   const updateScreenRatio = () => {
     if (gameCanvas.width > 0 && gameCanvas.height > 0) playerView.style.setProperty("--screen-ratio", String(gameCanvas.width / gameCanvas.height));
   };
@@ -647,7 +661,10 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     if (ending) return;
     switch (event.type) {
       case "frame":
-        if (!preparing && !suspended) feedback?.sample(session?.cheats);
+        if (!preparing && !suspended) {
+          feedback?.sample(session?.cheats);
+          openStyles?.();
+        }
         break;
       case "ready":
         if (preparing) recordPageView(app.title);

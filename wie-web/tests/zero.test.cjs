@@ -221,3 +221,44 @@ test("the hit tracker stays silent off the field, on broken pointers and on anot
   assert.equal(clampCamera(-40, 288, 160), 64);
   assert.equal(clampCamera(-400, 288, 640), -352);
 });
+
+test("the new-game style screen also offers 검총사 and 정령사, writing only its count and the two flags", () => {
+  const styles = load("zero_styles");
+  const S = styles.ZERO_STYLES;
+  const bytes = new Map();
+  const put = (address, value) => { for (let i = 0; i < 4; i++) bytes.set(address + i, (value >>> (i * 8)) & 0xff); };
+  const api = {
+    read: address => [0, 1, 2, 3].reduce((value, i) => value | ((bytes.get(address + i) ?? 0) << (i * 8)), 0) >>> 0,
+    dump: (address, size) => Uint8Array.from({ length: size }, (_, i) => bytes.get(address + i) ?? 0),
+    write: (address, width, bigEndian, value) => { assert.equal(width, 4); put(address, value); },
+    writeBytes: (address, data) => data.forEach((value, i) => bytes.set(address + i, value)),
+  };
+  for (const [address, word] of Object.entries(BINARY)) put(Number(address), word);
+  put(zero.ZERO.STATE, S.TITLE);
+  const screen = 0x4a858980, flagsHandle = 0x484354a0, flags = 0x48845040;
+  put(S.HANDLES + 0x400, screen); put(S.HANDLES + 0x404, S.SCREEN_CLASS);
+  put(screen + S.SELECTED, 0); put(screen + S.COUNT, 4); put(screen + S.OPEN, flagsHandle);
+  put(flagsHandle, flags); put(flags, 0x1e00); put(flags + 4, 6);
+  [1, 1, 1, 1, 0, 0].forEach((flag, i) => bytes.set(flags + 8 + i, flag));
+  bytes.set(flags + 14, 0xaa); bytes.set(flags + 16, 0xbb); // whatever follows the array must stay as it is
+  const before = new Map(bytes);
+  assert.equal(styles.openHiddenStyles(api), true);
+  assert.equal(api.read(screen + S.COUNT), 6);
+  assert.deepEqual(Array.from(api.dump(flags + 8, 6)), [1, 1, 1, 1, 1, 1]);
+  const changed = [...bytes].filter(([address, value]) => before.get(address) !== value).map(([address]) => address - flags);
+  assert.deepEqual(changed.filter(offset => offset >= 0 && offset < 32), [12, 13], "only the two hidden flags change in the array");
+  assert.equal(bytes.get(flags + 14), 0xaa); assert.equal(bytes.get(flags + 16), 0xbb);
+  // Off the title screens, on another build or on a different object of that class nothing is written.
+  put(screen + S.COUNT, 4);
+  put(zero.ZERO.STATE, zero.ZERO.FIELD);
+  assert.equal(styles.openHiddenStyles(api), false);
+  assert.equal(api.read(screen + S.COUNT), 4);
+  put(zero.ZERO.STATE, S.TITLE);
+  bytes.set(flags + 8, 0);
+  assert.equal(styles.openHiddenStyles(api), false);
+  assert.equal(api.read(screen + S.COUNT), 4);
+  bytes.set(flags + 8, 1);
+  put(0x00101000, 0);
+  assert.equal(styles.openHiddenStyles(api), false);
+  assert.equal(api.read(screen + S.COUNT), 4);
+});
