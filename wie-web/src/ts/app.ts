@@ -11,7 +11,7 @@ import { Hl3Feedback } from "./hl3_feedback";
 import { Hl3QuestGuide } from "./hl3_quest_guide";
 import { Hl4HitTracker } from "./hl4_hits";
 import { InotiaHunt } from "./inotia_hunt";
-import { type Direction, applyPadProfile, isHeroesLore4, isInotia, isZero, padProfileFor, remapKey } from "./pad_profile";
+import { type Direction, HL4_DODGE_KEY, applyPadProfile, isHeroesLore4, isInotia, isZero, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
 import { OCTANT_DIRECTIONS, pickOctant, pickStraight } from "./stick";
 import { type SaveResult, ZERO_SAVE_KEY, readZeroState, saveZero } from "./zero";
@@ -195,6 +195,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       }
     }
     if (key) {
+      if (walkKeys.has(key)) lastWalk = key;
       const pressed = [...inputs.values()].includes(key);
       inputs.set(source, key);
       if (!pressed) {
@@ -209,6 +210,27 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   };
   const attackKey = remapKey(padProfile, "OK");
   const walkKeys = new Set<string>(Object.values(padProfile.directions));
+  /** The arrow the hero last walked with: 영웅서기4's 회피 taps it. */
+  let lastWalk = padProfile.directions.DOWN;
+  /**
+   * 영웅서기4's 회피: tapping one arrow twice quickly rolls (휴먼) or teleports (네베드). An arrow the player still holds
+   * is let go for the taps and held again after them.
+   */
+  const dodge = async () => {
+    const current = session;
+    if (!current || preparing || suspended || ending || saving) return;
+    const key = lastWalk;
+    const alive = () => session === current && !ending;
+    const pause = () => new Promise(resolve => window.setTimeout(resolve, 60));
+    await current.key(key, false);
+    for (let tap = 0; tap < 2 && alive(); tap++) {
+      await pause();
+      await current.key(key, true);
+      await pause();
+      await current.key(key, false);
+    }
+    if (alive() && [...inputs.values()].includes(key)) await current.key(key, true);
+  };
   /** A fresh attack press for the game, held or not by the player; the key ends up as the player holds it. */
   const strikeAttack = () => {
     const current = session;
@@ -336,24 +358,21 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     if (!window.confirm("게임을 끝내고 라이브러리로 갈까요? 저장하지 않은 진행은 사라져요.")) return;
     void finish();
   }, { signal: abortController.signal });
-  // The system tools hide behind ⋯ so a thumb sliding off the joystick cannot hit them. The phone layout has its own ⋯
-  // beside R, where the top bar's would be out of the way.
-  const padMores = playerView.querySelectorAll<HTMLButtonElement>(".pad-tool-more");
+  // The system tools hide behind ⋯ so a thumb sliding off the joystick cannot hit them.
+  const padMore = document.getElementById("pad-more") as HTMLButtonElement | null;
   const padTools = document.getElementById("pad-tools") as HTMLElement | null;
   let padToolsTimer: number | undefined;
   const showPadTools = (show: boolean) => {
-    if (!padTools) return;
+    if (!padTools || !padMore) return;
     padTools.hidden = !show;
-    for (const padMore of padMores) padMore.setAttribute("aria-expanded", String(show));
+    padMore.setAttribute("aria-expanded", String(show));
     window.clearTimeout(padToolsTimer);
     if (show) padToolsTimer = window.setTimeout(() => showPadTools(false), 6000);
   };
-  for (const padMore of padMores) {
-    padMore.addEventListener("click", () => {
-      releaseKeys();
-      showPadTools(padTools?.hidden !== false);
-    }, { signal: abortController.signal });
-  }
+  padMore?.addEventListener("click", () => {
+    releaseKeys();
+    showPadTools(padTools?.hidden !== false);
+  }, { signal: abortController.signal });
   padTools?.addEventListener("click", () => showPadTools(false), { signal: abortController.signal });
   abortController.signal.addEventListener("abort", () => window.clearTimeout(padToolsTimer));
   appSettings.addEventListener("click", () => {
@@ -407,9 +426,6 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     if (document.hidden) releaseKeys();
   }, { signal: abortController.signal });
 
-  // Arrows marked data-slide (the phone layout's d-pad) follow a thumb sliding from one to another, like a real
-  // d-pad: the touch stays captured by the arrow it started on, which tracks the arrow now under it.
-  const slidTo = new Map<number, HTMLButtonElement>();
   for (const button of buttons) {
     const key = button.dataset.key!;
     button.addEventListener(
@@ -423,6 +439,10 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
           void saveFromField();
           return;
         }
+        if (key === HL4_DODGE_KEY) {
+          void dodge().catch(finish);
+          return;
+        }
         setKey(`pointer:${event.pointerId}`, key);
       },
       { signal: abortController.signal },
@@ -430,24 +450,11 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     const releaseKey = (event: PointerEvent) => {
       event.preventDefault();
       button.classList.remove("pressed");
-      slidTo.get(event.pointerId)?.classList.remove("pressed");
-      slidTo.delete(event.pointerId);
       setKey(`pointer:${event.pointerId}`);
     };
     button.addEventListener("pointerup", releaseKey, { signal: abortController.signal });
     button.addEventListener("pointercancel", releaseKey, { signal: abortController.signal });
     button.addEventListener("lostpointercapture", releaseKey, { signal: abortController.signal });
-    if (button.dataset.slide === undefined) continue;
-    button.addEventListener("pointermove", (event) => {
-      if (!button.hasPointerCapture(event.pointerId)) return;
-      const under = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLButtonElement>("button[data-slide]");
-      const current = slidTo.get(event.pointerId) ?? button;
-      if (!under || under === current || under.parentElement !== button.parentElement) return;
-      current.classList.remove("pressed");
-      under.classList.add("pressed");
-      slidTo.set(event.pointerId, under);
-      setKey(`pointer:${event.pointerId}`, under.dataset.key);
-    }, { signal: abortController.signal });
   }
 
   // iOS turns a held or sliding touch into its own gestures (loupe, callout, pinch zoom) and then cancels the touch:

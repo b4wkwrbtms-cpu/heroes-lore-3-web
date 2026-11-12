@@ -66,19 +66,23 @@ test("영웅서기 제로 and 영웅서기4 get their own pads by PID while the 
   assert.deepEqual(["1", "3", "7", "9", "0", "#"].map(key => zeroPad.buttons[key].key), ["1", "3", "7", "9", "0", "#"]);
   assert.equal(zeroPad.buttons.CALL.key, zero.ZERO_SAVE_KEY);
   assert.equal(zeroPad.windowed(undefined), false);
-  // 영웅서기4: the phone layout by PID only, pressing every key as it is; the others never get it.
+  // 영웅서기4: its own pad by PID only — four-way arrows, OK attacks, every slot presses its own key; the others never get it.
   const renamedHl4 = { id: HL4, title: "영웅서기3", filename: "heroes-lore-3.zip" };
   const hl4Pad = pad.padProfileFor(renamedHl4);
   assert.equal(pad.isHeroesLore4(renamedHl4), true);
   assert.equal(hl4Pad.name, "hl4");
-  assert.equal(hl4Pad.layout, "phone");
+  assert.equal(hl4Pad.layout, undefined);
   assert.equal(hl4Pad.diagonals, undefined);
   assert.deepEqual({ ...hl4Pad.directions }, { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT" });
-  assert.equal(Object.keys(hl4Pad.buttons).length, 0);
   assert.equal(pad.remapKey(hl4Pad, "OK"), "OK");
+  assert.deepEqual(Object.entries(hl4Pad.buttons).map(([from, { key }]) => [from, key]), [["7", "7"], ["#", "#"]]);
   for (const other of [HL3, INOTIA, ZERO]) {
     assert.equal(pad.isHeroesLore4({ id: other }), false);
-    assert.notEqual(pad.padProfileFor({ id: other }).layout, "phone");
+    assert.notEqual(pad.padProfileFor({ id: other }).name, "hl4");
+  }
+  // The 회피 page action is not one of any game's keys.
+  for (const profile of [hl3Pad, inotiaPad, zeroPad, hl4Pad]) {
+    assert.ok(!Object.values(profile.buttons).some(({ key }) => key === pad.HL4_DODGE_KEY));
   }
   assert.equal(hl3.isHeroesLore3(HL4), false);
   assert.equal(zero.isZero(HL4), false);
