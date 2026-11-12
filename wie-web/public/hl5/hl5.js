@@ -1,5 +1,5 @@
 // 영웅서기5 player: runs the game's ARM library in hl5core.wasm and presents it on an iPhone in landscape.
-const VERSION = "15";
+const VERSION = "16";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
