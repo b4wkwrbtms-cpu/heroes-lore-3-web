@@ -54,25 +54,11 @@ let midiVolume = 0.5;
 let pcmVolume = 0.5;
 
 export type BgmEngine = "fm" | "gm";
-const BGM_ENGINE_KEY = "wie_bgm_engine";
-let bgmEngine: BgmEngine = loadBgmEngine();
+let bgmEngine: BgmEngine = "fm";
 
-/** Which synthesizer plays MA-3 scores: their own FM voices, or the General MIDI soundfont. */
-export function loadBgmEngine(): BgmEngine {
-  try {
-    return window.localStorage.getItem(BGM_ENGINE_KEY) === "gm" ? "gm" : "fm";
-  } catch {
-    return "fm";
-  }
-}
-
+/** The current game's presentation settings select its synthesizer before playback starts. */
 export function setBgmEngine(value: BgmEngine): void {
   bgmEngine = value;
-  try {
-    window.localStorage.setItem(BGM_ENGINE_KEY, value);
-  } catch {
-    // storage unavailable
-  }
 }
 let audioReady: Promise<AudioState | null> | undefined;
 let currentContext: AudioContext | undefined;

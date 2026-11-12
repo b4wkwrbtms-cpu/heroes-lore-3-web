@@ -4,7 +4,7 @@ import { recordPageView } from "./analytics";
 import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, skillSlotKeys } from "./automation";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
-import { isHeroesLore3, readSkills } from "./hl3";
+import { isHeroesLore3, isHeroesLore3Binary, readSkills } from "./hl3";
 import { Hl3Feedback } from "./hl3_feedback";
 import { type Direction, applyPadProfile, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
@@ -67,7 +67,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   else delete playerView.dataset.padProfile;
   // Landscape sizes the screen column from the game's own aspect (240×320, 176×220, ...).
   const gameCanvas = document.getElementById("canvas") as HTMLCanvasElement;
-  const feedback = backend.rendering === "canvas" && isHeroesLore3(app.title, app.filename) ? new Hl3Feedback(gameCanvas) : undefined;
+  const feedback = backend.rendering === "canvas" && isHeroesLore3(app.id) ? new Hl3Feedback(gameCanvas, app.id) : undefined;
   const updateScreenRatio = () => {
     if (gameCanvas.width > 0 && gameCanvas.height > 0) playerView.style.setProperty("--screen-ratio", String(gameCanvas.width / gameCanvas.height));
   };
@@ -103,7 +103,10 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     screenRatioObserver.disconnect();
     feedback?.dispose();
     automation.detach();
+    getCheatPanel().detach(app.id);
     unsubscribeAuto();
+    for (const timer of flashTimers.values()) window.clearTimeout(timer);
+    for (const button of buttons) button.classList.remove("pressed", "auto-flash");
     inputs.clear();
     updateControls();
     try {
@@ -172,6 +175,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   const slotCaptions = new Map<HTMLButtonElement, string>();
   const macroButtons = playerView.querySelectorAll<HTMLButtonElement>("button[data-macro]");
   const macroBar = playerView.querySelector<HTMLElement>(".pad-macros");
+  if (macroBar) macroBar.hidden = true;
+  for (const button of macroButtons) button.hidden = true;
   const skillName = (weapon: "A" | "B", index: number): string => {
     const api = cheatContext.getCheats();
     if (!api) return `${weapon}${index}`;
@@ -185,7 +190,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     let anyMacro = false;
     macroButtons.forEach((button, i) => {
       const macro = config.macros[i];
-      const show = !!macro && macro.skills.length > 0;
+      const show = isHeroesLore3(app.id) && !!macro && macro.skills.length > 0;
       button.hidden = !show;
       if (show) {
         anyMacro = true;
@@ -258,7 +263,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     button.addEventListener("pointerleave", release, { signal: abortController.signal });
   });
   const attachAutomation = () => {
-    if (!isHeroesLore3(app.title) || automation.appId === app.id) return;
+    const api = cheatContext.getCheats();
+    if (!isHeroesLore3(app.id) || !api || !isHeroesLore3Binary(api) || automation.appId === app.id) return;
     automation.attach({ appId: app.id, getCheats: cheatContext.getCheats, pressKey });
   };
   appCheats?.addEventListener("click", () => {

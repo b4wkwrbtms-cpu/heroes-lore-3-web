@@ -47,10 +47,10 @@ const INOTIA_PROFILE: PadProfile = {
   sheet: { SOFT2: { key: "CLR", label: "취소 (CLR)" } },
 };
 
-export const isInotia = (app: Pick<LibraryApp, "title" | "filename">): boolean =>
-  /이노티아|inotia/i.test(`${app.title} ${app.filename}`);
+/** PID from the KTF __adf__; a renamed archive must not select another game's controls. */
+export const isInotia = (app: Pick<LibraryApp, "id">): boolean => app.id === "PD005362";
 
-export const padProfileFor = (app: Pick<LibraryApp, "title" | "filename">): PadProfile =>
+export const padProfileFor = (app: Pick<LibraryApp, "id">): PadProfile =>
   isInotia(app) ? INOTIA_PROFILE : DEFAULT_PROFILE;
 
 /**

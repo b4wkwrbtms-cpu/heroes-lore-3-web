@@ -117,10 +117,11 @@ function presentation(count = 1) {
   document.createElement = () => canvas;
   document.getElementById = id => ({ "hit-effects-setting": setting, "hit-effects": select, "screen-fit": fitSelect })[id];
   document.querySelector = () => document.modal ? {} : null;
+  const localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) };
+  const preferences = load("game_preferences", { window: { localStorage } });
   const { Hl3Feedback } = load("hl3_feedback", {
-    require: () => ({ Hl3HitTracker }), document, AbortController,
+    require: name => name === "./game_preferences" ? preferences : { Hl3HitTracker }, document, AbortController,
     window: { devicePixelRatio: 3, matchMedia: () => reduced },
-    localStorage: { getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v) },
     ResizeObserver: class {
       constructor(cb) { resize = cb; }
       observe() { resize([{ contentRect: { width: 600, height: 640 } }]); }
@@ -130,7 +131,7 @@ function presentation(count = 1) {
     requestAnimationFrame: cb => { const id = ++serial; callbacks.set(id, cb); return id; },
     cancelAnimationFrame: id => callbacks.delete(id),
   });
-  const feedback = new Hl3Feedback({ width: 240, height: 320, parentElement: { append() {} } });
+  const feedback = new Hl3Feedback({ width: 240, height: 320, parentElement: { append() {} } }, "PD119037");
   const step = time => {
     now = time;
     const pending = [...callbacks.values()]; callbacks.clear(); pending.forEach(cb => cb(now));

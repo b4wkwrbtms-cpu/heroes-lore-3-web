@@ -3,8 +3,10 @@ import * as Sentry from "@sentry/browser";
 import { wasmIntegration } from "@sentry/wasm";
 
 import { recordPageView } from "./analytics";
-import { HqDisplay, loadScreenQuality, setCurrentDisplay, storeScreenQuality } from "./display";
-import { loadBgmEngine, setBgmEngine } from "./midi";
+import { HqDisplay, setCurrentDisplay } from "./display";
+import { setBgmEngine } from "./midi";
+import { loadGamePreference, storeGamePreference } from "./game_preferences";
+import { isHeroesLore3 } from "./hl3";
 import { runApp } from "./app";
 import { initializeWie, type LibraryApp } from "./backend";
 import { getLocale, initializeLocalization, t } from "./i18n";
@@ -23,6 +25,7 @@ const main = async () => {
   const backend = await initializeWie();
   document.documentElement.classList.add(backend.rendering === "native" ? "native" : "browser");
   const output = document.getElementById("player-output") as HTMLDivElement;
+  let display: HqDisplay | undefined;
   if (backend.rendering === "canvas") {
     output.className = "canvas-wrapper";
     const canvas = document.createElement("canvas");
@@ -35,33 +38,52 @@ const main = async () => {
     screen.id = "screen";
     screen.hidden = true;
     canvas.after(screen);
-    const display = new HqDisplay(canvas, screen);
+    display = new HqDisplay(canvas, screen);
     setCurrentDisplay(display);
-    const applyQuality = (value: "hq" | "pixel") => {
-      document.documentElement.dataset.screenQuality = value;
-      display.setEnabled(value === "hq");
-    };
-    applyQuality(loadScreenQuality());
-    const engineSelect = document.getElementById("bgm-engine") as HTMLSelectElement | null;
-    if (engineSelect) {
-      engineSelect.value = loadBgmEngine();
-      engineSelect.addEventListener("change", () => setBgmEngine(engineSelect.value === "gm" ? "gm" : "fm"));
-    }
-    const qualitySelect = document.getElementById("screen-quality") as HTMLSelectElement | null;
-    if (qualitySelect) {
-      qualitySelect.value = loadScreenQuality();
-      qualitySelect.addEventListener("change", () => {
-        const value = qualitySelect.value === "pixel" ? "pixel" : "hq";
-        storeScreenQuality(value);
-        applyQuality(value);
-      });
-    }
   } else {
     output.className = "native-preparation";
     const keypadTopRow = document.querySelector(".button-container p")!;
     keypadTopRow.prepend(document.getElementById("back-to-library")!);
     keypadTopRow.append(document.getElementById("app-settings")!);
   }
+
+  let presentationApp: LibraryApp | undefined;
+  const presentationOptions = [
+    { id: "screen-quality", key: "screen_quality", fallback: "hq", alternate: "pixel", apply(value: string) {
+      document.documentElement.dataset.screenQuality = value;
+      display?.setEnabled(value === "hq");
+    } },
+    { id: "screen-fit", key: "screen_fit", fallback: "contain", alternate: "fill", apply(value: string) {
+      document.documentElement.dataset.screenFit = value;
+    } },
+    { id: "bgm-engine", key: "bgm_engine", fallback: "fm", alternate: "gm", apply(value: string) {
+      setBgmEngine(value === "gm" ? "gm" : "fm");
+    } },
+  ];
+  const activatePresentation = (app?: LibraryApp) => {
+    presentationApp = app;
+    for (const option of presentationOptions) {
+      const select = document.getElementById(option.id) as HTMLSelectElement | null;
+      const legacy = app && isHeroesLore3(app.id) ? `wie_${option.key}` : undefined;
+      const stored = loadGamePreference(app?.id, option.key, option.fallback, legacy);
+      const value = stored === option.alternate ? option.alternate : option.fallback;
+      if (select) {
+        select.value = value;
+        select.disabled = !app;
+      }
+      option.apply(value);
+    }
+  };
+  for (const option of presentationOptions) {
+    const select = document.getElementById(option.id) as HTMLSelectElement | null;
+    select?.addEventListener("change", () => {
+      if (!presentationApp) return;
+      const value = select.value === option.alternate ? option.alternate : option.fallback;
+      storeGamePreference(presentationApp.id, option.key, value);
+      option.apply(value);
+    });
+  }
+  activatePresentation();
 
   if (native) {
     document.addEventListener("click", event => {
@@ -87,6 +109,7 @@ const main = async () => {
     Sentry.setContext("emulated_app", { id: app.id, title: app.title, filename: app.filename });
     libraryView.hidden = true;
     playerView.hidden = false;
+    activatePresentation(app);
     try {
       failed = await runApp(backend, app, settings);
       if (failed) window.alert(t("restartRequired"));
@@ -116,6 +139,7 @@ const main = async () => {
         showError();
       }
     } finally {
+      activatePresentation();
       Sentry.setContext("emulated_app", null);
       if (native && failed) {
         const warning = document.getElementById("player-warning") as HTMLElement;

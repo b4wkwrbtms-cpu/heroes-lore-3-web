@@ -197,7 +197,9 @@ class Automation {
     if (this.timer !== undefined) window.clearInterval(this.timer);
     this.timer = undefined;
     this.context = undefined;
-    this.attackHeld = false;
+    this.config = defaultAutoConfig();
+    this.resetState();
+    this.emit();
   }
 
   get current(): AutoConfig {

@@ -95,8 +95,17 @@ export const HL3 = {
   HEAP_HI: 0x50000000,
 } as const;
 
-export const isHeroesLore3 = (title: string, filename = ""): boolean =>
-  /영웅서기\s*3|heroes[\s_-]*lore[\s_-]*3/i.test(`${title} ${filename}`);
+/** PID from the supported LGT archive's app_info. Names and filenames are not game identities. */
+export const isHeroesLore3 = (appId: string): boolean => appId === "PD119037";
+
+/** Check unchanged native routines before enabling this edition's memory tools. */
+export const isHeroesLore3Binary = (api: Pick<CheatApi, "read">): boolean => {
+  try {
+    return api.read(0x38620, 4, false) === 0x307eb500 && api.read(0x17080, 4, false) === 0xb0a8b5f0;
+  } catch {
+    return false;
+  }
+};
 
 export interface BagEntry {
   slot: number;

@@ -1,5 +1,6 @@
 import type { CheatApi } from "./backend";
 import { Hl3HitTracker } from "./hl3_hits";
+import { loadGamePreference, storeGamePreference } from "./game_preferences";
 
 const PREF = "wie_hl3_hit_effects";
 const LIFETIME = 220;
@@ -27,19 +28,19 @@ export class Hl3Feedback {
   private left = 0;
   private top = 0;
 
-  constructor(private readonly game: HTMLCanvasElement) {
+  constructor(private readonly game: HTMLCanvasElement, appId: string) {
     this.canvas.id = "hit-effects-canvas";
     this.canvas.hidden = true;
     this.canvas.setAttribute("aria-hidden", "true");
     game.parentElement!.append(this.canvas);
     this.context = this.canvas.getContext("2d");
-    try { this.enabled = localStorage.getItem(PREF) !== "off"; } catch { /* Use the default. */ }
+    this.enabled = loadGamePreference(appId, "hit_effects", "on", PREF) !== "off";
     if (this.setting) this.setting.hidden = false;
     if (this.select) {
       this.select.value = this.enabled ? "on" : "off";
       this.select.addEventListener("change", () => {
         this.enabled = this.select!.value !== "off";
-        try { localStorage.setItem(PREF, this.enabled ? "on" : "off"); } catch { /* Session preference still works. */ }
+        storeGamePreference(appId, "hit_effects", this.enabled ? "on" : "off");
         this.clear();
       }, { signal: this.abort.signal });
     }

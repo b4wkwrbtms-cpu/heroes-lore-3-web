@@ -4,7 +4,7 @@ import { type AutoConfig, MACRO_NAMES, SLOT_KEYS, type SkillRef, type SlotKey, a
 import type { CheatApi } from "./backend";
 import {
   CASH_ITEMS, HL3, HL3_SKILL_LABELS, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel,
-  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, prepareAutoPotions, readBag, readEquipment, readSkills, readVitals,
+  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, isHeroesLore3Binary, prepareAutoPotions, readBag, readEquipment, readSkills, readVitals,
   setAllSkillLevels, setGold, setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
@@ -30,6 +30,7 @@ export interface CheatPanel {
   open(context: CheatContext): void;
   /** Re-apply saved "freeze" cheats for the app; call once the session is ready. */
   restore(context: CheatContext): void;
+  detach(appId: string): void;
 }
 
 interface Target {
@@ -902,9 +903,9 @@ export const getCheatPanel = (): CheatPanel => {
 
   const renderHome = (live: CheatApi) => {
     title.textContent = "치트";
-    if (context && isHeroesLore3(context.appTitle)) {
+    if (context && isHeroesLore3(context.appId) && isHeroesLore3Binary(live)) {
       renderHl3(live);
-    } else if (context && isInotia({ title: context.appTitle, filename: "" })) {
+    } else if (context && isInotia({ id: context.appId })) {
       renderInotia(live);
     }
 
@@ -1227,6 +1228,13 @@ export const getCheatPanel = (): CheatPanel => {
   };
 
   panel = {
+    detach(appId) {
+      if (autoHealContextId === appId) stopAutoHeal();
+      if (context?.appId === appId) {
+        context = undefined;
+        dialog.close();
+      }
+    },
     open(next) {
       if (!context || context.appId !== next.appId) {
         saved = loadSaved(next.appId);
@@ -1241,14 +1249,15 @@ export const getCheatPanel = (): CheatPanel => {
       const live = next.getCheats();
       if (!live) return;
       const cheatsForApp = loadSaved(next.appId);
-      if (isHeroesLore3(next.appTitle) && cheatsForApp.some(cheat => cheat.name === BATTLE_KEY)) {
+      const supportedHl3 = isHeroesLore3(next.appId) && isHeroesLore3Binary(live);
+      if (supportedHl3 && cheatsForApp.some(cheat => cheat.name === BATTLE_KEY)) {
         try {
           freezeBattleStats(live, true);
         } catch {
           // ignore
         }
       }
-      if (isHeroesLore3(next.appTitle) && cheatsForApp.some(cheat => cheat.name === AUTO_HEAL_KEY)) {
+      if (supportedHl3 && cheatsForApp.some(cheat => cheat.name === AUTO_HEAL_KEY)) {
         startAutoHeal(next);
       } else if (autoHealContextId !== undefined && autoHealContextId !== next.appId) {
         stopAutoHeal();

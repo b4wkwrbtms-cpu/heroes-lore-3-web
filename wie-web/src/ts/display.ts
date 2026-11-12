@@ -345,21 +345,3 @@ export const setCurrentDisplay = (display: HqDisplay | undefined): void => {
 export const presentFrame = (): void => {
   current?.present();
 };
-
-const QUALITY_KEY = "wie_screen_quality";
-
-export const loadScreenQuality = (): "hq" | "pixel" => {
-  try {
-    return window.localStorage.getItem(QUALITY_KEY) === "pixel" ? "pixel" : "hq";
-  } catch {
-    return "hq";
-  }
-};
-
-export const storeScreenQuality = (value: "hq" | "pixel"): void => {
-  try {
-    window.localStorage.setItem(QUALITY_KEY, value);
-  } catch {
-    // storage unavailable
-  }
-};

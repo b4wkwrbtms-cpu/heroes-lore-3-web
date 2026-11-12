@@ -59,31 +59,6 @@ export const initializeSettings = async (backend: Wie): Promise<SettingsControll
       }
     });
   }
-  // Screen fit: the game's own aspect (default; pixels stay square and the keypad gets the rest of the height) or
-  // stretched over everything the keypad leaves. Stored locally; applied via <html data-screen-fit>.
-  const screenFit = document.getElementById("screen-fit") as HTMLSelectElement | null;
-  if (screenFit) {
-    const SCREEN_FIT_KEY = "wie_screen_fit";
-    const applyScreenFit = (value: string) => {
-      document.documentElement.dataset.screenFit = value === "fill" ? "fill" : "contain";
-    };
-    let stored = "contain";
-    try {
-      stored = window.localStorage.getItem(SCREEN_FIT_KEY) ?? "contain";
-    } catch {
-      // storage unavailable; keep default
-    }
-    screenFit.value = stored === "fill" ? "fill" : "contain";
-    applyScreenFit(screenFit.value);
-    screenFit.addEventListener("change", () => {
-      applyScreenFit(screenFit.value);
-      try {
-        window.localStorage.setItem(SCREEN_FIT_KEY, screenFit.value);
-      } catch {
-        // ignore
-      }
-    });
-  }
   createIcons({ icons: { Languages, Maximize, Music2, Radio, Sparkles, Volume2, X }, root: dialog });
 
   return settings;
