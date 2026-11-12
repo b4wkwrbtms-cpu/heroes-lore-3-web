@@ -4,9 +4,11 @@
 //  - twice the experience from monsters and quests
 //  - field bosses (type 1) also drop three pieces (weapon, accessory, armour) and story bosses (type 3)
 //    five (weapon, accessory, three armour pieces) of the best equipment the hero can use at the hero's
-//    level: the highest grade available, with options rolled at the top of the game's range (at least 3)
+//    level: the highest grade available, always with attack %, critical and critical damage
 //  - every equipped accessory adds critical +25 on top of its own options
 //  - the hero's buffs (buff skills, stance and spirit buffs) do not run out
+//  - on the game-over screen the hero can always revive: the game asks to use a revival charm as if one
+//    were in the bag, and reviving does not take one (buying one needs EA's servers, which are gone)
 #include "base.h"
 
 typedef void (*Hle)(void);
@@ -46,8 +48,8 @@ static int usable(u32 e, int cat, int cls) {
 }
 
 // strongest item of a category the hero can use at the hero's level: highest grade (up to 4; plain
-// items count as the rare items they drop as), and among those the newest; an item one grade lower
-// wins only when it is at least 9 levels newer. Ties at random.
+// and rare items count as the unique items they drop as), and among those the newest; an item one
+// grade lower wins only when it is at least 9 levels newer. Ties at random.
 static int pick(int cat, int cls, int lvl) {
   u32 it = rd32(ITEM_TABLE);
   int n = (s16)rd16(it + cat * 2);
@@ -57,49 +59,39 @@ static int pick(int cat, int cls, int lvl) {
     u32 e = base + ITEM_SIZE * i;
     int g = (s8)rd8(e + 0x15c), l = rd8(e + 0x15d);
     if (g < 0 || g > 4 || l > lvl || !usable(e, cat, cls)) continue;
-    int score = l + 8 * (g < 2 ? 2 : g);
+    int score = l + 8 * (g < 3 ? 3 : g);
     if (score > bs) { best = i; bs = score; ties = 1; }
     else if (score == bs && rnd(++ties) == 0) best = i;
   }
   return best;
 }
 
-// one option for slot k the way the game rolls them (its option table), at the top of the value range
-static void roll_option(u32 e, int k, int lvl, s8 *type, s8 *val, const s8 *have) {
-  u32 ot = rd32(rd32(ITEM_TABLE) + 0x74);
-  for (int tries = 0; tries < 20; tries++) {
-    int r = (int)rnd(1000), i = 0;
-    for (; i < 48; i++) if (r < (s16)rd16(ot + i * 8 + 2 + k * 2)) break;
-    if (i == 48) continue;
-    int id = rd8(ot + i * 8), scale = (s8)rd8(ot + i * 8 + 1);
-    if (id == 0 || id == 108 || id == 109) continue; // none, level-limit relief, spirit power
-    if (id == have[0] || id == have[1] || id == have[2]) continue;
-    int v = scale * lvl / 100 * 120 / 100; // the game rolls 80..120% of scale x level / 100
-    *type = (s8)id;
-    *val = (s8)(v < 3 ? 3 : v > 100 ? 100 : v);
-    return;
-  }
-  (void)e;
-}
-
-static void drop_item(int cat, int idx, int lvl, s32 x, s32 y) {
+// Every boss drop carries attack %, critical and critical damage (the player's choice), replacing
+// whatever options the item had. Values follow the game's own scale x level / 100 at the top of its
+// 80..120% roll, at least 5; an item's own option of the same kind keeps its value when that is higher.
+#define OPT_MELEE 28
+#define OPT_RANGED 29
+#define OPT_CRIT_DAMAGE 45
+static void drop_item(int cat, int idx, int cls, int lvl, s32 x, s32 y) {
   u32 it = rd32(ITEM_TABLE);
   u32 e = rd32(it + 0x28 + cat * 4) + ITEM_SIZE * idx;
   int g = (s8)rd8(e + 0x15c);
-  s8 type[3], val[3], grade = -1;
-  for (int k = 0; k < 3; k++) { type[k] = -1; val[k] = -1; }
-  s8 have[3] = {(s8)rd8(e + 0x15f), (s8)rd8(e + 0x160), (s8)rd8(e + 0x161)};
-  int slots = 3;
-  if (g < 2) { grade = 2; slots = 2; have[0] = have[1] = have[2] = -1; } // plain items come as rare
-  int ilv = rd8(e + 0x15d);
-  if (ilv < lvl) ilv = lvl;
-  for (int k = 0; k < slots; k++) {
-    if (have[k] >= 0 && grade < 0) continue; // the item's own fixed option
-    roll_option(e, k, ilv, &type[k], &val[k], have);
-    have[k] = type[k];
+  int lv = rd8(e + 0x15d);
+  if (lv < lvl) lv = lvl;
+  const int type[3] = {cls == 2 ? OPT_RANGED : OPT_MELEE, OPT_CRITICAL, OPT_CRIT_DAMAGE};
+  const int scale[3] = {10, 10, 25};
+  s32 val[3];
+  for (int k = 0; k < 3; k++) {
+    int v = scale[k] * lv / 100 * 120 / 100;
+    if (v < 5) v = 5;
+    for (int j = 0; j < 3; j++)
+      if (rd8(e + 0x15f + j) == type[k] && (s8)rd8(e + 0x162 + j) > v) v = (s8)rd8(e + 0x162 + j);
+    val[k] = v > 100 ? 100 : v;
   }
-  u32 a[12] = {rd32(MAP_ITEMS), (u32)x, (u32)y, (u32)cat, (u32)idx, (u32)(s32)grade,
-               (u32)(s32)type[0], (u32)(s32)val[0], (u32)(s32)type[1], (u32)(s32)val[1], (u32)(s32)type[2], (u32)(s32)val[2]};
+  // plain and rare items come as unique (grade 3), the lowest grade that shows three options
+  s32 grade = g < 3 ? 3 : -1;
+  u32 a[12] = {rd32(MAP_ITEMS), (u32)x, (u32)y, (u32)cat, (u32)idx, (u32)grade,
+               (u32)type[0], (u32)val[0], (u32)type[1], (u32)val[1], (u32)type[2], (u32)val[2]};
   call_guest(fn_new_drop, 12, a);
 }
 
@@ -118,7 +110,7 @@ static void boss_drops(u32 mon, int story) {
   s32 x = (s32)rd32(mon + 4), y = (s32)rd32(mon + 8);
   for (int i = 0; i < n; i++) {
     int idx = pick(cats[i], cls, lvl);
-    if (idx >= 0) drop_item(cats[i], idx, lvl, x + spread[i][0], y + spread[i][1]);
+    if (idx >= 0) drop_item(cats[i], idx, cls, lvl, x + spread[i][0], y + spread[i][1]);
   }
 }
 
@@ -187,6 +179,11 @@ EXPORT(apply_tweaks) int apply_tweaks(u32 seed) {
   n += patch(0x97f74, 0x02822001u, 0x02822003u); // skill points: addeq r2, r2, #1 -> #3
   n += patch(0xc06f0, 0xe1a0a000u, 0xe1a0a080u); // monster exp: mov r10, r0 -> r0, lsl #1
   n += patch(0xd49a8, 0xe0812002u, 0xe0812082u); // quest exp: add r2, r1, r2 -> r2, lsl #1
+  // revival: the talisman count (bag category 18, index 23) reads as 1 on the game-over screen
+  n += patch(0xdffe0, 0xebfefde5u, 0xe3a00001u); // StateGame::DrawGameOver: bl GetBagItemTotalBunchCount -> mov r0, #1
+  n += patch(0xdeba0, 0xebff02f5u, 0xe3a00001u); // StateGame::TouchGameOver: same
+  n += patch(0xe036c, 0xebfefd02u, 0xe3a00001u); // StateGame::KeyGameOver: same
+  n += patch(0xe03b8, 0xebff0657u, 0xe1a00000u); // StateGame::KeyGameOver: bl DeleteBagItemCategoryIndex -> nop
   fn_new_drop = find_symbol("_ZN7MapItem11NewDropItemEiiaaaaaaaaa");
   if (fn_new_drop && rd32(LOAD_BASE + DROP_ENTRY) == 0xe92d4ff0u) {
     drop_insn = rd32(LOAD_BASE + DROP_ENTRY);
