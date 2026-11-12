@@ -1030,6 +1030,8 @@ mod tests {
             let compiled = artifact(&responses.lock().requests[0], 0);
             assert!(responses.lock().ready.take().unwrap().send(Ok(compiled)).is_ok());
             engine.finish_preparation(futures::executor::block_on(preparation));
+            // The instructions in the line at 0x20020 change after compilation; an unchanged region would be kept.
+            engine.mem_write(0x20022, &[0x71, 0x47]).unwrap();
             engine.reg_write(ArmRegister::Cpsr, cpsr);
             engine.reg_write(ArmRegister::PC, 0x1000);
             engine.cpu.reg_set(Mode::User, register, 0x30000);

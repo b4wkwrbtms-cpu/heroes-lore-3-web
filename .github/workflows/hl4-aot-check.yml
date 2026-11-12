@@ -38,7 +38,7 @@ jobs:
           set +e
           { cargo fmt --all --check; echo "fmt exit $?"; } > out/fmt.log 2>&1
           { cargo test -p wie-core-arm -p wie-core-arm-aot 2>&1; echo "test exit $?"; } > out/test.log
-          { cargo clippy --workspace 2>&1; echo "clippy exit $?"; } > out/clippy.log
+          { cargo clippy -p wie-core-arm -p wie-core-arm-aot --all-targets 2>&1; echo "clippy exit $?"; } > out/clippy.log
           npm ci > out/npm.log 2>&1
           { npm run build:prod 2>&1; echo "build exit $?"; } > out/build.log
           if [ -d wie-web/dist ]; then cp -r wie-web/dist out/dist; fi
