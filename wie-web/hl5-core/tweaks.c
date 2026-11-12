@@ -7,6 +7,7 @@
 //    level: the highest grade available, always with attack %, critical and critical damage
 //  - every equipped accessory adds critical +25 on top of its own options
 //  - the hero's buffs (buff skills, stance and spirit buffs) do not run out
+//  - SP (기력) never runs out: it stays full
 //  - trait points from quests are tripled too
 //  - the knight walks as fast as the rogue (class move speed 6 -> 8)
 //  - skill books from the skill master cost nothing
@@ -256,6 +257,16 @@ static void hle_refine_loaded(void) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// SP: HERO::IncreaseSP(delta) is where SP changes (skill costs, regeneration, monster drains); while the
+// hero is alive it now fills SP to the maximum instead, so skills never run out
+#define INCREASE_SP 0x88e2cu
+static void hle_increase_sp(void) {
+  u32 hero = R[0];
+  if ((s32)rd32(hero + 0xf0) > 0) wr16(hero + 584, rd16(hero + 742));
+  cpu_pc = R[14] & ~1u;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Buffs: BATTLER::DecreaseCount(short *timer) counts every buff down; the hero's buff-skill, stance
 // and spirit-buff timers are left alone
 #define DECREASE_COUNT 0x49f68u
@@ -330,6 +341,7 @@ EXPORT(apply_tweaks) int apply_tweaks(u32 seed) {
     hook_at(LOAD_BASE + REFINE_LOADED, hle_refine_loaded, "refine_rates");
     n += 2;
   }
+  if (rd32(LOAD_BASE + INCREASE_SP) == 0xe59030f0u) { hook_at(LOAD_BASE + INCREASE_SP, hle_increase_sp, "unlimited_sp"); n++; }
   if (rd32(LOAD_BASE + CLASS_SPEED) == 0xe5c4311au) { hook_at(LOAD_BASE + CLASS_SPEED, hle_class_speed, "knight_speed"); n++; }
   if (rd32(LOAD_BASE + QUEST_TRAIT) == 0xe0812002u) { hook_at(LOAD_BASE + QUEST_TRAIT, hle_quest_trait, "quest_trait"); n++; }
   fn_new_item = find_symbol("_ZN9ItemTable7NewItemEaa");
