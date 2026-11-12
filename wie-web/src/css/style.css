@@ -567,6 +567,48 @@ html[data-screen-fit="contain"] #canvas {
   display: none;
 }
 
+.hl3-quest-guide {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  right: 8px;
+  width: min(218px, 62%);
+  padding: 9px 11px;
+  border: 1px solid #c69c5066;
+  border-radius: 10px;
+  background: #17130eeb;
+  color: #f7e9ce;
+  box-shadow: 0 3px 12px #0005;
+  font: 12px/1.45 system-ui, sans-serif;
+  touch-action: manipulation;
+  user-select: none;
+}
+.hl3-quest-guide[hidden], .hl3-quest-marker[hidden], .hl3-quest-details[hidden] { display: none; }
+.hl3-quest-toggle {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #ebc17c;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.hl3-quest-title, .hl3-quest-objective, .hl3-quest-direction { display: block; overflow-wrap: anywhere; }
+.hl3-quest-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
+.hl3-quest-objective { color: #dcc9a7; margin-top: 3px; }
+.hl3-quest-direction { color: #ffe1a4; margin-top: 3px; }
+.hl3-quest-guide[data-compact="true"] { width: auto; max-width: 62%; }
+.hl3-quest-guide[data-compact="true"] .hl3-quest-objective,
+.hl3-quest-guide[data-compact="true"] .hl3-quest-direction { display: none; }
+.hl3-quest-details { max-height: 180px; overflow-y: auto; overscroll-behavior: contain; margin-top: 8px; }
+.hl3-quest-details select { width: 100%; min-height: 36px; padding: 4px; color: #f7e9ce; background: #30271c; border: 1px solid #c69c5066; border-radius: 5px; font: inherit; }
+.hl3-quest-details p { margin: 8px 0 0; white-space: pre-wrap; }
+.hl3-quest-marker { position: absolute; z-index: 2; pointer-events: none; color: #ffe094; font: bold 28px/1 system-ui, sans-serif; text-shadow: -1px -1px 2px #251604, 1px 1px 2px #251604, 0 0 3px #000; }
+@media (max-height: 480px) { .hl3-quest-guide { top: 4px; right: 4px; font-size: 11px; padding: 5px 8px; } .hl3-quest-details { max-height: 110px; } }
+
 /* Keep display/effect preferences reachable on a phone instead of overflowing in one long row. */
 #settings-dialog {
   width: min(480px, calc(100vw - 32px));

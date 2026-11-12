@@ -7,6 +7,7 @@ import { getCheatPanel } from "./cheats";
 import { loadGamePreference } from "./game_preferences";
 import { isHeroesLore3, isHeroesLore3Binary, readSkills } from "./hl3";
 import { Hl3Feedback } from "./hl3_feedback";
+import { Hl3QuestGuide } from "./hl3_quest_guide";
 import { InotiaHunt } from "./inotia_hunt";
 import { type Direction, applyPadProfile, isInotia, isZero, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
@@ -75,6 +76,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   else delete playerView.dataset.padLayout;
   // Landscape sizes the screen column from the game's own aspect (240×320, 176×220, ...).
   const gameCanvas = document.getElementById("canvas") as HTMLCanvasElement;
+  const questGuide = backend.rendering === "canvas" && isHeroesLore3(app.id) ? new Hl3QuestGuide(gameCanvas, app.id) : undefined;
   const feedback = backend.rendering !== "canvas" ? undefined
     : isHeroesLore3(app.id) ? new Hl3Feedback(gameCanvas, app.id)
     : isZero(app) ? new ZeroFeedback(gameCanvas, app.id)
@@ -128,6 +130,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     abortController.abort();
     screenRatioObserver.disconnect();
     feedback?.dispose();
+    questGuide?.dispose();
     automation.detach();
     hunt?.stop();
     getCheatPanel().detach(app.id);
@@ -664,6 +667,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         if (!preparing && !suspended) {
           feedback?.sample(session?.cheats);
           openStyles?.();
+          questGuide?.sample(session);
         }
         break;
       case "ready":
@@ -676,6 +680,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       case "suspended":
         suspended = event.suspended;
         feedback?.clear();
+        questGuide?.clear();
         inputs.clear();
         updateControls();
         break;
@@ -695,6 +700,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   });
   void start.then(started => {
     session = started;
+    questGuide?.attach(started);
     updateControls();
     if (!preparing) {
       getCheatPanel().restore(cheatContext);

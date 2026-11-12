@@ -43,6 +43,8 @@ export interface PlayerSession {
   releaseKeys(): Promise<void>;
   stop(): Promise<void>;
   cheats?: CheatApi;
+  /** Original imported resources; available on the browser/WASM backend. */
+  readResources?(prefixes: string[]): Map<string, Uint8Array>;
 }
 
 export interface Wie {

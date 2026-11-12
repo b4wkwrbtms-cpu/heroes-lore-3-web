@@ -1,4 +1,4 @@
-import { WieWeb } from "@pkg";
+import { WieWeb, extractArchiveResources } from "@pkg";
 
 import type { PlayerSession, SessionEvent } from "../backend";
 import { presentFrame } from "../display";
@@ -37,6 +37,9 @@ export const startWasmSession = (
   let presented = -1;
 
   const session: WasmSession = {
+    readResources(prefixes) {
+      return running ? extractArchiveResources(archive, prefixes) : new Map();
+    },
     async key(key, pressed) {
       if (!running || preparing || suspended) return;
       if (pressed && !keys.has(key)) {

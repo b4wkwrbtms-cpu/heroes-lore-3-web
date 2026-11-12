@@ -215,6 +215,29 @@ pub fn extract_app_metadata(filename: &str, buf: &[u8]) -> Result<ImportedAppMet
     })
 }
 
+/// Read original resources from an imported ZIP/JAR, without modifying the running guest.
+#[wasm_bindgen(js_name = extractArchiveResources)]
+pub fn extract_archive_resources(buf: &[u8], prefixes: Vec<String>) -> Result<js_sys::Map, JsError> {
+    let files = wie_backend::extract_zip(buf).map_err(|error| JsError::new(&error.to_string()))?;
+    let result = js_sys::Map::new();
+    let append = |name: &str, bytes: &[u8]| {
+        let name = name.trim_start_matches('/');
+        if prefixes.iter().any(|prefix| name.starts_with(prefix)) {
+            result.set(&JsValue::from_str(name), &js_sys::Uint8Array::from(bytes));
+        }
+    };
+    for (name, bytes) in &files {
+        append(name, bytes);
+        if name.to_ascii_lowercase().ends_with(".jar") {
+            let nested = wie_backend::extract_zip(bytes).map_err(|error| JsError::new(&error.to_string()))?;
+            for (name, bytes) in &nested {
+                append(name, bytes);
+            }
+        }
+    }
+    Ok(result)
+}
+
 #[wasm_bindgen]
 impl WieWeb {
     #[wasm_bindgen(constructor)]
