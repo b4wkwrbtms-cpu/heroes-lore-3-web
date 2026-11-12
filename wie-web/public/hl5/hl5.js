@@ -1,5 +1,5 @@
 // 영웅서기5 player: runs the game's ARM library in hl5core.wasm and presents it on an iPhone in landscape.
-const VERSION = "16";
+const VERSION = "17";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -510,8 +510,11 @@ class Renderer {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Hit feedback drawn over the game: sparks, glow and rings at the struck monster, screen shake,
-// a short freeze on strong hits, red edges when the hero is hit. Driven by the game's own calls.
+// Hit feedback drawn over the game: sparks, glow, slashes and rings at the struck monster, a burst on
+// critical hits, a short shake, red edges when the hero is hit. Driven by the game's own calls.
+// Positions are world pixels (the camera shown on screen is subtracted when drawing, so the effects
+// stay on the monster while the map scrolls), and sparks, slashes and rings are drawn as squares on the
+// game's own pixel grid so they look like part of the pixel art.
 class Fx {
   constructor(canvas) {
     this.canvas = canvas;
@@ -520,9 +523,13 @@ class Fx {
     this.rings = [];
     this.glows = [];
     this.slashes = [];
+    this.bursts = [];
     this.flash = [0, 0, 0, 0];
     this.hurt = 0;
     this.shake = 0;
+    this.shakeT = 0;
+    this.shakeAng = 0;
+    this.cam = [0, 0]; // the camera of the picture on screen (world pixel at the top left)
     this.drawn = false;
     this.reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   }
@@ -536,40 +543,50 @@ class Fx {
   hit(x, y, crit) {
     const k = this.level();
     if (!k) return;
-    const n = Math.round((crit ? 22 : 12) * k);
+    const n = Math.round((crit ? 18 : 10) * k);
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2, s = (crit ? 2.8 : 2.2) * (0.5 + Math.random()) * k;
-      this.parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 0.6, life: 1, decay: 0.045 + Math.random() * 0.04, w: crit ? 1.6 : 1.2, hue: crit ? 45 : 30 + Math.random() * 20 });
+      const a = Math.random() * Math.PI * 2, sp = (crit ? 2.6 : 2) * (0.5 + Math.random()) * k;
+      this.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.6, life: 1, decay: 0.04 + Math.random() * 0.035, w: crit && i % 3 === 0 ? 2 : 1, hue: crit ? 45 : 28 + Math.random() * 20 });
     }
-    this.glows.push({ x, y, r: (crit ? 26 : 18) * k, life: 1, decay: crit ? 0.07 : 0.1, hue: crit ? 48 : 35 });
+    this.glows.push({ x, y, r: (crit ? 24 : 16) * k, life: 1, decay: crit ? 0.075 : 0.11, hue: crit ? 48 : 35 });
     const ang = -0.6 + Math.random() * 1.2 + (Math.random() < 0.5 ? 0 : Math.PI / 2);
-    this.slashes.push({ x, y, ang, len: (crit ? 30 : 22) * k, life: 1, decay: crit ? 0.11 : 0.14, hue: crit ? 45 : 30 });
+    this.slashes.push({ x, y, ang, len: (crit ? 30 : 22) * k, life: 1, decay: crit ? 0.1 : 0.14, hue: crit ? 45 : 30 });
     if (crit) {
-      this.rings.push({ x, y, r: 6, vr: 3.2 * k, life: 1, decay: 0.06, hue: 45 });
-      this.flash = [1, 0.85, 0.5, 0.22 * k];
-      this.kick(3 * k);
-    } else this.kick(1.2 * k);
+      this.bursts.push({ x, y, len: 13 * k, life: 1, decay: 0.085 });
+      this.rings.push({ x, y, r: 5, vr: 2.8 * k, life: 1, decay: 0.065, hue: 45 });
+      this.flash = [1, 0.85, 0.5, 0.14 * k];
+      this.kick(2.4 * k);
+    } else this.kick(1 * k);
   }
   kill(x, y) {
     const k = this.level();
     if (!k) return;
-    this.rings.push({ x, y, r: 4, vr: 2.6 * k, life: 1, decay: 0.05, hue: 20 });
-    this.rings.push({ x, y, r: 2, vr: 1.7 * k, life: 1, decay: 0.045, hue: 40 });
-    for (let i = 0; i < 16 * k; i++) {
-      const a = Math.random() * Math.PI * 2, s = 1.2 * (0.4 + Math.random()) * k;
-      this.parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 0.9, life: 1, decay: 0.03 + Math.random() * 0.03, w: 1.4, hue: 15 + Math.random() * 30 });
+    this.rings.push({ x, y, r: 4, vr: 2.4 * k, life: 1, decay: 0.05, hue: 20 });
+    this.rings.push({ x, y, r: 2, vr: 1.6 * k, life: 1, decay: 0.045, hue: 40 });
+    for (let i = 0; i < 14 * k; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 1.2 * (0.4 + Math.random()) * k;
+      this.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.9, life: 1, decay: 0.03 + Math.random() * 0.03, w: 1, hue: 15 + Math.random() * 30 });
     }
-    this.kick(2 * k);
+    this.kick(1.8 * k);
   }
   hurtHero() {
     const k = this.level();
     if (!k) return;
     this.hurt = Math.min(1, 0.55 * k + this.hurt * 0.5);
-    this.kick(2.2 * k);
+    this.kick(2 * k);
   }
+  // a short damped sway in one direction instead of a random jitter every frame
   kick(px) {
     if (this.reduced) px *= 0.3;
-    this.shake = Math.max(this.shake, px);
+    if (px <= this.shake) return;
+    this.shake = px;
+    this.shakeT = 0;
+    this.shakeAng = Math.random() * Math.PI * 2;
+  }
+  shakeOffset() {
+    if (!this.shake) return null;
+    const v = Math.sin(this.shakeT * 0.09) * this.shake;
+    return [Math.cos(this.shakeAng) * v, Math.sin(this.shakeAng) * v * 0.7];
   }
   update(dt) {
     const f = Math.min(dt / 16.7, 3);
@@ -577,57 +594,70 @@ class Fx {
     for (const r of this.rings) { r.r += r.vr * f; r.vr *= 0.93; r.life -= r.decay * f; }
     for (const g of this.glows) g.life -= g.decay * f;
     for (const sl of this.slashes) sl.life -= sl.decay * f;
+    for (const b of this.bursts) b.life -= b.decay * f;
     this.slashes = this.slashes.filter(sl => sl.life > 0);
     this.parts = this.parts.filter(p => p.life > 0);
     this.rings = this.rings.filter(r => r.life > 0);
     this.glows = this.glows.filter(g => g.life > 0);
+    this.bursts = this.bursts.filter(b => b.life > 0);
     this.flash[3] = Math.max(0, this.flash[3] - 0.03 * f);
     this.hurt = Math.max(0, this.hurt - 0.035 * f);
-    this.shake = this.shake < 0.2 ? 0 : this.shake * Math.pow(0.82, f);
+    this.shakeT += dt;
+    this.shake = this.shake < 0.15 ? 0 : this.shake * Math.pow(0.84, f);
   }
   draw() {
     const c = this.ctx, s = this.scale;
-    const busy = this.parts.length || this.rings.length || this.glows.length || this.slashes.length;
+    const busy = this.parts.length || this.rings.length || this.glows.length || this.slashes.length || this.bursts.length;
     if (!busy && !this.drawn) return;
     c.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.drawn = !!busy;
     if (!busy) return;
+    const [cx, cy] = this.cam;
+    // one square of `size` game pixels, centred on world (x, y) and snapped to the game's pixel grid
+    const dot = (x, y, size) => c.fillRect((Math.round(x - cx - size / 2)) * s, (Math.round(y - cy - size / 2)) * s, size * s, size * s);
+    const line = (x0, y0, x1, y1, size) => {
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
+      for (let i = 0; i <= n; i++) dot(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, size);
+    };
     c.globalCompositeOperation = "lighter";
     for (const g of this.glows) {
-      const r = g.r * s * (1.2 - g.life * 0.4);
-      const grd = c.createRadialGradient(g.x * s, g.y * s, 0, g.x * s, g.y * s, r);
-      grd.addColorStop(0, `hsla(${g.hue},100%,85%,${0.85 * g.life})`);
-      grd.addColorStop(0.35, `hsla(${g.hue},100%,60%,${0.45 * g.life})`);
+      const r = g.r * s * (1.2 - g.life * 0.4), gx = (g.x - cx) * s, gy = (g.y - cy) * s;
+      const grd = c.createRadialGradient(gx, gy, 0, gx, gy, r);
+      grd.addColorStop(0, `hsla(${g.hue},100%,85%,${0.8 * g.life})`);
+      grd.addColorStop(0.35, `hsla(${g.hue},100%,60%,${0.4 * g.life})`);
       grd.addColorStop(1, `hsla(${g.hue},100%,50%,0)`);
       c.fillStyle = grd;
-      c.fillRect(g.x * s - r, g.y * s - r, r * 2, r * 2);
+      c.fillRect(gx - r, gy - r, r * 2, r * 2);
     }
-    c.lineCap = "round";
     for (const sl of this.slashes) {
-      const grow = 1.25 - sl.life * 0.25, half = (sl.len * s * grow) / 2;
+      const grow = 1.25 - sl.life * 0.25, half = (sl.len * grow) / 2;
       const dx = Math.cos(sl.ang) * half, dy = Math.sin(sl.ang) * half * 0.8;
-      const x0 = sl.x * s - dx, y0 = sl.y * s - dy, x1 = sl.x * s + dx, y1 = sl.y * s + dy;
-      c.strokeStyle = `hsla(${sl.hue},100%,60%,${0.55 * sl.life})`;
-      c.lineWidth = 5 * s * sl.life;
-      c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
-      c.strokeStyle = `rgba(255,255,245,${sl.life})`;
-      c.lineWidth = 1.6 * s * sl.life;
-      c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+      c.fillStyle = `hsla(${sl.hue},100%,60%,${0.5 * sl.life})`;
+      line(sl.x - dx, sl.y - dy, sl.x + dx, sl.y + dy, sl.life > 0.5 ? 3 : 2);
+      c.fillStyle = `rgba(255,255,240,${sl.life})`;
+      line(sl.x - dx * 0.85, sl.y - dy * 0.85, sl.x + dx * 0.85, sl.y + dy * 0.85, 1);
     }
-    for (const p of this.parts) {
-      c.strokeStyle = `hsla(${p.hue},100%,${60 + 30 * p.life}%,${p.life})`;
-      c.lineWidth = p.w * s * 0.6;
-      c.beginPath();
-      c.moveTo(p.x * s, p.y * s);
-      c.lineTo((p.x - p.vx * 2.2) * s, (p.y - p.vy * 2.2) * s);
-      c.stroke();
+    for (const b of this.bursts) { // a pixel star: four long rays and four short ones
+      const len = b.len * (1.35 - b.life * 0.35);
+      c.fillStyle = `rgba(255,250,215,${b.life})`;
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4, l = i % 2 ? len * 0.55 : len, r0 = len * 0.18 * (1 - b.life);
+        line(b.x + Math.cos(a) * r0, b.y + Math.sin(a) * r0 * 0.8, b.x + Math.cos(a) * l, b.y + Math.sin(a) * l * 0.8, 1);
+      }
+      c.fillStyle = `rgba(255,220,120,${0.8 * b.life})`;
+      dot(b.x, b.y, 3);
+    }
+    for (const p of this.parts) { // a bright head and a fading two-pixel tail
+      c.fillStyle = `hsla(${p.hue},100%,${62 + 30 * p.life}%,${p.life})`;
+      dot(p.x, p.y, p.w);
+      c.fillStyle = `hsla(${p.hue},100%,55%,${0.45 * p.life})`;
+      dot(p.x - p.vx * 0.9, p.y - p.vy * 0.9, 1);
+      dot(p.x - p.vx * 1.8, p.y - p.vy * 1.8, 1);
     }
     for (const r of this.rings) {
-      c.strokeStyle = `hsla(${r.hue},100%,70%,${0.8 * r.life})`;
-      c.lineWidth = 1.6 * s * r.life;
-      c.beginPath();
-      c.ellipse(r.x * s, r.y * s, r.r * s, r.r * s * 0.6, 0, 0, Math.PI * 2);
-      c.stroke();
+      c.fillStyle = `hsla(${r.hue},100%,70%,${0.8 * r.life})`;
+      const n = Math.max(12, Math.ceil(r.r * 4.2));
+      for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; dot(r.x + Math.cos(a) * r.r, r.y + Math.sin(a) * r.r * 0.6, 1); }
     }
     c.globalCompositeOperation = "source-over";
   }
@@ -1010,7 +1040,7 @@ function pressKey(code) {
 
 // ---------------------------------------------------------------------------------------------
 // Game events from the core
-const monsters = new Map(); // battler pointer -> {x, y, tick}
+const monsters = new Map(); // battler pointer -> {x, y (screen), wx, wy (world), tick}
 const counters = { hits: 0, kills: 0, crits: 0, hurts: 0, vib: 0 };
 const dying = new Map();
 const lastHit = new Map();
@@ -1033,10 +1063,11 @@ function runKeyQueue() {
   }
 }
 
+// A pause of the game on strong hits. Frequent critical hits made it read as lag, so only the "강하게"
+// setting keeps a short one; the in-between frames keep running through it.
 function freeze(ms) {
-  if (prefs.impact === "off") return;
-  const k = prefs.impact === "strong" ? 1.5 : 1;
-  freezeUntil = Math.max(freezeUntil, performance.now() + ms * k);
+  if (prefs.impact !== "strong") return;
+  freezeUntil = Math.max(freezeUntil, performance.now() + ms * 0.6);
 }
 
 function onCoreEvent(kind, a, b, c) {
@@ -1062,7 +1093,7 @@ function onCoreEvent(kind, a, b, c) {
       const r = core.regs();
       const obj = r[0] >>> 0;
       const x = core.rd32(obj + 4), y = core.rd32(obj + 8);
-      monsters.set(obj, { x: x + r[2], y: y + r[3], tick: tickNo });
+      monsters.set(obj, { x: x + r[2], y: y + r[3], wx: x, wy: y, tick: tickNo });
       motion.drawn.set(obj, [x, y]);
       return 0;
     }
@@ -1082,7 +1113,7 @@ function onCoreEvent(kind, a, b, c) {
       const m = monsters.get(target);
       if (m && tickNo - m.tick < 4) {
         const crit = critPending > tickNo - 2;
-        fx.hit(m.x, m.y - 18, crit);
+        fx.hit(m.wx, m.wy - 18, crit);
         counters.hits++;
         if (crit) counters.crits++;
         freeze(crit ? 70 : 28);
@@ -1097,7 +1128,7 @@ function onCoreEvent(kind, a, b, c) {
       const hitAt = lastHit.get(obj);
       if ((seen === undefined || tickNo - seen > 40) && hitAt !== undefined && tickNo - hitAt < 90) {
         const m = monsters.get(obj);
-        if (m) { fx.kill(m.x, m.y - 14); freeze(55); counters.kills++; }
+        if (m) { fx.kill(m.wx, m.wy - 14); freeze(55); counters.kills++; }
       }
       return 0;
     }
@@ -1231,7 +1262,16 @@ function onGameFrame(t, f) {
   // without movement (menus, standing still, scene changes) the real frame is shown at once
   motion.cost *= 0.995; // a device that was too slow for a while gets another try later
   motion.pending = !!(st && motion.cost < 12 && t - motion.t0 < motion.period * 3 && motionWrites(motion.prev, st, 0.5));
-  if (!motion.pending) renderer.upload(new Uint16Array(core.mem.buffer, f.data, f.w * f.h), f.w, f.h);
+  if (!motion.pending) showReal(f);
+}
+// the hit effects follow the camera of the picture on screen
+function liveCam() {
+  const map = core.rd32(GMAIN + 0x1488) >>> 0;
+  if (map >= HEAP_LO && map + 0x100 < core.ex.heap_top()) fx.cam = [core.rd32(map + 0xc0), core.rd32(map + 0xc4)];
+}
+function showReal(f) {
+  liveCam();
+  renderer.upload(new Uint16Array(core.mem.buffer, f.data, f.w * f.h), f.w, f.h);
 }
 // called every display frame while the real frame of the last game frame is held back
 function presentMotion(t, f) {
@@ -1240,7 +1280,7 @@ function presentMotion(t, f) {
   const frac = (t - lag - motion.t0) / span;
   if (frac >= 0.9) {
     motion.pending = false;
-    renderer.upload(new Uint16Array(core.mem.buffer, f.data, f.w * f.h), f.w, f.h);
+    showReal(f);
     return;
   }
   const step = motion.cost > 7 ? 0.4 : 0.12; // slow device: one in-between frame per game frame
@@ -1257,10 +1297,12 @@ function presentMotion(t, f) {
   if (!px || core.frame().uploads !== u0) { // the game flushed by itself: show the real frame
     motion.pending = false;
     lastUploads = core.frame().uploads;
-    renderer.upload(new Uint16Array(core.mem.buffer, core.frame().data, f.w * f.h), f.w, f.h);
+    showReal(core.frame());
     return;
   }
   motion.lastFrac = frac;
+  const lerp = (a, b) => Math.round(a + (b - a) * frac);
+  fx.cam = [lerp(prev.sx, cur.sx), lerp(prev.sy, cur.sy)];
   renderer.upload(px, f.w, f.h);
 }
 
@@ -1292,10 +1334,10 @@ function frameLoop(t) {
     stats.ticks++;
     onGameFrame(t, f);
   }
-  if (f.data && motion.pending && !frozen) presentMotion(t, f);
+  if (f.data && motion.pending) presentMotion(t, f);
   fx.update(dt);
-  const sh = fx.shake;
-  $("stage").style.transform = sh ? `translate(${((Math.random() * 2 - 1) * sh).toFixed(1)}px, ${((Math.random() * 2 - 1) * sh).toFixed(1)}px)` : "";
+  const sh = fx.shakeOffset();
+  $("stage").style.transform = sh ? `translate(${sh[0].toFixed(2)}px, ${sh[1].toFixed(2)}px)` : "";
   const d0 = performance.now();
   if (f.data && !window.HL5_NODRAW) renderer.draw(fx);
   fx.draw();
