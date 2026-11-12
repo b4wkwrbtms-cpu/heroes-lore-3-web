@@ -11,7 +11,10 @@ import type { CheatApi } from "./backend";
  * - Every real item's word1 has a non-zero kind in its top 6 bits (7 for plain items, more for magic gear); only the
  *   pouch uses the whole word as a number. An item whose kind reads 0 was overwritten — typically by a gold freeze
  *   left on a slot the pouch has since moved out of — and makes DMG/DEF explode once the game recomputes them.
- * - The party is an array of member records: the hero first, then the mercenaries.
+ * - Characters are records PARTY_STRIDE apart: the party first (the hero, then the mercenaries), then the monsters of
+ *   the current map. Each has its tile position, and the hero the index of its current target, which the game sets on
+ *   an attack press and clears as soon as the hero walks.
+ * - A state word reads ON_FIELD while the player walks the field; menus, the map and dialogs use other values.
  */
 export const INOTIA = {
   ROLL: 0x00184880,
@@ -32,6 +35,13 @@ export const INOTIA = {
   MAX_MP: 0x40,
   HP: 0x54,
   MP: 0x58,
+  TILE_X: 0x22c,
+  TILE_Y: 0x230,
+  TARGET: 0x240,
+  MONSTER_FIRST: 6,
+  MONSTER_LAST: 52,
+  STATE: 0x0016f600,
+  ON_FIELD: 2,
 } as const;
 
 export const GOLD_MAX = 9_999_999;
@@ -116,3 +126,23 @@ export const healParty = (api: CheatApi, ratio = 0.35) => {
     if (api.read(member + INOTIA.MP, 4, false) < maxMp * ratio) api.write(member + INOTIA.MP, 4, false, maxMp);
   }
 };
+
+export interface Tile {
+  x: number;
+  y: number;
+}
+
+const character = (index: number) => INOTIA.PARTY + index * INOTIA.PARTY_STRIDE;
+
+export const isOnField = (api: CheatApi): boolean => api.read(INOTIA.STATE, 4, false) === INOTIA.ON_FIELD;
+
+export const characterTile = (api: CheatApi, index: number): Tile => ({
+  x: api.read(character(index) + INOTIA.TILE_X, 4, false) | 0,
+  y: api.read(character(index) + INOTIA.TILE_Y, 4, false) | 0,
+});
+
+/** The character the hero targets, or -1; it may have fallen since. */
+export const heroTarget = (api: CheatApi): number => api.read(character(0) + INOTIA.TARGET, 4, false) | 0;
+
+export const isMonsterAlive = (api: CheatApi, index: number): boolean =>
+  index >= INOTIA.MONSTER_FIRST && index <= INOTIA.MONSTER_LAST && (api.read(character(index) + INOTIA.HP, 4, false) | 0) > 0;

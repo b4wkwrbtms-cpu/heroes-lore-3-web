@@ -4,9 +4,11 @@ import { recordPageView } from "./analytics";
 import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, skillSlotKeys } from "./automation";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
 import { getCheatPanel } from "./cheats";
+import { loadGamePreference } from "./game_preferences";
 import { isHeroesLore3, isHeroesLore3Binary, readSkills } from "./hl3";
 import { Hl3Feedback } from "./hl3_feedback";
-import { type Direction, applyPadProfile, padProfileFor, remapKey } from "./pad_profile";
+import { InotiaHunt } from "./inotia_hunt";
+import { type Direction, applyPadProfile, isInotia, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
 
 const KEY_MAP: Record<string, string> = {
@@ -105,6 +107,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     screenRatioObserver.disconnect();
     feedback?.dispose();
     automation.detach();
+    hunt?.stop();
     getCheatPanel().detach(app.id);
     unsubscribeAuto();
     for (const timer of flashTimers.values()) window.clearTimeout(timer);
@@ -166,7 +169,35 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         void session.key(key, true).catch(finish);
       }
     }
+    if (hunt && !source.startsWith("auto:")) {
+      const held = [...inputs.entries()].some(([from, pressed]) => !from.startsWith("auto:") && pressed === attackKey);
+      hunt.setHeld(held && loadGamePreference(app.id, "auto_approach", "on") !== "off");
+    }
   };
+  const attackKey = remapKey(padProfile, "OK");
+  const walkKeys = new Set<string>(Object.values(padProfile.directions));
+  /** A fresh attack press for the game, held or not by the player; the key ends up as the player holds it. */
+  const strikeAttack = () => {
+    const current = session;
+    if (!current || ending) return;
+    const held = [...inputs.values()].includes(attackKey);
+    flashKey(attackKey);
+    void current.key(attackKey, !held).catch(finish);
+    window.setTimeout(() => {
+      if (session !== current || ending) return;
+      const wanted = [...inputs.values()].includes(attackKey);
+      if (wanted === held) void current.key(attackKey, wanted).catch(finish);
+    }, 60);
+  };
+  const hunt = isInotia(app)
+    ? new InotiaHunt({
+      getCheats: () => cheatContext.getCheats(),
+      steer: key => setKey("auto:hunt", key),
+      strike: strikeAttack,
+      playerSteering: () => [...inputs.entries()].some(([from, pressed]) => !from.startsWith("auto:") && walkKeys.has(pressed)),
+      directions: padProfile.directions,
+    })
+    : undefined;
   let autoPressId = 0;
   const pressKey = (key: string, holdMs = 90) => {
     const source = `auto:${key}:${autoPressId++}`;
@@ -216,6 +247,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     }
   };
   const releaseKeys = () => {
+    hunt?.stop();
     inputs.clear();
     if (session && !ending) void session.releaseKeys().catch(finish);
   };

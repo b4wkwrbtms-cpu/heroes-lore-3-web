@@ -2,6 +2,7 @@ import { X, createIcons } from "lucide";
 
 import { type AutoConfig, MACRO_NAMES, SLOT_KEYS, type SkillRef, type SlotKey, automation, loadAutoConfig, macroCandidates, skillSlotKeys, storeAutoConfig } from "./automation";
 import type { CheatApi } from "./backend";
+import { loadGamePreference, storeGamePreference } from "./game_preferences";
 import {
   CASH_ITEMS, HL3, HL3_SKILL_LABELS, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel,
   getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, isHeroesLore3Binary, prepareAutoPotions, readBag, readEquipment, readSkills, readVitals,
@@ -461,6 +462,18 @@ export const getCheatPanel = (): CheatPanel => {
       }));
       body.append(repairRow);
     }
+
+    // 공격하면 다가가기 (app.ts → InotiaHunt)
+    const approachOn = loadGamePreference(context?.appId, "auto_approach", "on") !== "off";
+    const approachRow = el("div", "cheat-item-actions");
+    approachRow.append(button(approachOn ? "🗡️ 공격하면 다가가서 때리기: 켜짐" : "🗡️ 공격하면 다가가서 때리기: 꺼짐", approachOn ? "primary-command" : "secondary-command", () => {
+      storeGamePreference(context?.appId, "auto_approach", approachOn ? "off" : "on");
+      setStatus(approachOn
+        ? "껐어요. 공격 버튼이 원래 게임처럼 제자리에서만 때려요."
+        : "켰어요. 공격을 누르면 게임이 고른 몬스터에게 걸어가서 때리고, 꾹 누르고 있으면 계속 때리면서 다음 몬스터로 넘어가요.");
+    }));
+    body.append(approachRow);
+    body.append(el("p", "cheat-muted", "근접 직업용이에요. 멀리서 쏘는 직업이면 꺼 두세요. 조이스틱을 움직이면 그동안은 직접 조종이 우선이에요."));
 
     // 파티 자동 회복
     const healOn = saved.some(cheat => cheat.name === AUTO_HEAL_KEY) && tickTimer !== undefined;
