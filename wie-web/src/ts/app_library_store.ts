@@ -48,11 +48,22 @@ export class AppLibraryStore {
     });
   }
 
-  public add(metadata: LibraryApp, archive: Uint8Array): Promise<void> {
+  public save(metadata: LibraryApp, archive: Uint8Array): Promise<void> {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(["apps", "archives"], "readwrite");
-      transaction.objectStore("apps").add(metadata);
-      transaction.objectStore("archives").add(archive, metadata.id);
+      const apps = transaction.objectStore("apps");
+      const previous = apps.get(metadata.id);
+
+      previous.onsuccess = () => {
+        const existing = previous.result as LibraryApp | undefined;
+        try {
+          apps.put({ ...metadata, addedAt: existing?.addedAt ?? metadata.addedAt });
+          transaction.objectStore("archives").put(archive, metadata.id);
+        } catch (error) {
+          transaction.abort();
+          reject(error);
+        }
+      };
 
       transaction.oncomplete = () => resolve();
       transaction.onabort = () => reject(transaction.error);

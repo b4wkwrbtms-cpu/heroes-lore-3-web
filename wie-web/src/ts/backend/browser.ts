@@ -27,14 +27,8 @@ export const initializeWie = async (): Promise<Wie> => {
           addedAt: Date.now(),
           icon: icon.length ? new Blob([new Uint8Array(icon).buffer]) : undefined,
         };
-        try {
-          await store.add(app, archive);
-        } catch (error) {
-          if (error instanceof DOMException && error.name === "ConstraintError") {
-            throw new Error(t("appAlreadyAdded", { title: app.title }));
-          }
-          throw error;
-        }
+        // Reimport replaces the archive atomically; PID-scoped saves live separately.
+        await store.save(app, archive);
       } finally {
         extracted.free();
       }

@@ -1,12 +1,10 @@
 import path from "path";
 import os from "os";
 import { spawn } from "child_process";
-import { mkdir } from "fs/promises";
 
 import webpack from "webpack";
 import TsConfigPathsPlugin from "tsconfig-paths-webpack-plugin";
 import CopyPlugin from "copy-webpack-plugin";
-import { createSentrySDK } from "sentry";
 
 class WasmPackPlugin {
   readonly crateDir: string;
@@ -19,7 +17,12 @@ class WasmPackPlugin {
     const dev = compiler.options.mode !== "production";
 
     const cargoBin = path.join(os.homedir(), ".cargo", "bin");
-    const env = { ...process.env, PATH: `${cargoBin}${path.delimiter}${process.env.PATH ?? ""}` };
+    const env = {
+      ...process.env,
+      PATH: `${cargoBin}${path.delimiter}${process.env.PATH ?? ""}`,
+      // Standalone Pages builds need neither DWARF data nor an external Sentry upload.
+      ...(!dev ? { CARGO_PROFILE_RELEASE_DEBUG: "0" } : {}),
+    };
 
     const rustDir = path.join(this.crateDir, "src/rust");
     const cargoToml = path.join(this.crateDir, "Cargo.toml");
@@ -41,16 +44,6 @@ class WasmPackPlugin {
         proc.on("exit", code => code === 0 ? resolve() : reject(new Error(`wasm-pack exited with code ${code}`)));
         proc.on("error", reject);
       });
-      if (!dev) {
-        const debugDir = path.resolve(this.crateDir, "../target/sentry");
-        await mkdir(debugDir, { recursive: true });
-        await createSentrySDK()["wasm-split"]({
-          input: path.join(this.crateDir, "pkg/wie_web_bg.wasm"),
-          debugOut: path.join(debugDir, "wie_web.debug.wasm"),
-          strip: true,
-          stripNames: true,
-        });
-      }
     });
 
     compiler.hooks.afterCompile.tap("WasmPackPlugin", compilation => {
