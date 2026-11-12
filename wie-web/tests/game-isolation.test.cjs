@@ -58,6 +58,8 @@ test("영웅서기 제로 and 영웅서기4 get their own pads by PID while the 
   assert.deepEqual({ ...inotiaPad.directions }, { UP: "2", DOWN: "8", LEFT: "4", RIGHT: "6" });
   assert.equal(pad.remapKey(inotiaPad, "OK"), "5");
   assert.equal(inotiaPad.buttons.CALL.key, "UP");
+  assert.equal(inotiaPad.stick, "fixed");
+  assert.equal(hl3Pad.stick, undefined);
   // 제로: arrows (its menus take 2/4/6/8 as entry shortcuts), diagonals, OK attacks, the save key never reaches the game.
   assert.equal(zeroPad.name, "zero");
   assert.equal(zeroPad.diagonals, true);
@@ -72,6 +74,8 @@ test("영웅서기 제로 and 영웅서기4 get their own pads by PID while the 
   assert.equal(pad.isHeroesLore4(renamedHl4), true);
   assert.equal(hl4Pad.name, "hl4");
   assert.equal(hl4Pad.layout, undefined);
+  assert.equal(hl4Pad.stick, undefined);
+  assert.equal(zeroPad.stick, undefined);
   assert.equal(hl4Pad.diagonals, undefined);
   assert.deepEqual({ ...hl4Pad.directions }, { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT" });
   assert.equal(pad.remapKey(hl4Pad, "OK"), "OK");

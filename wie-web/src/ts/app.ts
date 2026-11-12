@@ -623,9 +623,10 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         const ringY = ring.top + radius;
         sector = undefined;
         // Pressing the resting stick's rim works like a d-pad: that is already a direction from its centre.
-        // Anywhere else the stick comes to the thumb and starts neutral.
+        // Anywhere else the stick comes to the thumb and starts neutral, unless the profile pins it in place.
         const fromRing = Math.hypot(event.clientX - ringX, event.clientY - ringY);
-        if (!joystick.classList.contains("active") && fromRing <= radius && fromRing >= radius * 0.45) {
+        const onRim = !joystick.classList.contains("active") && fromRing <= radius && fromRing >= radius * 0.45;
+        if (padProfile.stick === "fixed" || onRim) {
           originX = ringX;
           originY = ringY;
         } else {

@@ -21,6 +21,11 @@ export interface PadProfile {
    */
   layout?: "keypad";
   /**
+   * `fixed`: the stick stays where it rests and steers from its own centre wherever the thumb lands in its zone.
+   * Without it the stick comes to the thumb.
+   */
+  stick?: "fixed";
+  /**
    * The game walks diagonally while two directions are held, so the stick has eight sectors and holds both keys of a
    * diagonal. Without it the stick has four sectors and holds one key at a time.
    */
@@ -47,6 +52,7 @@ const DEFAULT_PROFILE: PadProfile = {
 const INOTIA_PROFILE: PadProfile = {
   name: "inotia",
   layout: "keypad",
+  stick: "fixed",
   directions: { UP: "2", DOWN: "8", LEFT: "4", RIGHT: "6" },
   keys: { OK: "5" },
   buttons: {
