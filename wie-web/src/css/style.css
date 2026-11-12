@@ -567,6 +567,67 @@ html[data-screen-fit="contain"] #canvas {
   display: none;
 }
 
+/* Keep display/effect preferences reachable on a phone instead of overflowing in one long row. */
+#settings-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  color: var(--fg);
+  background: var(--card-bg);
+  overflow: auto;
+}
+
+#settings-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+#settings-dialog .dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+#settings-dialog h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+#settings-dialog .settings-fields {
+  display: grid;
+  gap: 18px;
+}
+
+#settings-dialog .settings-fields > label:not([hidden]) {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+#settings-dialog .settings-fields > label > svg {
+  width: 20px;
+  height: 20px;
+}
+
+#settings-dialog .settings-fields select,
+#settings-dialog .settings-fields input {
+  grid-column: 2;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+}
+
+#settings-dialog .settings-fields select {
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  background: var(--bg);
+}
+
 .player-status {
   position: absolute;
   inset: 0;
