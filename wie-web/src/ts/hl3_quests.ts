@@ -182,8 +182,7 @@ function reachable(resources: Hl3QuestResources, start: number, state: QuestCond
 /** Read-only projection. Accepted quests, progress and story flags always come from guest memory. */
 export function readHl3Quests(appId: string, api: CheatApi, resources: Hl3QuestResources, selectedId?: number): QuestSnapshot | undefined {
   if (!isHeroesLore3(appId) || !isHeroesLore3Binary(api)) return undefined;
-  // The shared cheat API supports 16/32-bit reads; width=1 would actually read 32 bits.
-  const read = (a: number, width = 4) => width === 1 ? api.read(a, 2, false) & 255 : api.read(a, width, false);
+  const read = (a: number, width = 4) => api.read(a, width, false);
   if (read(G + 0x50) !== 4 || read(0x0150db48) !== 3) return undefined;
   const menu = read(G + 0x9e00), map = read(G + 0x9c68), collider = read(G + 0x9ba4);
   if (!heap(menu) || !heap(map) || !heap(collider)) return undefined;
@@ -199,7 +198,7 @@ export function readHl3Quests(appId: string, api: CheatApi, resources: Hl3QuestR
   const state: QuestConditions = {
     quest, local, level: read(G + 0xba, 2), gold: read(G + 0xa4),
     itemCount(category, index) {
-      bag ??= readBag({ ...api, read: (address, width) => read(address, width) });
+      bag ??= readBag(api);
       return bag.filter(item => item.category === category && item.index === index).reduce((n, item) => n + item.count, 0);
     },
   };

@@ -151,7 +151,15 @@ pub struct WieWeb {
     frozen: Vec<(u32, u32, u32, bool)>,
 }
 
-/// Encode `value` as `width` bytes (2 or 4) in guest byte order.
+/// Bytes a cheat value occupies: 1, 2 or 4 (any other width is a whole word).
+fn cheat_width(width: u32) -> usize {
+    match width {
+        1 | 2 => width as usize,
+        _ => 4,
+    }
+}
+
+/// Encode `value` as `width` bytes (1, 2 or 4) in guest byte order.
 fn cheat_pattern(value: u32, width: usize, big_endian: bool) -> Vec<u8> {
     if big_endian {
         value.to_be_bytes()[4 - width..].to_vec()
@@ -160,7 +168,7 @@ fn cheat_pattern(value: u32, width: usize, big_endian: bool) -> Vec<u8> {
     }
 }
 
-/// Decode `width` bytes (2 or 4) from guest byte order.
+/// Decode `width` bytes (1, 2 or 4) from guest byte order.
 fn cheat_decode(bytes: &[u8], big_endian: bool) -> u32 {
     let mut buf = [0u8; 4];
     if big_endian {
@@ -346,12 +354,12 @@ impl WieWeb {
             .fold(0u32, |acc, (_, size)| acc.saturating_add(*size))
     }
 
-    /// Search guest memory for `value` stored in `width` bytes (2 or 4), at every byte offset.
+    /// Search guest memory for `value` stored in `width` bytes (1, 2 or 4), at every byte offset.
     /// When `previous` is non-empty only those addresses are re-checked (narrowing search).
     pub fn cheat_search(&self, value: u32, width: u32, big_endian: bool, previous: &[u32]) -> Result<Vec<u32>, JsError> {
         const MAX_RESULTS: usize = 50_000;
         const STEP: usize = 0x10000;
-        let width = if width == 2 { 2usize } else { 4usize };
+        let width = cheat_width(width);
         let needle = cheat_pattern(value, width, big_endian);
         let mut results = Vec::new();
 
@@ -432,7 +440,7 @@ impl WieWeb {
     }
 
     pub fn cheat_read(&self, address: u32, width: u32, big_endian: bool) -> Result<u32, JsError> {
-        let width = if width == 2 { 2usize } else { 4usize };
+        let width = cheat_width(width);
         let mut buf = [0u8; 4];
         self.emulator
             .read_memory(address, &mut buf[..width])
@@ -442,13 +450,13 @@ impl WieWeb {
     }
 
     pub fn cheat_write(&mut self, address: u32, width: u32, big_endian: bool, value: u32) -> Result<(), JsError> {
-        let width = if width == 2 { 2usize } else { 4usize };
+        let width = cheat_width(width);
         let bytes = cheat_pattern(value, width, big_endian);
         self.emulator.write_memory(address, &bytes).map_err(|e| JsError::new(&e.to_string()))
     }
 
     pub fn cheat_freeze(&mut self, address: u32, width: u32, big_endian: bool, value: u32) -> Result<(), JsError> {
-        let width = if width == 2 { 2 } else { 4 };
+        let width = cheat_width(width) as u32;
         self.frozen.retain(|(a, _, _, _)| *a != address);
         self.frozen.push((address, width, value, big_endian));
         self.cheat_write(address, width, big_endian, value)

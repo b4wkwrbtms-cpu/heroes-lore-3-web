@@ -23,7 +23,7 @@ export type SessionEvent =
   | { type: "stopped"; failed: boolean }
   | { type: "error"; message: string; cause?: unknown };
 
-/** Live guest-memory access for the cheat tool. Values are unsigned; `width` is 2 or 4 bytes. */
+/** Live guest-memory access for the cheat tool. Values are unsigned; `width` is 1, 2 or 4 bytes. */
 export interface CheatApi {
   memorySize(): number;
   /** Flattened [start, size, start, size, ...] of mapped guest memory. */

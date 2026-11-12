@@ -82,7 +82,7 @@ function memory() {
   const put = (a, b) => b.forEach((value, i) => data.set(a + i, value));
   const write = (a, value, width = 4) => { for (let i = 0; i < width; i++) data.set(a + i, (value >>> (i * 8)) & 255); };
   const api = {
-    read(a, width, bigEndian) { assert.equal(bigEndian, false); assert.ok(width === 2 || width === 4, "WASM read supports only 16/32 bits"); reads++; let v = 0; for (let i = 0; i < width; i++) v |= (data.get(a + i) ?? 0) << (8 * i); return v >>> 0; },
+    read(a, width, bigEndian) { assert.equal(bigEndian, false); assert.ok(width === 1 || width === 2 || width === 4, "reads are 1, 2 or 4 bytes"); reads++; let v = 0; for (let i = 0; i < width; i++) v |= (data.get(a + i) ?? 0) << (8 * i); return v >>> 0; },
     dump(a, size) { reads++; return Uint8Array.from({ length: size }, (_, i) => data.get(a + i) ?? 0); },
     write() { assert.fail("quest guide must never write memory"); }, writeBytes() { assert.fail("quest guide must never write memory"); },
   };
