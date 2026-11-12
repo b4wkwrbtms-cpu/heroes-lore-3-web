@@ -1,5 +1,5 @@
 // 영웅서기5 player: runs the game's ARM library in hl5core.wasm and presents it on an iPhone in landscape.
-const VERSION = "1";
+const VERSION = "2";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -7,7 +7,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "hl5.prefs";
 const prefs = Object.assign(
-  { quality: "sharp", color: "vivid", impact: "normal", area: "safe", sound: "on", side: "left" },
+  { quality: "sharp", color: "vivid", impact: "normal", screen: "notch", sound: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -151,18 +151,31 @@ function readInsets() {
   return { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
 }
 
+// The camera (Dynamic Island) sits on one short edge. iOS reports the same safe-area inset on both sides,
+// so the camera side comes from the screen angle: 90 = turned counter-clockwise, camera on the left.
+function cameraOnLeft(rotated) {
+  if (rotated) return true; // a portrait frame turned clockwise puts the camera edge on the left
+  const a = typeof screen.orientation?.angle === "number" ? screen.orientation.angle : window.orientation;
+  return !(a === 270 || a === -90);
+}
+
 function landscapeMetrics() {
   const vw = window.innerWidth, vh = window.innerHeight, ins = readInsets();
   const rotated = vh > vw;
   const lw = rotated ? vh : vw, lh = rotated ? vw : vh;
-  const l = rotated ? ins.t : ins.l, r = rotated ? ins.b : ins.r;
-  return { vw, vh, rotated, lw, lh, l, r };
+  const inset = Math.max(rotated ? ins.t : Math.max(ins.l, ins.r), 0);
+  const camLeft = cameraOnLeft(rotated);
+  // "notch": keep clear only the camera side, "safe": both sides, "full": edge to edge
+  const mode = prefs.screen;
+  const camMargin = mode === "full" ? 0 : inset;
+  const otherMargin = mode === "safe" ? (rotated ? ins.b : inset) : 0;
+  const l = camLeft ? camMargin : otherMargin, r = camLeft ? otherMargin : camMargin;
+  return { vw, vh, rotated, lw, lh, l, r, inset, camLeft, bottom: rotated ? ins.r : ins.b };
 }
 
 function chooseLcdWidth() {
   const m = landscapeMetrics();
-  const avail = prefs.area === "full" ? m.lw : m.lw - m.l - m.r;
-  const w = Math.round((LCD_H * avail) / m.lh / 2) * 2;
+  const w = Math.round((LCD_H * (m.lw - m.l - m.r)) / m.lh / 2) * 2;
   return Math.max(400, Math.min(520, w || 448));
 }
 
@@ -172,24 +185,27 @@ function applyLayout() {
   frame.style.width = m.lw + "px";
   frame.style.height = m.lh + "px";
   frame.style.transform = m.rotated ? `translate(${m.vw}px, 0) rotate(90deg)` : "none";
-  const left = prefs.area === "full" ? 0 : m.l, right = prefs.area === "full" ? 0 : m.r;
-  const aw = m.lw - left - right, ah = m.lh;
+  const aw = m.lw - m.l - m.r, ah = m.lh;
   const scale = Math.min(aw / lcdW, ah / LCD_H);
-  const sw = Math.floor(lcdW * scale), sh = Math.floor(LCD_H * scale);
-  const sx = Math.round(left + (aw - sw) / 2), sy = Math.round((ah - sh) / 2);
+  const sw = Math.round(lcdW * scale), sh = Math.round(LCD_H * scale);
+  // any rounding slack goes to the camera side so the game meets the opposite edge
+  const sx = m.camLeft ? m.lw - m.r - sw : m.l, sy = Math.round((ah - sh) / 2);
   Object.assign(layout, { rotated: m.rotated, lw: m.lw, lh: m.lh, stage: { x: sx, y: sy, w: sw, h: sh }, insets: { l: m.l, r: m.r } });
   const st = $("stage");
   st.style.left = sx + "px";
   st.style.top = sy + "px";
   st.style.width = sw + "px";
   st.style.height = sh + "px";
-  // side buttons live in the safe-area margin when there is one, otherwise over the game's edge
+  // buttons: in the margin beside the camera, above and below it; without a margin, over the game's edge
   const side = $("side");
-  const onLeft = prefs.side !== "right";
-  const margin = onLeft ? sx : m.lw - sx - sw;
-  const cx = margin >= 46 ? margin / 2 : 26;
-  side.style.left = (onLeft ? cx - 20 : m.lw - cx - 20) + "px";
-  side.style.top = Math.round(m.lh * 0.36) + "px";
+  const margin = m.camLeft ? sx : m.lw - sx - sw;
+  const split = margin >= 44;
+  const cx = split ? margin / 2 : 26;
+  side.classList.toggle("split", split);
+  side.style.left = (m.camLeft ? cx - 20 : m.lw - cx - 20) + "px";
+  side.style.top = split ? "0px" : Math.round(m.lh * 0.36) + "px";
+  side.style.height = split ? m.lh + "px" : "auto";
+  side.style.paddingBottom = split ? Math.max(10, m.bottom) + "px" : "0px";
   renderer?.resize(sw, sh);
   fx?.resize(sw, sh);
 }
@@ -1023,9 +1039,10 @@ function bindSettings() {
       prefs[key] = b.dataset.v;
       savePrefs();
       syncSettings();
-      if (key === "area" && started) toast("다음에 게임을 시작할 때 적용돼요");
+      if (key === "screen" && started) toast("화면 크기는 게임을 다시 시작하면 맞춰져요");
       if (key === "sound") audio?.applyVolumes();
-      if (key === "side" || key === "area") applyLayout();
+      if (key === "screen" && !started) lcdW = chooseLcdWidth();
+      if (key === "screen") applyLayout();
       if (renderer) renderer.dirty = true;
     });
   }
@@ -1149,6 +1166,7 @@ async function boot() {
   applyLayout();
   window.addEventListener("resize", () => setTimeout(applyLayout, 50));
   window.addEventListener("orientationchange", () => setTimeout(applyLayout, 200));
+  screen.orientation?.addEventListener?.("change", () => setTimeout(applyLayout, 100));
   try { navigator.storage?.persist?.(); } catch {}
   let game = null;
   try { game = await loadGame(); } catch (e) { console.warn(e); }
