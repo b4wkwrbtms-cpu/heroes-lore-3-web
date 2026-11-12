@@ -1,5 +1,5 @@
 // 영웅서기5 player: runs the game's ARM library in hl5core.wasm and presents it on an iPhone in landscape.
-const VERSION = "13";
+const VERSION = "14";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -870,9 +870,10 @@ class Core {
   }
   // Drawing advances the game's animation counters, so in-between frames start from the state saved
   // when the game began drawing its last frame (slot 0, see the "paint" watch); that gives exactly the
-  // poses of the real frame. Draws it with some 32-bit guest values replaced and returns a view of the
-  // picture (same layout as the uploaded frame), or null. The live state (slot 1) is put back afterwards.
-  paintWith(writes, stride, h) {
+  // poses of the real frame. Draws it with some 32-bit guest values replaced (and `prepare` run on the
+  // restored state) and returns a view of the picture (same layout as the uploaded frame), or null. The
+  // live state (slot 1) is put back afterwards.
+  paintWith(writes, stride, h, prepare) {
     const ex = this.ex;
     if (this.outSize !== stride * h) {
       if (this.out) ex.host_free(this.out);
@@ -885,6 +886,7 @@ class Core {
       ex.snap_restore(0);
       const i32 = new Int32Array(this.mem.buffer), base = ex.guest_base();
       for (let i = 0; i < writes.length; i += 2) i32[(base + writes[i]) >> 2] = writes[i + 1];
+      if (prepare) prepare();
       this.quiet = true;
       r = ex.paint_only(this.out, stride, h);
     } finally { this.quiet = false; ex.snap_restore(1); }
@@ -1066,6 +1068,7 @@ function onCoreEvent(kind, a, b, c) {
     }
     case 110: // mainPaint: the game starts drawing a frame; keep this state for the in-between frames
       if (prefs.motion === "smooth") motion.prePaint = core.ex.snap_save(0) === 0;
+      if (motion.prePaint) keepRing();
       return 0;
     case 108: // Npc::Draw, Spirit::Draw: positions for in-between frames
     case 109: {
@@ -1119,8 +1122,8 @@ function onCoreEvent(kind, a, b, c) {
 
 // ---------------------------------------------------------------------------------------------
 // In-between frames. The game moves everything in whole steps about 20 times a second. For the frames
-// between two game frames the page lets the game draw once more with the camera, the hero and the
-// monsters, NPCs and spirits placed part of the way between their last two positions; the guest state
+// between two game frames the page lets the game draw once more with the camera (and the map's tiles),
+// the hero and the monsters, NPCs and spirits placed part of the way between their last two positions; the guest state
 // is saved before and restored after, so the game itself never sees it. The picture runs one game
 // frame behind so there is always a real next position to move toward.
 const GMAIN = 0x100000 + 0x16fcf0;
@@ -1133,16 +1136,63 @@ const motion = {
   prePaint: false, // slot 0 holds the state from the start of the last real drawing
   lastFrac: 0,
   cost: 0, paints: 0,
+  rings: [], ringNow: null, // copies of the map's tile ring (see keepRing)
 };
 function readMotionState() {
   const top = core.ex.heap_top();
   const ok = a => a >= HEAP_LO && a + 0x100 < top;
   const hero = core.rd32(GMAIN + 0x1474) >>> 0, map = core.rd32(GMAIN + 0x1488) >>> 0;
-  const drawn = motion.drawn;
+  const drawn = motion.drawn, ring = motion.ringNow;
   motion.drawn = new Map();
+  motion.ringNow = null;
   if (!ok(hero) || !ok(map)) return null;
   for (const o of drawn.keys()) if (!ok(o)) drawn.delete(o);
-  return { hero, map, hx: core.rd32(hero + 4), hy: core.rd32(hero + 8), sx: core.rd32(map + 0xc0), sy: core.rd32(map + 0xc4), drawn };
+  return { hero, map, hx: core.rd32(hero + 4), hy: core.rd32(hero + 8), sx: core.rd32(map + 0xc0), sy: core.rd32(map + 0xc4),
+    rx: core.rd32(map + 0xd8), ry: core.rd32(map + 0xdc), ring, drawn };
+}
+// The map's tile layers are not drawn each frame: they live in a screen-sized ring (Graphic's off-screen
+// frame buffer, world pixels wrapped around its width and height) that the game updates when the camera
+// moves, and Map::Update copies it to the screen starting at the ring origin (map + 0xd8/0xdc, which moves
+// with the camera). An in-between frame moves that origin too; the strip it then shows behind the
+// current view is no longer in the ring, so it is copied back from the ring kept at the previous frame.
+const GRAPHIC_PTR = 0x100000 + 0x16fcc8;
+function ringInfo() {
+  const g = core.rd32(GRAPHIC_PTR) >>> 0;
+  if (g < HEAP_LO || g >= core.ex.heap_top()) return null;
+  const fb = core.rd32(g + 8) >>> 0;
+  if (fb < HEAP_LO || fb >= core.ex.heap_top()) return null;
+  const w = core.rd32(fb), h = core.rd32(fb + 4), bpl = core.rd32(fb + 8), bpp = core.rd32(fb + 12), data = core.rd32(fb + 16) >>> 0;
+  if (bpp !== 16 || w <= 0 || h <= 0 || bpl < w * 2 || data < HEAP_LO || data + bpl * h > core.ex.heap_top()) return null;
+  return { w, h, row: bpl >> 1, data };
+}
+const ringView = r => new Uint16Array(core.mem.buffer, core.ex.guest_base() + r.data, r.row * r.h);
+function keepRing() {
+  const r = ringInfo();
+  if (!r) return;
+  const n = r.row * r.h;
+  // copies in turn: the ones the last two states hold stay untouched
+  const held = [motion.cur?.ring?.px, motion.prev?.ring?.px];
+  let buf = motion.rings.find(b => b.length === n && !held.includes(b));
+  if (!buf) { buf = new Uint16Array(n); motion.rings = [buf, ...motion.rings].slice(0, 3); }
+  buf.set(ringView(r));
+  motion.ringNow = { ...r, px: buf };
+}
+const sameRing = (a, b) => !!(a && b && a.w === b.w && a.h === b.h && a.row === b.row && a.data === b.data);
+const mod = (a, n) => ((a % n) + n) % n;
+function fixRing(prev, cur, frac) {
+  const r = ringInfo(), old = prev.ring;
+  if (!sameRing(old, cur.ring) || !sameRing(r, old)) return;
+  const { w, h, row } = r, g = ringView(r), p = old.px;
+  const lerp = (a, b) => Math.round(a + (b - a) * frac);
+  // ring coordinates: screen pixel (c, r) shows ring pixel ((origin x + c) mod w, (origin y + r) mod h)
+  const cx = lerp(prev.rx, cur.rx), cy = lerp(prev.ry, cur.ry);
+  let x0 = 0, x1 = 0;
+  if (cx < cur.rx) { x0 = cx; x1 = cur.rx; } else if (cx > cur.rx) { x0 = cur.rx + w; x1 = cx + w; }
+  for (let y = cy; y < cy + h; y++) {
+    const o = mod(y, h) * row;
+    if (y < cur.ry || y >= cur.ry + h) { g.set(p.subarray(o, o + w), o); continue; }
+    for (let x = x0; x < x1; x++) { const i = o + mod(x, w); g[i] = p[i]; }
+  }
 }
 const near = (a, b) => Math.abs(a - b) <= 48;
 // guest writes that place everything `frac` of the way from prev to cur, or null when nothing moves
@@ -1156,6 +1206,10 @@ function motionWrites(prev, cur, frac) {
   put(cur.hero + 8, prev.hy, cur.hy);
   put(cur.map + 0xc0, prev.sx, cur.sx);
   put(cur.map + 0xc4, prev.sy, cur.sy);
+  if (sameRing(prev.ring, cur.ring)) { // the tile ring's origin moves with the camera (see fixRing)
+    put(cur.map + 0xd8, prev.rx, cur.rx);
+    put(cur.map + 0xdc, prev.ry, cur.ry);
+  }
   for (const [o, [x, y]] of cur.drawn) {
     const p = prev.drawn.get(o);
     if (!p || o === cur.hero || !near(p[0], x) || !near(p[1], y)) continue;
@@ -1194,7 +1248,8 @@ function presentMotion(t, f) {
   const w = motionWrites(motion.prev, motion.cur, frac);
   const u0 = f.uploads;
   const p0 = performance.now();
-  const px = w && core.paintWith(w, f.w, f.h);
+  const prev = motion.prev, cur = motion.cur;
+  const px = w && core.paintWith(w, f.w, f.h, () => fixRing(prev, cur, frac));
   const ms = performance.now() - p0;
   motion.cost += (ms - motion.cost) * 0.1;
   motion.paints++;
