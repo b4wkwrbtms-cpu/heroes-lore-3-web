@@ -9,6 +9,8 @@
 //  - the hero's buffs (buff skills, stance and spirit buffs) do not run out
 //  - trait points from quests are tripled too
 //  - the knight walks as fast as the rogue (class move speed 6 -> 8)
+//  - skill books from the skill master cost nothing
+//  - refining costs nothing and succeeds at least 80% of the time at every level
 //  - the cash shop gives everything for free (it needed EA's servers): the item, or what a box holds
 //  - on the game-over screen the hero can always revive: the game asks to use a revival charm as if one
 //    were in the bag, and reviving does not take one (buying one needs EA's servers, which are gone)
@@ -222,6 +224,38 @@ static void hle_class_speed(void) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Refining: ItemTable::LoadProbablityTable reads, per refine level 0..9, five cumulative thresholds out
+// of 1000 (great success, success, failure, the item flagged, the item destroyed) for the plain stone
+// (table + 210) and the high stone (table + 310). Where success would be below 80%, success becomes 80%:
+// great success keeps its share of it and the other outcomes keep their shares of the remaining 20%.
+// The table is remembered at the routine's entry (push) and changed right after loading (add sp, sp, #12).
+#define REFINE_LOAD 0xa0c98u
+#define REFINE_LOADED 0xa0fe8u
+static u32 refine_table;
+static void raise_refine(u32 row) {
+  s32 t[5];
+  for (int i = 0; i < 5; i++) t[i] = (s16)rd16(row + 2 * i);
+  s32 s = t[1];
+  if (s >= 800 || s <= 0 || t[4] != 1000) return;
+  t[0] = t[0] * 800 / s;
+  for (int i = 2; i < 5; i++) t[i] = 800 + (t[i] - s) * 200 / (1000 - s);
+  t[1] = 800;
+  for (int i = 0; i < 5; i++) wr16(row + 2 * i, (u16)t[i]);
+}
+static void hle_refine_load(void) {
+  refine_table = R[0];
+  exec_displaced(0xe92d4ff0u, LOAD_BASE + REFINE_LOAD);
+}
+static void hle_refine_loaded(void) {
+  for (int lv = 0; lv < 10; lv++) {
+    raise_refine(refine_table + 210 + 10 * lv);
+    raise_refine(refine_table + 310 + 10 * lv);
+  }
+  R[13] += 12;
+  cpu_pc = LOAD_BASE + REFINE_LOADED + 4;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Buffs: BATTLER::DecreaseCount(short *timer) counts every buff down; the hero's buff-skill, stance
 // and spirit-buff timers are left alone
 #define DECREASE_COUNT 0x49f68u
@@ -289,6 +323,13 @@ EXPORT(apply_tweaks) int apply_tweaks(u32 seed) {
   n += patch(0x81924, 0xe59b2030u, 0xe3a02000u); // CommonUi::DrawAutoItemSkillShopInfoBox: shown price -> 0
   n += patch(0x119770, 0xe59d2084u, 0xe3a02000u); // StateInNpcMenu::DrawSkillBuy: price under the selected book -> 0
   n += patch(0x119ab0, 0xe59d2084u, 0xe3a02000u); // StateInNpcMenu::DrawSkillBuy: same, other layout
+  // refining costs nothing: RefineItem::GetItemRefineMoney returns price x (level + 1), price -> 0
+  n += patch(0xa0934, 0xe5930030u, 0xe3a00000u);
+  if (rd32(LOAD_BASE + REFINE_LOAD) == 0xe92d4ff0u && rd32(LOAD_BASE + REFINE_LOADED) == 0xe28dd00cu) {
+    hook_at(LOAD_BASE + REFINE_LOAD, hle_refine_load, "refine_rates");
+    hook_at(LOAD_BASE + REFINE_LOADED, hle_refine_loaded, "refine_rates");
+    n += 2;
+  }
   if (rd32(LOAD_BASE + CLASS_SPEED) == 0xe5c4311au) { hook_at(LOAD_BASE + CLASS_SPEED, hle_class_speed, "knight_speed"); n++; }
   if (rd32(LOAD_BASE + QUEST_TRAIT) == 0xe0812002u) { hook_at(LOAD_BASE + QUEST_TRAIT, hle_quest_trait, "quest_trait"); n++; }
   fn_new_item = find_symbol("_ZN9ItemTable7NewItemEaa");
