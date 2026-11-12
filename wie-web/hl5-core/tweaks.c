@@ -1,6 +1,6 @@
 // Rule changes the player asked for in 영웅서기5. Each one is checked against the exact instruction
 // words of the library build it was read from and left out otherwise.
-//  - level up: twice the stat points (+8) and three times the skill points (+3 every other level)
+//  - level up: three times the skill points (+3 every other level); stat points stay as in the game (+4)
 //  - twice the experience from monsters and quests
 //  - field bosses (type 1) also drop three pieces (weapon, accessory, armour) and story bosses (type 3)
 //    five (weapon, accessory, three armour pieces) of the best equipment the hero can use at the hero's
@@ -318,7 +318,6 @@ EXPORT(apply_tweaks) int apply_tweaks(u32 seed) {
   // the build these offsets come from
   if (find_symbol("_ZN7Monster11SetDropItemEv") != LOAD_BASE + DROP_ENTRY) return -1;
   int n = 0;
-  n += patch(0x97f60, 0xe28c2004u, 0xe28c2008u); // stat points: add r2, r12, #4 -> #8
   n += patch(0x97f74, 0x02822001u, 0x02822003u); // skill points: addeq r2, r2, #1 -> #3
   n += patch(0xc06f0, 0xe1a0a000u, 0xe1a0a080u); // monster exp: mov r10, r0 -> r0, lsl #1
   n += patch(0xd49a8, 0xe0812002u, 0xe0812082u); // quest exp: add r2, r1, r2 -> r2, lsl #1
