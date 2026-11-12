@@ -125,10 +125,14 @@
     <div class="overlay" id="settings">
       <div class="panel">
         <h3>설정 <button class="btn ghost" id="btn-close" style="padding: 8px 14px; margin: 0">닫기</button></h3>
-        <div class="row"><label>화질<span class="hint">고화질은 계단 모양 테두리를 다듬어 크게 그려요</span></label>
-          <div class="seg" data-pref="quality"><button data-v="sharp">고화질</button><button data-v="smooth">부드럽게</button><button data-v="pixel">원본 픽셀</button></div></div>
+        <div class="row"><label>화질<span class="hint">HD는 비스듬한 테두리까지 매끈하게 다듬어요</span></label>
+          <div class="seg" data-pref="quality"><button data-v="hd">HD</button><button data-v="sharp">선명</button><button data-v="smooth">부드럽게</button><button data-v="pixel">원본 픽셀</button></div></div>
         <div class="row"><label>색감<span class="hint">색을 조금 더 또렷하게</span></label>
           <div class="seg" data-pref="color"><button data-v="vivid">또렷하게</button><button data-v="original">원본</button></div></div>
+        <div class="row"><label>빛 번짐<span class="hint">마법·불꽃처럼 밝은 부분이 은은하게 빛나요</span></label>
+          <div class="seg" data-pref="glow"><button data-v="strong">강하게</button><button data-v="soft">은은하게</button><button data-v="off">끄기</button></div></div>
+        <div class="row"><label>움직임<span class="hint">게임 프레임 사이를 채워 초당 60장으로 부드럽게 · 원본은 초당 약 20장</span></label>
+          <div class="seg" data-pref="motion"><button data-v="smooth">부드럽게 60</button><button data-v="original">원본</button></div></div>
         <div class="row"><label>타격감<span class="hint">맞힐 때 섬광·불꽃·잠깐 멈춤·흔들림</span></label>
           <div class="seg" data-pref="impact"><button data-v="strong">강하게</button><button data-v="normal">보통</button><button data-v="off">끄기</button></div></div>
         <div class="row"><label>화면 크기<span class="hint">카메라에 가리지 않게 그쪽만 비워요 · 게임을 다시 시작하면 맞춰져요</span></label>
@@ -149,6 +153,6 @@
     </div>
 
     <div id="toast"></div>
-    <script type="module" src="hl5.js?v=2"></script>
+    <script type="module" src="hl5.js?v=3"></script>
   </body>
 </html>

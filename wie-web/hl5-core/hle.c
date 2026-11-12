@@ -696,6 +696,184 @@ static void hle_fill_rect(void) {
   }
 }
 
+// Native versions of the hottest inner pixel loops of the game's Graphic blitters (palette image ->
+// RGB565 with colour key and the Graphic's per-mode blend tables at this+0x6d). Each handler is
+// entered at a loop head with the routine's own registers and stack frame, finishes the remaining
+// iterations and continues at the loop's exit with every register that is live there set as the
+// original loop would leave it. Offsets are only valid for the library build checked in hook_blitters.
+static inline void blend_px(u32 lut, u32 m5, u32 A, u32 A1, u32 A2, u32 color, u32 d) {
+  u32 D = rd16(d);
+  u32 dg5 = (D & 0x7e0) >> 6, db = D & 31, dr = D >> 11;
+  u32 lg = rd8(lut + ((m5 + ((color & 0x7e0) >> 6)) << 5) + dg5);
+  u32 lr = rd8(lut + ((m5 + (color >> 11)) << 5) + dr);
+  u32 lb = rd8(lut + ((m5 + (color & 31)) << 5) + db);
+  u32 r, g2, b;
+  if (A > 31) {
+    r = lr; g2 = lg * 2; b = lb;
+  } else {
+    r = (u32)((s32)(A * lr + dr * (32 - A)) >> 5);
+    g2 = (u32)((s32)(A1 * lg * 2 + (64 - A1) * dg5 * 2) >> 6);
+    b = (u32)((s32)(A2 * lb + db * (32 - A2)) >> 5);
+  }
+  wr16(d, (u16)((b & 31) | (r << 11) | ((g2 << 5) & 0x7e0)));
+}
+
+// Graphic::DrawImageStretchClip565: every remaining row (scale, flip, clip), then the exit block.
+#define STRETCH_LOOP 0x5a3bcu
+#define STRETCH_EXIT 0x5a6d4u
+static void hle_stretch_loop(void) {
+  u32 sp = R[13];
+  s32 flip = (s32)R[4];
+  u32 self = R[5];
+  s32 dstW = (s32)R[6], x = (s32)R[7];
+  u32 stepx = R[8];
+  s32 bits = (s32)R[9];
+  u32 key = R[10];
+  s32 j = (s32)rd32(sp + 0x34), y = (s32)rd32(sp + 0x74);
+  u32 accY = rd32(sp + 0x40), dstRow = rd32(sp + 0x44);
+  u32 srcBase = rd32(sp + 0x84), imgW = rd32(sp + 0x64);
+  s32 hm1 = (s32)rd32(sp + 0x8c), wm1 = (s32)rd32(sp + 0x2c);
+  u32 pixels = rd32(sp + 0x28), pal = rd32(sp + 0x20);
+  u32 m5 = rd32(sp + 0x88) << 5;
+  u32 stepy = rd32(sp + 0x80), rowStride = rd32(sp + 0x7c);
+  s32 dstH = (s32)rd32(sp + 0x6c);
+  u32 A = rd8(sp + 0xc4), A1 = rd8(sp + 0xc5), A2 = rd8(sp + 0xc6);
+  s32 cx1 = (s32)rd32(self + 0x40e0), cy1 = (s32)rd32(self + 0x40e4), cx2 = (s32)rd32(self + 0x40e8), cy2 = (s32)rd32(self + 0x40ec);
+  u32 lut = self + 0x6d;
+  int hflip = flip == 8 || flip == 12, vflip = flip == 4 || flip == 12;
+  do {
+    s32 Y = j + y;
+    s32 srow = (s32)accY >> 10;
+    if (vflip) srow = hm1 - srow;
+    u32 srcRowOff = imgW * (u32)srow + srcBase;
+    if (dstW > 0 && Y >= cy1 && Y < cy2) {
+      u32 accX = 0, d = dstRow, rowptr = pixels + srcRowOff;
+      for (s32 i = 0; i < dstW; i++, accX += stepx, d += 2) {
+        s32 X = i + x;
+        if (X < cx1 || X >= cx2) continue;
+        s32 sc = (s32)accX >> 10;
+        if (hflip) sc = wm1 - sc;
+        u32 color;
+        if (bits == 4) {
+          u32 b = rd8(rowptr + (u32)(sc >> 1));
+          color = rd16(pal + ((sc & 1) ? (b & 15) : (b >> 4)) * 2);
+        } else {
+          color = rd16(pal + rd8(pixels + (u32)sc + srcRowOff) * 2);
+        }
+        if (color != key) blend_px(lut, m5, A, A1, A2, color, d);
+      }
+    }
+    j++;
+    accY += stepy;
+    dstRow += rowStride;
+  } while (j != dstH);
+  wr32(sp + 0x34, (u32)j);
+  wr32(sp + 0x40, accY);
+  wr32(sp + 0x44, dstRow);
+  cpu_pc = LOAD_BASE + STRETCH_EXIT;
+}
+
+// Graphic::DrawImageBlendingClip565, 4-bit image without flip: one row of pixel pairs.
+#define BLEND4_LOOP 0x5d204u
+#define BLEND4_EXIT 0x5d448u
+static void hle_blend4_loop(void) {
+  u32 sp = R[13];
+  u32 n = rd32(sp + 0x34);
+  u32 src = rd32(sp + 0x38) + rd32(sp + 0x3c);
+  u32 m5 = R[3], lut = R[4] + 0x6d, pal = R[6], key = R[8];
+  u32 A = rd8(sp + 0xac), A1 = rd8(sp + 0xad), A2 = rd8(sp + 0xae);
+  u32 d0 = R[1], d1 = R[0];
+  for (u32 i = 0; i < n; i++, d0 += 4, d1 += 4) {
+    u32 b = rd8(src + i);
+    u32 c0 = rd16(pal + (b >> 4) * 2), c1 = rd16(pal + (b & 15) * 2);
+    if (c0 != key) blend_px(lut, m5, A, A1, A2, c0, d0);
+    if (c1 != key) blend_px(lut, m5, A, A1, A2, c1, d1);
+  }
+  R[0] = d1;
+  R[1] = d0;
+  R[2] = n;
+  R[11] = n;
+  cpu_pc = LOAD_BASE + BLEND4_EXIT;
+}
+
+// Graphic::DrawImageBlendingClip565, 8-bit image (mode 16): one row.
+#define BLEND8_LOOP 0x5d908u
+#define BLEND8_EXIT 0x5da24u
+static void hle_blend8_loop(void) {
+  u32 sp = R[13];
+  u32 n = R[11];
+  u32 src = rd32(sp + 0x68) + rd32(sp + 0x3c);
+  u32 pal = rd32(sp + 0x34), key = rd32(sp + 0x38);
+  u32 m5 = R[0], lut = R[4] + 0x6d;
+  u32 A = rd8(sp + 0xac), A1 = rd8(sp + 0xad), A2 = rd8(sp + 0xae);
+  u32 d = R[2];
+  for (u32 i = 0; i < n; i++, d += 2) {
+    u32 c = rd16(pal + rd8(src + i) * 2);
+    if (c != key) blend_px(lut, m5, A, A1, A2, c, d);
+  }
+  R[2] = d;
+  R[3] = n;
+  R[12] += n;
+  cpu_pc = LOAD_BASE + BLEND8_EXIT;
+}
+
+// Graphic::DrawImageMirrorClip565 without flip (plain copy with colour key), 8-bit image: one row.
+#define MIRROR8_LOOP 0x572bcu
+#define MIRROR8_EXIT 0x572e4u
+static void hle_mirror8_loop(void) {
+  u32 n = R[12], src = R[1] + R[10], pal = R[7], key = R[11], d = R[0];
+  for (u32 i = 0; i < n; i++, d += 2) {
+    u32 c = rd16(pal + rd8(src + i) * 2);
+    if (c != key) wr16(d, (u16)c);
+  }
+  R[0] = d;
+  R[2] = n;
+  cpu_pc = LOAD_BASE + MIRROR8_EXIT;
+}
+
+// Graphic::DrawImageMirrorClip565 without flip, 4-bit image: one row of pixel pairs.
+#define MIRROR4_LOOP 0x57468u
+#define MIRROR4_EXIT 0x574acu
+static void hle_mirror4_loop(void) {
+  u32 n = R[4], src = R[10] + R[8], pal = R[7], key = R[12], d0 = R[1], d1 = R[0];
+  for (u32 i = 0; i < n; i++, d0 += 4, d1 += 4) {
+    u32 b = rd8(src + i);
+    u32 c0 = rd16(pal + (b >> 4) * 2), c1 = rd16(pal + (b & 15) * 2);
+    if (c0 != key) wr16(d0, (u16)c0);
+    if (c1 != key) wr16(d1, (u16)c1);
+  }
+  R[0] = d1;
+  R[1] = d0;
+  R[3] = n;
+  cpu_pc = LOAD_BASE + MIRROR4_EXIT;
+}
+
+// Graphic::FillRectAlpha on an RGB565 frame buffer: one row.
+#define FILLA_LOOP 0x52394u
+#define FILLA_EXIT 0x523e8u
+static void hle_filla_loop(void) {
+  u32 n = R[6], row = R[5], inv = R[4], ab = R[8], ar = R[9], ag = R[10];
+  for (u32 i = 0; i < n; i++) {
+    u32 p = rd16(row + i * 2);
+    u32 g = (inv * ((p & 0x7e0) >> 3) + ag) >> 5;
+    u32 r = inv * ((p & 0xf800) >> 8) + ar;
+    u32 b = inv * ((p << 3) & 255) + ab;
+    wr16(row + i * 2, (u16)((r & 0xf800) | (g & 0x7e0) | ((b << 16) >> 27)));
+  }
+  R[1] = n;
+  R[3] = n * 2;
+  cpu_pc = LOAD_BASE + FILLA_EXIT;
+}
+
+static void hook_at(u32 addr, Hle fn, const char *name) {
+  if (nimports >= MAX_IMPORTS) return;
+  int idx = nimports++;
+  import_fn[idx] = fn;
+  import_name[idx] = name;
+  s32 off = ((s32)(TRAP_BASE + idx * 4) - (s32)(addr + 8)) >> 2;
+  wr32(addr, 0xea000000u | ((u32)off & 0xffffff));
+}
+
 static void hook(const char *sym, Hle fn) {
   u32 a = find_symbol(sym);
   if (!a || nimports >= MAX_IMPORTS) { logf("hook: %s not found", sym); return; }
@@ -740,10 +918,29 @@ EXPORT(watch_symbol) int watch_symbol(const char *sym, int id) {
   return 0;
 }
 
+static void hook_loop(u32 off, u32 insn, Hle fn, const char *name) {
+  if (rd32(LOAD_BASE + off) == insn) hook_at(LOAD_BASE + off, fn, name);
+}
+
+static void hook_blitters(void) {
+  // only for the exact library build the loop offsets were taken from
+  if (find_symbol("_ZN7Graphic23DrawImageStretchClip565EiiiiiP8GbmImageiihiihhi") != LOAD_BASE + 0x5a188u) return;
+  if (find_symbol("_ZN7Graphic24DrawImageBlendingClip565EiiiiiP8GbmImageiihhhi") != LOAD_BASE + 0x5cae8u) return;
+  hook_loop(STRETCH_LOOP, 0xe59d3034u, hle_stretch_loop, "stretch565_loop");
+  hook_loop(BLEND4_LOOP, 0xe59d503cu, hle_blend4_loop, "blend565_4_loop");
+  hook_loop(BLEND8_LOOP, 0xe59d1068u, hle_blend8_loop, "blend565_8_loop");
+  if (find_symbol("_ZN7Graphic22DrawImageMirrorClip565EiiiiiP8GbmImageiihi") == LOAD_BASE + 0x56e18u) {
+    hook_loop(MIRROR8_LOOP, 0xe0824001u, hle_mirror8_loop, "mirror565_8_loop");
+    hook_loop(MIRROR4_LOOP, 0xe083200au, hle_mirror4_loop, "mirror565_4_loop");
+  }
+  if (find_symbol("_ZN7Graphic13FillRectAlphaEiiiiihi") == LOAD_BASE + 0x52224u) hook_loop(FILLA_LOOP, 0xe19520b3u, hle_filla_loop, "fillalpha565_loop");
+}
+
 EXPORT(set_native_hooks) void set_native_hooks(int on) {
   if (!on) return;
   hook("_Z26internalGrpCopyFrameBufferiiiiiiiiP14_MC_GrpContexth", hle_copy_frame_buffer);
   hook("MC_grpFillRect", hle_fill_rect);
+  hook_blitters();
 }
 
 // =============================================================================================

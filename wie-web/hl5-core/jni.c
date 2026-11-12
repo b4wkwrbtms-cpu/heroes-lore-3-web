@@ -50,6 +50,12 @@ static void obj_free(Obj *o) {
   o->kind = OBJ_FREE;
 }
 
+u32 jni_state_size(void) { return sizeof objs + sizeof obj_hint; }
+void jni_state(u8 *buf, int save) {
+  if (save) { memcpy(buf, objs, sizeof objs); memcpy(buf + sizeof objs, &obj_hint, sizeof obj_hint); }
+  else { memcpy(objs, buf, sizeof objs); memcpy(&obj_hint, buf + sizeof objs, sizeof obj_hint); }
+}
+
 // free local references when the outermost native call returns
 void jni_end_frame(void) {
   for (int i = 1; i < MAX_OBJS; i++) {

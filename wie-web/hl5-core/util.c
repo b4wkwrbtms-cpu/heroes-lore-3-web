@@ -167,6 +167,11 @@ u32 gcalloc(u32 n) {
   if (a) memset(gptr(a), 0, n);
   return a;
 }
+void heap_state(void *buf, int save) {
+  if (save) memcpy(buf, &guest_heap, sizeof guest_heap);
+  else memcpy(&guest_heap, buf, sizeof guest_heap);
+}
+u32 heap_state_size(void) { return sizeof guest_heap; }
 u32 gmalloc_usable(u32 a) { return heap_size(&guest_heap, a); }
 u32 guest_heap_in_use(void) { return guest_heap.in_use; }
 u32 guest_heap_top(void) { return guest_heap.top; }

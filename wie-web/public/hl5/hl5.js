@@ -1,5 +1,5 @@
 // 영웅서기5 player: runs the game's ARM library in hl5core.wasm and presents it on an iPhone in landscape.
-const VERSION = "2";
+const VERSION = "3";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -7,10 +7,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "hl5.prefs";
 const prefs = Object.assign(
-  { quality: "sharp", color: "vivid", impact: "normal", screen: "notch", sound: "on" },
+  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", screen: "notch", sound: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
+// version 2 stored every setting with its value at the time; "sharp" was simply the old default
+if (!(prefs.pv >= 3)) {
+  if (prefs.quality === "sharp") prefs.quality = "hd";
+  prefs.pv = 3;
+  savePrefs();
+}
 
 function toast(msg, ms = 2200) {
   const t = $("toast");
@@ -248,8 +254,86 @@ void main(){
   }
   gl_FragColor = vec4(o, 1.0);
 }`;
+// Edge-directed upscaling. Pass 1 (one fragment per game pixel) decides for each corner of the pixel
+// whether it sits on the far side of an edge, comparing how well the neighbourhood lines up along the
+// two diagonals, and whether the edge is 45° or one of the 2:1 slopes isometric tiles are made of.
+// Pass 2 (at the output size) gives that part of the pixel the neighbour's colour, with a narrow smooth
+// step across the edge line.
+const FS_XBR_DEC = `precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform vec2 uTexSize; uniform vec2 uReg;
+vec3 px(vec2 c, vec2 o){ return texture2D(uTex, clamp(c + o / uTexSize, vec2(0.5) / uTexSize, (uReg - 0.5) / uTexSize)).rgb; }
+float wd(vec3 a, vec3 b){
+  vec3 d = a - b;
+  return 48.0 * abs(dot(d, vec3(0.299, 0.587, 0.114))) + 7.0 * abs(dot(d, vec3(-0.169, -0.331, 0.5))) + 6.0 * abs(dot(d, vec3(0.5, -0.419, -0.081)));
+}
+bool eq(vec3 a, vec3 b){ return wd(a, b) < 2.4; }
+// one corner, named as if it were the bottom-right one. Result: 0 none, else 1 + 2 shallow + 4 steep + 8 if H's colour
+float corner(vec3 E, vec3 B, vec3 D, vec3 F, vec3 H, vec3 C, vec3 G, vec3 I, vec3 F4, vec3 H5, vec3 I4, vec3 I5){
+  if (eq(E, F) || eq(E, H)) return 0.0;
+  bool keep = (!eq(F, B) && !eq(H, D)) || (eq(E, I) && !eq(F, I4) && !eq(H, I5)) || eq(E, G) || eq(E, C);
+  if (!keep) return 0.0;
+  float slash = wd(E, C) + wd(E, G) + wd(I, F4) + wd(I, H5) + 4.0 * wd(H, F);
+  float back = wd(H, D) + wd(H, I5) + wd(F, I4) + wd(F, B) + 4.0 * wd(E, I);
+  if (slash >= back) return 0.0;
+  float v = 1.0, fg = wd(F, G), hc = wd(H, C);
+  if (2.0 * fg <= hc && !eq(E, G) && !eq(D, G)) v += 2.0;
+  if (fg >= 2.0 * hc && !eq(E, C) && !eq(B, C)) v += 4.0;
+  if (wd(E, F) > wd(E, H)) v += 8.0;
+  return v;
+}
+void main(){
+  vec2 c = (floor(vUv * uReg) + 0.5) / uTexSize;
+  vec3 A1 = px(c, vec2(-1.0, -2.0)), B1 = px(c, vec2(0.0, -2.0)), C1 = px(c, vec2(1.0, -2.0));
+  vec3 A0 = px(c, vec2(-2.0, -1.0)), A = px(c, vec2(-1.0, -1.0)), B = px(c, vec2(0.0, -1.0)), C = px(c, vec2(1.0, -1.0)), C4 = px(c, vec2(2.0, -1.0));
+  vec3 D0 = px(c, vec2(-2.0, 0.0)), D = px(c, vec2(-1.0, 0.0)), E = px(c, vec2(0.0)), F = px(c, vec2(1.0, 0.0)), F4 = px(c, vec2(2.0, 0.0));
+  vec3 G0 = px(c, vec2(-2.0, 1.0)), G = px(c, vec2(-1.0, 1.0)), H = px(c, vec2(0.0, 1.0)), I = px(c, vec2(1.0, 1.0)), I4 = px(c, vec2(2.0, 1.0));
+  vec3 G5 = px(c, vec2(-1.0, 2.0)), H5 = px(c, vec2(0.0, 2.0)), I5 = px(c, vec2(1.0, 2.0));
+  // bottom-right, top-right, top-left, bottom-left: the neighbourhood turned so each is bottom-right
+  gl_FragColor = vec4(corner(E, B, D, F, H, C, G, I, F4, H5, I4, I5), corner(E, D, H, B, F, A, I, C, B1, F4, C1, C4),
+                      corner(E, H, F, D, B, G, C, A, D0, B1, A0, A1), corner(E, F, B, H, D, I, A, G, H5, D0, G5, G0)) / 255.0;
+}`;
+const FS_XBR = `precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform sampler2D uDec; uniform vec2 uTexSize; uniform vec2 uReg; uniform float uScale;
+vec3 px(vec2 c, vec2 o){ return texture2D(uTex, clamp(c + o / uTexSize, vec2(0.5) / uTexSize, (uReg - 0.5) / uTexSize)).rgb; }
+void apply(float v, float s, float t, vec3 F, vec3 H, float d, inout float best, inout vec3 col){
+  if (v < 0.5) return;
+  float m = smoothstep(0.5 - d * 1.414, 0.5 + d * 1.414, s + t);
+  if (mod(floor(v / 2.0), 2.0) > 0.5) m = max(m, smoothstep(0.25 - d * 1.118, 0.25 + d * 1.118, t + 0.5 * s));
+  if (mod(floor(v / 4.0), 2.0) > 0.5) m = max(m, smoothstep(0.25 - d * 1.118, 0.25 + d * 1.118, s + 0.5 * t));
+  if (m > best) { best = m; col = v >= 8.0 ? H : F; }
+}
+void main(){
+  vec2 p = vUv * uReg; vec2 ip = floor(p); vec2 f = p - ip - 0.5; vec2 c = (ip + 0.5) / uTexSize;
+  vec4 code = floor(texture2D(uDec, (ip + 0.5) / uReg) * 255.0 + 0.5); // the decisions of pass 1
+  vec3 E = px(c, vec2(0.0));
+  if (code.r + code.g + code.b + code.a < 0.5) { gl_FragColor = vec4(E, 1.0); return; }
+  vec3 R = px(c, vec2(1.0, 0.0)), Dn = px(c, vec2(0.0, 1.0)), U = px(c, vec2(0.0, -1.0)), L = px(c, vec2(-1.0, 0.0));
+  float d = 0.5 / uScale, best = 0.0; vec3 col = E;
+  apply(code.r, f.x, f.y, R, Dn, d, best, col);
+  apply(code.g, -f.y, f.x, U, R, d, best, col);
+  apply(code.b, -f.x, -f.y, L, U, d, best, col);
+  apply(code.a, f.y, -f.x, Dn, L, d, best, col);
+  gl_FragColor = vec4(mix(E, col, best), 1.0);
+}`;
+// glow: bright parts of the frame at half size, blurred, added back over the picture
+const FS_BRIGHT = `precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform vec2 uTexSize; uniform vec2 uReg;
+void main(){
+  vec2 q = (floor(vUv * uReg) * 2.0 + 1.0) / uTexSize; // between four source pixels: their average
+  vec3 c = texture2D(uTex, q).rgb;
+  float m = max(c.r, max(c.g, c.b)), n = min(c.r, min(c.g, c.b));
+  float sat = (m - n) / max(m, 0.001);
+  // bright and coloured (fire, magic, sparks); white and grey interface panels stay out
+  float k = smoothstep(0.5, 0.9, m) * smoothstep(0.3, 0.7, sat);
+  gl_FragColor = vec4(c * k, 1.0);
+}`;
+const FS_BLUR = `precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform vec2 uTexSize; uniform vec2 uDir;
+void main(){
+  vec2 d = uDir / uTexSize;
+  vec3 c = texture2D(uTex, vUv).rgb * 0.227;
+  c += (texture2D(uTex, vUv + d * 1.385).rgb + texture2D(uTex, vUv - d * 1.385).rgb) * 0.316;
+  c += (texture2D(uTex, vUv + d * 3.231).rgb + texture2D(uTex, vUv - d * 3.231).rgb) * 0.070;
+  gl_FragColor = vec4(c, 1.0);
+}`;
 const FS_OUT = `precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform vec2 uTexSize; uniform vec2 uReg; uniform vec2 uOut;
-uniform float uSharp; uniform float uVivid; uniform vec4 uFlash; uniform float uHurt;
+uniform float uSharp; uniform float uVivid; uniform vec4 uFlash; uniform float uHurt; uniform sampler2D uBloom; uniform float uGlow;
 void main(){
   vec2 p = vUv * uReg; vec2 uv;
   if (uSharp > 0.5) {
@@ -259,6 +343,7 @@ void main(){
     uv = (ip + f) / uTexSize;
   } else uv = p / uTexSize;
   vec3 c = texture2D(uTex, uv).rgb;
+  if (uGlow > 0.0) c = 1.0 - (1.0 - c) * (1.0 - clamp(texture2D(uBloom, vUv).rgb * uGlow, 0.0, 1.0)); // screen blend
   if (uVivid > 0.0) {
     float l = dot(c, vec3(0.299, 0.587, 0.114));
     c = mix(vec3(l), c, 1.0 + 0.16 * uVivid);
@@ -279,7 +364,11 @@ class Renderer {
     if (!gl) throw new Error("WebGL을 쓸 수 없어요");
     this.gl = gl;
     this.epx = this.program(FS_EPX);
+    this.xbr = this.program(FS_XBR);
+    this.xbrDec = this.program(FS_XBR_DEC);
     this.out = this.program(FS_OUT);
+    this.bright = this.program(FS_BRIGHT);
+    this.blur = this.program(FS_BLUR);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -305,7 +394,7 @@ class Renderer {
     gl.bindAttribLocation(p, 0, "aPos");
     gl.linkProgram(p);
     const u = {};
-    for (const n of ["uTex", "uTexSize", "uReg", "uOut", "uSharp", "uVivid", "uFlash", "uHurt", "uFlip", "uEq"]) u[n] = gl.getUniformLocation(p, n);
+    for (const n of ["uTex", "uTexSize", "uReg", "uOut", "uSharp", "uVivid", "uFlash", "uHurt", "uFlip", "uEq", "uBloom", "uGlow", "uDir", "uScale", "uDec"]) u[n] = gl.getUniformLocation(p, n);
     return { p, u };
   }
   texture(w, h, fmt, type, linear = true) {
@@ -369,7 +458,20 @@ class Renderer {
     const gl = this.gl;
     const W = lcdW, H = LCD_H;
     let tex = this.src, tw = this.srcW, th = this.srcH, rw = W, rh = H;
-    if (prefs.quality !== "pixel") {
+    if (prefs.quality === "hd") {
+      const dec = this.fbo(4, W, H), b = this.fbo(1, W * 4, H * 4);
+      if (this.dirty) {
+        this.pass(this.xbrDec, this.src, this.srcW, this.srcH, W, H, dec, W, H);
+        this.pass(this.xbr, this.src, this.srcW, this.srcH, W, H, b, W * 4, H * 4, (gl, u) => {
+          gl.uniform1f(u.uScale, 4);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, dec.tex);
+          gl.uniform1i(u.uDec, 1);
+          gl.activeTexture(gl.TEXTURE0);
+        });
+      }
+      tex = b.tex; tw = rw = W * 4; th = rh = H * 4;
+    } else if (prefs.quality !== "pixel") {
       const a = this.fbo(0, W * 2, H * 2), b = this.fbo(1, W * 4, H * 4);
       if (this.dirty) {
         const tol = (gl, u) => gl.uniform1f(u.uEq, window.HL5_EQ ?? 0.08);
@@ -378,9 +480,26 @@ class Renderer {
       }
       tex = b.tex; tw = rw = W * 4; th = rh = H * 4;
     }
+    const glow = prefs.glow === "strong" ? 1.1 : prefs.glow === "soft" ? 0.6 : 0;
+    let bloom = null;
+    if (glow) {
+      const bw = W >> 1, bh = H >> 1;
+      const g0 = this.fbo(2, bw, bh), g1 = this.fbo(3, bw, bh);
+      if (this.dirty) {
+        this.pass(this.bright, this.src, this.srcW, this.srcH, bw, bh, g0, bw, bh);
+        for (const [from, to, dx, dy] of [[g0, g1, 1, 0], [g1, g0, 0, 1], [g0, g1, 2, 0], [g1, g0, 0, 2]])
+          this.pass(this.blur, from.tex, bw, bh, bw, bh, to, bw, bh, (gl, u) => gl.uniform2f(u.uDir, dx, dy));
+      }
+      bloom = g0.tex;
+    }
     this.dirty = false;
     const ow = this.canvas.width, oh = this.canvas.height;
     this.pass(this.out, tex, tw, th, rw, rh, null, ow, oh, (gl, u) => {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, bloom || tex);
+      gl.uniform1i(u.uBloom, 1);
+      gl.uniform1f(u.uGlow, glow);
+      gl.activeTexture(gl.TEXTURE0);
       gl.uniform2f(u.uOut, ow, oh);
       gl.uniform1f(u.uSharp, prefs.quality === "smooth" ? 0 : 1);
       gl.uniform1f(u.uVivid, prefs.color === "vivid" ? 1 : 0);
@@ -676,6 +795,8 @@ const WATCHES = [
   ["_ZN9BaseState14CallPopupStateEaiPcPS0_iPA48_caPa", "popup"],
   ["_ZN13StateMainMenu8SetStateEa", "menuState"],
   ["_ZN13StateMainMenu11SetSubStateEa", "menuSubState"],
+  ["_ZN3Npc4DrawEiii", "npcDraw"],
+  ["_ZN6Spirit4DrawEiii", "spiritDraw"],
 ];
 
 class Core {
@@ -685,6 +806,7 @@ class Core {
     this.utf = new TextDecoder();
     this.euc = new TextDecoder("euc-kr");
     this.logs = [];
+    this.quiet = false;
     const env = {
       host_log: (p, n) => {
         const s = this.euc.decode(new Uint8Array(this.mem.buffer, p, n).slice());
@@ -699,10 +821,11 @@ class Core {
         new Uint8Array(this.mem.buffer, dst, src.length).set(src);
         return src.length;
       },
-      host_audio: (op, key, a, b, c) => audio.call(op >> 2, op & 3, key, a, b, c),
-      host_file_saved: (p, pl, d, n) => saves.write(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl)), new Uint8Array(this.mem.buffer, d, n).slice()),
-      host_file_deleted: (p, pl) => saves.remove(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl))),
-      host_event: (kind, a, b, c) => this.onEvent(kind, a, b, c) | 0,
+      // while an in-between frame is drawn (state rolled back afterwards) the game must not reach the page
+      host_audio: (op, key, a, b, c) => this.quiet ? 0 : audio.call(op >> 2, op & 3, key, a, b, c),
+      host_file_saved: (p, pl, d, n) => { if (!this.quiet) saves.write(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl)), new Uint8Array(this.mem.buffer, d, n).slice()); },
+      host_file_deleted: (p, pl) => { if (!this.quiet) saves.remove(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl))); },
+      host_event: (kind, a, b, c) => this.quiet ? (kind === 4 ? 1 : 0) : this.onEvent(kind, a, b, c) | 0,
     };
     const resp = fetch(`hl5core.wasm?v=${VERSION}`);
     const { instance } = await (WebAssembly.instantiateStreaming
@@ -738,6 +861,23 @@ class Core {
   call(name) { return this.ex.app_call(this.cstr(name)); }
   regs() { return new Int32Array(this.mem.buffer, this.ex.cpu_state(), 4); }
   rd32(a) { return new Int32Array(this.mem.buffer)[(this.ex.guest_base() + (a & 0x3ffffff)) >> 2]; }
+  // Draws the current game state with some 32-bit guest values temporarily replaced and returns a view
+  // of the picture (same layout as the uploaded frame), or null. Everything is restored afterwards.
+  paintWith(writes, stride, h) {
+    const ex = this.ex;
+    if (this.outSize !== stride * h) {
+      if (this.out) ex.host_free(this.out);
+      this.out = ex.host_alloc(stride * h * 2);
+      this.outSize = stride * h;
+    }
+    if (!this.out || ex.snap_save() !== 0) return null;
+    const i32 = new Int32Array(this.mem.buffer), base = ex.guest_base();
+    for (let i = 0; i < writes.length; i += 2) i32[(base + writes[i]) >> 2] = writes[i + 1];
+    this.quiet = true;
+    let r;
+    try { r = ex.paint_only(this.out, stride, h); } finally { this.quiet = false; ex.snap_restore(); }
+    return r === 0 ? new Uint16Array(this.mem.buffer, this.out, stride * h) : null;
+  }
   frame() {
     const fi = this.ex.frame_info() >> 2;
     const u = new Uint32Array(this.mem.buffer);
@@ -902,7 +1042,15 @@ function onCoreEvent(kind, a, b, c) {
     case 100: { // Monster::Draw(this, fb, camX, camY)
       const r = core.regs();
       const obj = r[0] >>> 0;
-      monsters.set(obj, { x: core.rd32(obj + 4) + r[2], y: core.rd32(obj + 8) + r[3], tick: tickNo });
+      const x = core.rd32(obj + 4), y = core.rd32(obj + 8);
+      monsters.set(obj, { x: x + r[2], y: y + r[3], tick: tickNo });
+      motion.drawn.set(obj, [x, y]);
+      return 0;
+    }
+    case 108: // Npc::Draw, Spirit::Draw: positions for in-between frames
+    case 109: {
+      const obj = core.regs()[0] >>> 0;
+      motion.drawn.set(obj, [core.rd32(obj + 4), core.rd32(obj + 8)]);
       return 0;
     }
     case 101: { // HERO::NewHitEffect(this, skill, target)
@@ -950,16 +1098,107 @@ function onCoreEvent(kind, a, b, c) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// In-between frames. The game moves everything in whole steps about 20 times a second. For the frames
+// between two game frames the page lets the game draw once more with the camera, the hero and the
+// monsters, NPCs and spirits placed part of the way between their last two positions; the guest state
+// is saved before and restored after, so the game itself never sees it. The picture runs one game
+// frame behind so there is always a real next position to move toward.
+const GMAIN = 0x100000 + 0x16fcf0;
+const HEAP_LO = 0x400000;
+const motion = {
+  drawn: new Map(), // object -> [x, y] drawn in the current game frame
+  prev: null, cur: null, t0: 0, t1: 0,
+  period: 48, rafDt: 16.7,
+  pending: false, // the real frame of `cur` has not been shown yet
+  lastFrac: 0,
+  cost: 0, paints: 0,
+};
+function readMotionState() {
+  const top = core.ex.heap_top();
+  const ok = a => a >= HEAP_LO && a + 0x100 < top;
+  const hero = core.rd32(GMAIN + 0x1474) >>> 0, map = core.rd32(GMAIN + 0x1488) >>> 0;
+  const drawn = motion.drawn;
+  motion.drawn = new Map();
+  if (!ok(hero) || !ok(map)) return null;
+  for (const o of drawn.keys()) if (!ok(o)) drawn.delete(o);
+  return { hero, map, hx: core.rd32(hero + 4), hy: core.rd32(hero + 8), sx: core.rd32(map + 0xc0), sy: core.rd32(map + 0xc4), drawn };
+}
+const near = (a, b) => Math.abs(a - b) <= 48;
+// guest writes that place everything `frac` of the way from prev to cur, or null when nothing moves
+function motionWrites(prev, cur, frac) {
+  if (!prev || !cur || prev.hero !== cur.hero || prev.map !== cur.map) return null;
+  if (!near(prev.hx, cur.hx) || !near(prev.hy, cur.hy) || !near(prev.sx, cur.sx) || !near(prev.sy, cur.sy)) return null;
+  const w = [];
+  const lerp = (a, b) => Math.round(a + (b - a) * frac);
+  const put = (addr, a, b) => { if (a !== b) w.push(addr, lerp(a, b)); };
+  put(cur.hero + 4, prev.hx, cur.hx);
+  put(cur.hero + 8, prev.hy, cur.hy);
+  put(cur.map + 0xc0, prev.sx, cur.sx);
+  put(cur.map + 0xc4, prev.sy, cur.sy);
+  for (const [o, [x, y]] of cur.drawn) {
+    const p = prev.drawn.get(o);
+    if (!p || o === cur.hero || !near(p[0], x) || !near(p[1], y)) continue;
+    put(o + 4, p[0], x);
+    put(o + 8, p[1], y);
+  }
+  return w.length ? w : null;
+}
+function onGameFrame(t, f) {
+  const st = prefs.motion === "smooth" ? readMotionState() : null;
+  if (motion.t1 && t - motion.t1 < 250) motion.period += (t - motion.t1 - motion.period) * 0.2;
+  motion.prev = motion.cur;
+  motion.cur = st;
+  motion.t0 = motion.t1;
+  motion.t1 = t;
+  motion.lastFrac = 0;
+  // without movement (menus, standing still, scene changes) the real frame is shown at once
+  motion.cost *= 0.995; // a device that was too slow for a while gets another try later
+  motion.pending = !!(st && motion.cost < 12 && t - motion.t0 < motion.period * 3 && motionWrites(motion.prev, st, 0.5));
+  if (!motion.pending) renderer.upload(new Uint16Array(core.mem.buffer, f.data, f.w * f.h), f.w, f.h);
+}
+// called every display frame while the real frame of the last game frame is held back
+function presentMotion(t, f) {
+  const span = motion.t1 - motion.t0;
+  const lag = Math.max(0, motion.period - motion.rafDt);
+  const frac = (t - lag - motion.t0) / span;
+  if (frac >= 0.9) {
+    motion.pending = false;
+    renderer.upload(new Uint16Array(core.mem.buffer, f.data, f.w * f.h), f.w, f.h);
+    return;
+  }
+  const step = motion.cost > 7 ? 0.4 : 0.12; // slow device: one in-between frame per game frame
+  if (frac < 0.12 || frac - motion.lastFrac < step) return;
+  const w = motionWrites(motion.prev, motion.cur, frac);
+  const u0 = f.uploads;
+  const p0 = performance.now();
+  const px = w && core.paintWith(w, f.w, f.h);
+  const ms = performance.now() - p0;
+  motion.cost += (ms - motion.cost) * 0.1;
+  motion.paints++;
+  stats.interp++;
+  if (!px || core.frame().uploads !== u0) { // the game flushed by itself: show the real frame
+    motion.pending = false;
+    lastUploads = core.frame().uploads;
+    renderer.upload(new Uint16Array(core.mem.buffer, core.frame().data, f.w * f.h), f.w, f.h);
+    return;
+  }
+  motion.lastFrac = frac;
+  renderer.upload(px, f.w, f.h);
+}
+
+// ---------------------------------------------------------------------------------------------
 // Main loop
 let lastUploads = -1;
 let lastT = 0;
-const stats = { frames: 0, loopMs: 0, drawMs: 0 };
+const stats = { frames: 0, loopMs: 0, drawMs: 0, interp: 0, ticks: 0 };
 function frameLoop(t) {
   requestAnimationFrame(frameLoop);
   if (!running) return;
   const dt = lastT ? t - lastT : 16.7;
   lastT = t;
-  if (t >= freezeUntil) {
+  if (dt < 50) motion.rafDt += (dt - motion.rafDt) * 0.05;
+  const frozen = t < freezeUntil;
+  if (!frozen) {
     sendMove(0);
     sendMove(1);
     tickNo++;
@@ -972,8 +1211,10 @@ function frameLoop(t) {
   const f = core.frame();
   if (f.data && f.uploads !== lastUploads) {
     lastUploads = f.uploads;
-    renderer.upload(new Uint16Array(core.mem.buffer, f.data, f.w * f.h), f.w, f.h);
+    stats.ticks++;
+    onGameFrame(t, f);
   }
+  if (f.data && motion.pending && !frozen) presentMotion(t, f);
   fx.update(dt);
   const sh = fx.shake;
   $("stage").style.transform = sh ? `translate(${((Math.random() * 2 - 1) * sh).toFixed(1)}px, ${((Math.random() * 2 - 1) * sh).toFixed(1)}px)` : "";
@@ -1128,7 +1369,7 @@ async function prepareAndWait(game) {
     return;
   }
   $("tap-text").textContent = "화면을 터치하면 시작해요";
-  window.__hl5 = { core, stats, counters, audio: () => audio, menuState: () => menuState, ready: true, lcd: () => lcdW, running: () => running, fx: () => fx };
+  window.__hl5 = { core, stats, counters, audio: () => audio, menuState: () => menuState, ready: true, lcd: () => lcdW, running: () => running, fx: () => fx, motion: () => motion, hold: v => { running = !v; }, redraw: () => { renderer.dirty = true; renderer.draw(fx); } };
   $("tap").onclick = () => {
     if (started) return;
     started = true;

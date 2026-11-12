@@ -131,6 +131,12 @@ static int alloc_fd(Node *n, int flags) {
   return -1;
 }
 
+u32 fs_state_size(void) { return sizeof fds; }
+void fs_state(u8 *buf, int save) {
+  if (save) memcpy(buf, fds, sizeof fds);
+  else memcpy(fds, buf, sizeof fds);
+}
+
 // ---- exports for the page --------------------------------------------------------------
 EXPORT(fs_put) void fs_put(const char *path, const u8 *data, u32 len) {
   char p[PATH_MAX_LEN];
