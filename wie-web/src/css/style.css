@@ -1175,7 +1175,7 @@ html[data-screen-fit="contain"] #canvas {
 
 /* ---- Keypad layout (이노티아) ----
    The phone's own d-pad sits above the stick (it scrolls long descriptions and sets up the party), and the keys
-   around attack follow the phone's keypad: 1 and 3 on top, 7 · 취소 · 9 under attack, * · 0 · # at the bottom. */
+   follow the phone's keypad with attack where 5 is: 1 · 취소 · 3 on top, 7 · 공격 · 9, then * · 0 · #. */
 .pad-dpad,
 .action-cluster > .key-extra {
   display: none;
@@ -1203,10 +1203,10 @@ html[data-screen-fit="contain"] #canvas {
   grid-row: 2;
 }
 
-/* The bigger d-pad leaves the stick a shorter zone; let the stick take more of it. */
+/* A big stick: it takes nearly the whole zone under the d-pad. */
 .player-view[data-pad-layout="keypad"] .joystick {
-  top: 56%;
-  width: min(84cqw, 76cqh, 160px);
+  top: 50%;
+  width: min(96cqw, 98cqh, 180px);
 }
 
 .player-view[data-pad-layout="keypad"] .pad-tools-bar {
@@ -1247,20 +1247,15 @@ html[data-screen-fit="contain"] #canvas {
   display: flex;
 }
 
-/* Big keys: the grid is 240 wide and 272 tall here, so the keys use the column's full height as well. */
-.player-view[data-pad-layout="keypad"] .action-cluster > .key-ring {
-  --u: calc(min(100cqw / 240, 100cqh / 272));
-}
-
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="1"] { --x: 200; --y: 200; --d: 70; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="3"] { --x: 40; --y: 200; --d: 70; }
-.player-view[data-pad-layout="keypad"] .action-cluster > .key-attack { --x: 120; --y: 224; --d: 92; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="7"] { --x: 200; --y: 118; --d: 70; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="CLR"] { --x: 120; --y: 118; --d: 66; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="9"] { --x: 40; --y: 118; --d: 70; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="*"] { --x: 200; --y: 36; --d: 66; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="1"] { --x: 202; --y: 200; --d: 70; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="CLR"] { --x: 120; --y: 200; --d: 66; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="3"] { --x: 38; --y: 200; --d: 70; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="7"] { --x: 202; --y: 118; --d: 70; }
+.player-view[data-pad-layout="keypad"] .action-cluster > .key-attack { --x: 120; --y: 118; --d: 88; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="9"] { --x: 38; --y: 118; --d: 70; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="*"] { --x: 202; --y: 36; --d: 66; }
 .player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="0"] { --x: 120; --y: 36; --d: 66; }
-.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="#"] { --x: 40; --y: 36; --d: 66; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="#"] { --x: 38; --y: 36; --d: 66; }
 
 .player-view[data-pad-layout="keypad"] .action-cluster > .key-clr b {
   font-size: calc(var(--d) * var(--u) * 0.27);
