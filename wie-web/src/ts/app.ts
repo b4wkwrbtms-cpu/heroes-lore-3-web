@@ -8,10 +8,11 @@ import { loadGamePreference } from "./game_preferences";
 import { isHeroesLore3, isHeroesLore3Binary, readSkills } from "./hl3";
 import { Hl3Feedback } from "./hl3_feedback";
 import { InotiaHunt } from "./inotia_hunt";
-import { type Direction, applyPadProfile, isInotia, padProfileFor, remapKey } from "./pad_profile";
+import { type Direction, applyPadProfile, isInotia, isZero, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
 import { OCTANT_DIRECTIONS, pickOctant, pickStraight } from "./stick";
 import { type SaveResult, ZERO_SAVE_KEY, readZeroState, saveZero } from "./zero";
+import { ZeroFeedback } from "./zero_feedback";
 
 const KEY_MAP: Record<string, string> = {
   Digit1: "1",
@@ -73,7 +74,10 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   else delete playerView.dataset.padLayout;
   // Landscape sizes the screen column from the game's own aspect (240×320, 176×220, ...).
   const gameCanvas = document.getElementById("canvas") as HTMLCanvasElement;
-  const feedback = backend.rendering === "canvas" && isHeroesLore3(app.id) ? new Hl3Feedback(gameCanvas, app.id) : undefined;
+  const feedback = backend.rendering !== "canvas" ? undefined
+    : isHeroesLore3(app.id) ? new Hl3Feedback(gameCanvas, app.id)
+    : isZero(app) ? new ZeroFeedback(gameCanvas, app.id)
+    : undefined;
   const updateScreenRatio = () => {
     if (gameCanvas.width > 0 && gameCanvas.height > 0) playerView.style.setProperty("--screen-ratio", String(gameCanvas.width / gameCanvas.height));
   };
