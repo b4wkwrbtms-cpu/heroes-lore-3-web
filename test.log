@@ -1,0 +1,312 @@
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m unicode-ident v1.0.27
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m allocator-api2 v0.2.21
+[1m[92m   Compiling[0m equivalent v1.0.3
+[1m[92m   Compiling[0m foldhash v0.2.0
+[1m[92m   Compiling[0m cfg-if v1.0.5
+[1m[92m   Compiling[0m libm v0.2.16
+[1m[92m   Compiling[0m hashbrown v0.17.1
+[1m[92m   Compiling[0m memchr v2.8.3
+[1m[92m   Compiling[0m pin-project-lite v0.2.17
+[1m[92m   Compiling[0m libc v0.2.191
+[1m[92m   Compiling[0m syn v3.0.9
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m smallvec v1.16.4
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m nom v8.0.0
+[1m[92m   Compiling[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m tracing-core v0.1.36
+[1m[92m   Compiling[0m anyhow v1.0.104
+[1m[92m   Compiling[0m bumpalo v3.20.3
+[1m[92m   Compiling[0m bitflags v2.13.2
+[1m[92m   Compiling[0m indexmap v2.14.2
+[1m[92m   Compiling[0m synstructure v0.14.0
+[1m[92m   Compiling[0m cranelift-srcgen v0.136.4
+[1m[92m   Compiling[0m simd-adler32 v0.3.10
+[1m[92m   Compiling[0m autocfg v1.5.1
+[1m[92m   Compiling[0m cranelift-assembler-x64-meta v0.136.4
+[1m[92m   Compiling[0m tracing-attributes v0.1.28
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m crc32fast v1.5.3
+[1m[92m   Compiling[0m wasmtime-internal-core v49.0.4
+[1m[92m   Compiling[0m crossbeam-utils v0.8.23
+[1m[92m   Compiling[0m bytemuck_derive v1.12.1
+[1m[92m   Compiling[0m zerofrom-derive v0.1.8
+[1m[92m   Compiling[0m yoke-derive v0.8.4
+[1m[92m   Compiling[0m bytemuck v1.25.2
+[1m[92m   Compiling[0m zerofrom v0.1.8
+[1m[92m   Compiling[0m tracing v0.1.41
+[1m[92m   Compiling[0m zerovec-derive v0.11.7
+[1m[92m   Compiling[0m displaydoc v0.2.7
+[1m[92m   Compiling[0m adler2 v2.0.1
+[1m[92m   Compiling[0m yoke v0.8.4
+[1m[92m   Compiling[0m cranelift-isle v0.136.4
+[1m[92m   Compiling[0m zerovec v0.11.9
+[1m[92m   Compiling[0m miniz_oxide v0.9.1
+[1m[92m   Compiling[0m wie-util v0.2.21 (/home/runner/work/heroes-lore-3-web/heroes-lore-3-web/wie-util)
+[1m[92m   Compiling[0m tinystr v0.8.5
+[1m[92m   Compiling[0m litemap v0.8.3
+[1m[92m   Compiling[0m zlib-rs v0.6.8
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m   Compiling[0m cranelift-codegen-shared v0.136.4
+[1m[92m   Compiling[0m scopeguard v1.2.0
+[1m[92m   Compiling[0m writeable v0.6.4
+[1m[92m   Compiling[0m cranelift-codegen-meta v0.136.4
+[1m[92m   Compiling[0m potential_utf v0.1.6
+[1m[92m   Compiling[0m cranelift-bitset v0.136.4
+[1m[92m   Compiling[0m icu_locale_core v2.4.0
+[1m[92m   Compiling[0m zerotrie v0.2.5
+[1m[92m   Compiling[0m cranelift-assembler-x64 v0.136.4
+[1m[92m   Compiling[0m async-trait v0.1.92
+[1m[92m   Compiling[0m icu_normalizer_data v2.4.0
+[1m[92m   Compiling[0m rustversion v1.0.23
+[1m[92m   Compiling[0m utf8_iter v1.0.4
+[1m[92m   Compiling[0m version_check v0.9.5
+[1m[92m   Compiling[0m crossbeam-epoch v0.9.21
+[1m[92m   Compiling[0m icu_properties_data v2.4.0
+[1m[92m   Compiling[0m target-lexicon v0.13.5
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m generic-array v0.14.7
+[1m[92m   Compiling[0m cranelift-codegen v0.136.4
+[1m[92m   Compiling[0m icu_collections v2.4.0
+[1m[92m   Compiling[0m icu_provider v2.4.0
+[1m[92m   Compiling[0m cranelift-entity v0.136.4
+[1m[92m   Compiling[0m wie-core-arm-aot v0.2.21 (/home/runner/work/heroes-lore-3-web/heroes-lore-3-web/wie-core-arm-aot)
+[1m[92m   Compiling[0m core_maths v0.1.1
+[1m[92m   Compiling[0m arbitrary v1.5.0
+[1m[92m   Compiling[0m hashbrown v0.16.1
+[1m[92m   Compiling[0m rustc-hash v2.1.3
+[1m[92m   Compiling[0m crossbeam-deque v0.8.8
+[1m[92m   Compiling[0m fnv v1.0.7
+[1m[92m   Compiling[0m serde_core v1.0.229
+[1m[92m   Compiling[0m gimli v0.33.0
+[1m[92m   Compiling[0m flate2 v1.1.10
+[1m[92m   Compiling[0m cranelift-control v0.136.4
+[1m[92m   Compiling[0m regalloc2 v0.15.2
+[1m[92m   Compiling[0m ttf-parser v0.25.1
+[1m[92m   Compiling[0m cranelift-bforest v0.136.4
+[1m[92m   Compiling[0m lock_api v0.4.14
+[1m[92m   Compiling[0m zopfli v0.8.4
+[1m[92m   Compiling[0m miniz_oxide v0.8.9
+[1m[92m   Compiling[0m fdeflate v0.3.7
+[1m[92m   Compiling[0m jvm-types v0.4.1
+[1m[92m   Compiling[0m futures-sink v0.3.34
+[1m[92m   Compiling[0m serde v1.0.229
+[1m[92m   Compiling[0m futures-core v0.3.34
+[1m[92m   Compiling[0m weezl v0.1.12
+[1m[92m   Compiling[0m zune-core v0.5.3
+[1m[92m   Compiling[0m color_quant v1.1.0
+[1m[92m   Compiling[0m pxfm v0.1.30
+[1m[92m   Compiling[0m typed-path v0.13.0
+[1m[92m   Compiling[0m typenum v1.20.1
+[1m[92m   Compiling[0m zip v9.1.0
+[1m[92m   Compiling[0m gif v0.14.2
+[1m[92m   Compiling[0m moxcms v0.8.1
+[1m[92m   Compiling[0m zune-jpeg v0.5.15
+[1m[92m   Compiling[0m futures-channel v0.3.34
+[1m[92m   Compiling[0m png v0.18.1
+[1m[92m   Compiling[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m icu_properties v2.4.0
+[1m[92m   Compiling[0m encoding_rs v0.8.42
+[1m[92m   Compiling[0m icu_normalizer v2.4.0
+[1m[92m   Compiling[0m owned_ttf_parser v0.25.1
+[1m[92m   Compiling[0m async-recursion v1.2.0
+[1m[92m   Compiling[0m serde_derive v1.0.229
+[1m[92m   Compiling[0m smaf v0.1.4
+[1m[92m   Compiling[0m ab_glyph_rasterizer v0.1.10
+[1m[92m   Compiling[0m event-listener v5.4.2
+[1m[92m   Compiling[0m futures-task v0.3.34
+[1m[92m   Compiling[0m byteorder-lite v0.1.0
+[1m[92m   Compiling[0m dyn-clone v1.0.20
+[1m[92m   Compiling[0m slab v0.4.12
+[1m[92m   Compiling[0m futures-io v0.3.34
+[1m[92m   Compiling[0m spin v0.12.3
+[1m[92m   Compiling[0m dyn-hash v1.0.0
+[1m[92m   Compiling[0m jvm v0.4.1
+[1m[92m   Compiling[0m futures-util v0.3.34
+[1m[92m   Compiling[0m image v0.25.10
+[1m[92m   Compiling[0m ab_glyph v0.2.32
+[1m[92m   Compiling[0m smaf-player v0.1.4
+[1m[92m   Compiling[0m idna_adapter v1.2.2
+[1m[92m   Compiling[0m percent-encoding v2.3.2
+[1m[92m   Compiling[0m simdutf8 v0.1.5
+[1m[92m   Compiling[0m rayon-core v1.13.0
+[1m[92m   Compiling[0m multiversion_no_op v1.0.0
+[1m[92m   Compiling[0m regex-syntax v0.8.11
+[1m[92m   Compiling[0m core_detect v1.0.0
+[1m[92m   Compiling[0m regex-automata v0.4.18
+[1m[92m   Compiling[0m wie-backend v0.2.21 (/home/runner/work/heroes-lore-3-web/heroes-lore-3-web/wie-backend)
+[1m[92m   Compiling[0m form_urlencoded v1.2.2
+[1m[92m   Compiling[0m idna v1.1.0
+[1m[92m   Compiling[0m futures-executor v0.3.34
+[1m[92m   Compiling[0m jvm-class-proto v0.4.1
+[1m[92m   Compiling[0m crypto-common v0.1.7
+[1m[92m   Compiling[0m block-buffer v0.10.4
+[1m[92m   Compiling[0m bitflags v1.3.2
+[1m[92m   Compiling[0m region v3.0.2
+[1m[92m   Compiling[0m digest v0.10.7
+[1m[92m   Compiling[0m url v2.5.8
+[1m[92m   Compiling[0m regex v1.13.1
+[1m[92m   Compiling[0m classfile v0.4.1
+[1m[92m   Compiling[0m wasmtime-internal-jit-icache-coherence v49.0.4
+[1m[92m   Compiling[0m chrono v0.4.45
+[1m[92m   Compiling[0m memmap2 v0.9.12
+[1m[92m   Compiling[0m pastey v0.2.3
+[1m[92m   Compiling[0m either v1.19.0
+[1m[92m   Compiling[0m managed v0.8.0
+[1m[92m   Compiling[0m cpufeatures v0.2.17
+[1m[92m   Compiling[0m sha2 v0.10.9
+[1m[92m   Compiling[0m gdbstub v0.7.10
+[1m[92m   Compiling[0m rayon v1.12.0
+[1m[92m   Compiling[0m rustjava-runtime v0.4.1
+[1m[92m   Compiling[0m jvm-bytecode v0.4.1
+[1m[92m   Compiling[0m futures v0.3.34
+[1m[92m   Compiling[0m crossbeam-queue v0.3.14
+[1m[92m   Compiling[0m cranelift-module v0.136.4
+[1m[92m   Compiling[0m cranelift-native v0.136.4
+[1m[92m   Compiling[0m cranelift-jit v0.136.4
+[1m[92m   Compiling[0m cranelift-frontend v0.136.4
+[1m[92m   Compiling[0m crossbeam-channel v0.5.17
+[1m[92m   Compiling[0m wipi-types v0.0.4
+[1m[92m   Compiling[0m pin-project-internal v1.1.13
+[1m[92m   Compiling[0m leb128fmt v0.1.0
+[1m[92m   Compiling[0m wasm-encoder v0.259.0
+[1m[92m   Compiling[0m pin-project v1.1.13
+[1m[92m   Compiling[0m wie-wipi-c v0.2.21 (/home/runner/work/heroes-lore-3-web/heroes-lore-3-web/wie-wipi-c)
+[1m[92m   Compiling[0m crossbeam v0.8.5
+[1m[92m   Compiling[0m wie-core-arm-native v0.2.21 (/home/runner/work/heroes-lore-3-web/heroes-lore-3-web/wie-core-arm-native)
+[1m[92m   Compiling[0m gdbstub_arch v0.3.3
+[1m[92m   Compiling[0m futures-macro v0.3.34
+[1m[92m   Compiling[0m arm32_cpu v0.1.2
+[1m[92m   Compiling[0m futures-test v0.3.34
+[1m[92m   Compiling[0m wie-core-arm-wasm v0.2.21 (/home/runner/work/heroes-lore-3-web/heroes-lore-3-web/wie-core-arm-wasm)
+[1m[92m   Compiling[0m wie-core-arm v0.2.21 (/home/runner/work/heroes-lore-3-web/heroes-lore-3-web/wie-core-arm)
+[1m[92m   Compiling[0m wie-jvm-support v0.2.21 (/home/runner/work/heroes-lore-3-web/heroes-lore-3-web/wie-jvm-support)
+[1m[92m   Compiling[0m test-utils v0.2.21 (/home/runner/work/heroes-lore-3-web/heroes-lore-3-web/test-utils)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1m 24s
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/wie_core_arm-834e188075c7f328)
+
+running 95 tests
+test allocator::list::tests::test_allocator ... ok
+test allocator::list::tests::test_coalesce_adjacent_free_blocks ... ok
+test allocator::list::tests::test_corrupted_canary_returns_error ... ok
+test allocator::list::tests::test_double_free_returns_error ... ok
+test allocator::bucket::tests::test_init_rejects_undersized_region ... ok
+test aot::analysis::tests::arm_clz_reads_one_register_without_setting_flags ... ok
+test aot::analysis::tests::arm_conditions_comparisons_and_backedges ... ok
+test aot::analysis::tests::arm_data_processing_opcode_families_preserve_operands ... ok
+test aot::analysis::tests::arm_double_transfers_keep_pair_addressing_and_register_restrictions ... ok
+test aot::analysis::tests::arm_long_multiply_keeps_signed_accumulate_and_distinct_destinations ... ok
+test aot::analysis::tests::arm_multiple_transfers_preserve_modes_masks_and_base_alias_rules ... ok
+test aot::analysis::tests::arm_multiply_accumulate_keeps_all_inputs_and_flag_selection ... ok
+test aot::analysis::tests::arm_multiply_preserves_conditions_operands_and_flag_selection ... ok
+test aot::analysis::tests::arm_multiply_rejects_pc_and_reserved_bits ... ok
+test aot::analysis::tests::arm_rotated_immediates_do_not_discard_shifter_carry ... ok
+test aot::analysis::tests::arm_status_access_preserves_user_flags_and_system_control_frontiers ... ok
+test aot::analysis::tests::arm_swap_preserves_width_and_input_aliases ... ok
+test aot::analysis::tests::arm_unconditional_space_accepts_only_blx_and_valid_prefetch_hints ... ok
+test aot::analysis::tests::arm_user_access_forms_share_single_transfer_addressing ... ok
+test aot::analysis::tests::branch_displacements_and_pipeline_values_wrap_at_32_bits ... ok
+test aot::analysis::tests::branch_exchange_links_and_pc_sources_are_exact ... ok
+test aot::analysis::tests::branches_outside_snapshot_and_dynamic_exits_keep_exact_instruction ... ok
+test aot::analysis::tests::call_return_continuations_share_the_source_region ... ok
+test aot::analysis::tests::calls_keep_continuations_without_discovering_callees_in_the_snapshot ... ok
+test aot::analysis::tests::conditional_diamond_rejoins_one_shared_block ... ok
+test aot::analysis::tests::exceptions_newer_isa_and_unpredictable_encodings_stay_in_interpreter ... ok
+test aot::analysis::tests::independently_reached_call_targets_and_static_exchanges_start_blocks ... ok
+test aot::analysis::tests::instruction_and_block_limits_leave_dispatchable_boundaries ... ok
+test aot::analysis::tests::invalid_or_partial_boundaries_terminate ... ok
+test aot::analysis::tests::memory_pc_loads_terminate_only_the_taken_path_and_word_stores_use_pc_plus_twelve ... ok
+test aot::analysis::tests::memory_width_sign_index_and_writeback_are_preserved ... ok
+test aot::analysis::tests::ordinary_alu_pc_writes_terminate_only_the_taken_path ... ok
+test aot::analysis::tests::pc_operands_are_pipeline_constants_and_thumb_literals_are_aligned ... ok
+test aot::analysis::tests::shifts_preserve_zero_encoding_and_register_amount_semantics ... ok
+test aot::analysis::tests::snapshot_reaches_before_entry_without_decoding_unreachable_bytes ... ok
+test aot::analysis::tests::thumb_call_pairs_have_one_size_four_instruction_and_no_suffix_entry ... ok
+test aot::analysis::tests::thumb_countdown_has_a_backedge_and_conditional_fallthrough ... ok
+test aot::analysis::tests::thumb_multiple_transfers_normalize_stack_and_listed_base_writeback ... ok
+test aot::analysis::tests::thumb_multiply_preserves_all_low_register_operands_and_sets_flags ... ok
+test aot::analysis::tests::thumb_register_arithmetic_and_stack_adjustment ... ok
+test aot::analysis::tests::unsupported_branch_path_keeps_the_supported_alternative ... ok
+test allocator::bucket::tests::test_allocator_small_sizes ... ok
+test aot::tests::partial_instructions_remain_fallback_holes ... ok
+test aot::tests::raw_images_stream_into_one_module_with_exact_ownership ... ok
+test aot::tests::analysis_limits_only_claim_emitted_instructions ... ok
+test core::tests::double_result_reaches_guest_registers_in_low_high_word_order ... ok
+test core::tests::failed_arm_calls_preserve_fault_registers_and_stack ... ok
+test aot::tests::unsupported_images_make_bounded_progress_without_ir ... ok
+test allocator::bucket::tests::test_allocator ... ok
+test allocator::tests::allocation_status_tracks_bucket_and_list_allocations ... ok
+test core::tests::interpreter_executes_without_preparation ... ok
+test core::tests::nested_arm_calls_share_the_budget_and_keep_suspended_roots_visible ... ok
+test core::tests::interrupt_stops_a_thread_waiting_in_host_code ... ok
+test core::tests::ready_arm_threads_yield_and_allow_host_tasks_to_run ... ok
+test core::tests::scheduler_locking_keeps_other_thread_futures_stopped ... ok
+test core::tests::saved_thread_contexts_are_accessible_while_the_engine_is_locked ... ok
+test core::tests::synchronous_call_errors_restore_context_including_partial_argument_setup ... ok
+test core::tests::synchronous_call_rejects_debugger_thread_switching ... ok
+test core::tests::synchronous_calls_restore_context_without_consuming_the_outer_budget ... ok
+test core::tests::terminated_string_reads_use_normal_and_debug_engines ... ok
+test core::tests::returning_arm_calls_do_not_reset_the_instruction_budget ... ok
+test core::tests::test_thumb_svc_stub_dispatch ... ok
+test engine::arm32_cpu::tests::coprocessor_cache_maintenance_targets_regions_in_the_active_register_bank ... ok
+test engine::arm32_cpu::tests::different_cpu_modes_and_jazelle_do_not_enter_system_translations ... ok
+test engine::arm32_cpu::tests::failed_preparation_does_not_install_late_results ... ok
+test engine::arm32_cpu::tests::interpreter_handoff_and_backend_failure_preserve_progress_and_budget ... ok
+test engine::arm32_cpu::tests::invalidated_regions_recompile_on_entry_without_blocking_other_code ... ok
+test engine::arm32_cpu::tests::memory_reads_wrap_at_the_last_guest_page ... ok
+test core::tests::scheduler_locking_yields_without_resetting_the_instruction_budget ... ok
+test engine::arm32_cpu::tests::native_branch_exchange_pc_loads_and_interpreter_handoffs_match ... ok
+test engine::arm32_cpu::tests::native_code_changes_only_after_explicit_instruction_cache_invalidation ... ok
+test engine::arm32_cpu::tests::native_loops_and_interior_entries_run_without_interpreter_budget ... ok
+test core::tests::yields_every_ten_thousand_instructions_across_svc ... ok
+test engine::arm32_cpu::tests::preparation_snapshots_final_file_bytes_without_bss_or_duplicate_ranges ... ok
+test core::tests::stepping_svc_waits_for_nested_handlers_and_preserves_breakpoints ... ok
+test engine::arm32_cpu::tests::run_reports_consumed_budget_at_yield_and_return_boundaries ... ok
+test engine::arm32_cpu::tests::test_memory_basic ... ok
+test engine::arm32_cpu::tests::test_memory_unmapped_read ... ok
+test engine::arm32_cpu::tests::test_memory_unmapped_write ... ok
+test engine::arm32_cpu::tests::word_range_admission_checks_mapping_without_reading ... ok
+test engine::arm32_cpu::tests::native_arithmetic_conditions_and_shifts_match_interpreter ... ok
+test engine::debugged_arm32_cpu::tests::breakpoint_steps_count_toward_the_svc_instruction_budget ... ok
+test engine::debugged_arm32_cpu::tests::stepping_past_a_return_boundary_does_not_report_an_empty_step ... ok
+test engine::debugged_arm32_cpu::tests::stepping_svc_stops_before_the_next_guest_instruction ... ok
+test engine::debugged_arm32_cpu::tests::stepping_svc_tracks_each_resumed_thread ... ok
+test engine::debugged_arm32_cpu::tests::test_arm_breakpoint_patch_and_restore ... ok
+test engine::debugged_arm32_cpu::tests::test_thumb_breakpoint_patch_and_restore ... ok
+test engine::debugged_arm32_cpu::tests::test_write_memory_preserves_trap_bytes ... ok
+test engine::debugged_arm32_cpu::tests::zero_budget_breakpoint_resumes_keep_the_pending_instruction_until_it_retires ... ok
+test engine::debugged_arm32_cpu::tests::shared_breakpoints_remain_installed_until_each_thread_steps ... ok
+test gdb::dummy::tests::unavailable_transport_fails_before_any_guest_thread_exists ... ok
+test engine::arm32_cpu::tests::native_memory_transfers_preserve_completed_prefix ... ok
+test engine::arm32_cpu::tests::preparation_waits_without_running_image_code ... ok
+test gdb::tcp::tests::remote_step_actions_remain_bound_to_their_threads ... ok
+test gdb::tcp::tests::remote_sessions_read_threads_step_interrupt_and_reattach ... ok
+
+test result: ok. 95 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.79s
+
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/wie_core_arm_aot-f967d87e28bc684e)
+
+running 4 tests
+test tests::generated_code_frame_has_a_fixed_plain_data_layout ... ok
+test cache::tests::artifact_roundtrip_rejects_truncation_and_incompatible_records ... ok
+test manifest::tests::cached_manifest_preserves_ranges_and_slot_order ... ok
+test manifest::tests::cached_manifest_rejects_truncated_data_and_invalid_coverage ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m   Doc-tests[0m wie_core_arm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m   Doc-tests[0m wie_core_arm_aot
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+test exit 0

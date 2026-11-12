@@ -1,0 +1,67 @@
+<!doctype html><html lang=ko><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name=apple-mobile-web-app-capable content=yes><meta name=mobile-web-app-capable content=yes><meta name=apple-mobile-web-app-status-bar-style content=black-translucent><meta name=apple-mobile-web-app-title content=영웅서기5><meta name=theme-color content=#000000><meta name=format-detection content="telephone=no"><title>영웅서기5</title><link rel=manifest href=manifest.webmanifest><link rel=apple-touch-icon href=icon-180.png><link rel=icon href=icon-192.png><style>:root{--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--accent:#e8792b}*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}body,html{color:#eee;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;touch-action:none;background:#000;height:100%;margin:0;font-family:-apple-system,Apple SD Gothic Neo,Noto Sans KR,sans-serif;overflow:hidden}#probe{visibility:hidden;padding:var(--sat) var(--sar) var(--sab) var(--sal);position:fixed}#frame{position:fixed;left:0;top:0;transform-origin:0 0}#stage{background:#000;position:absolute}#stage canvas{width:100%;height:100%;position:absolute;left:0;top:0}#fx{pointer-events:none}.side{flex-direction:column;gap:10px;align-items:center;display:flex;position:absolute}.chip,.side button{color:#ddd;background:rgba(30,30,34,.72);border-radius:12px;border:1px solid rgba(255,255,255,.18);align-items:center;justify-items:center;width:40px;height:40px;padding:0;font-size:15px;font-weight:600;display:grid}.side button:active{color:#fff;background:rgba(232,121,43,.8)}.side button svg{width:20px;height:20px}.overlay{z-index:10;background:radial-gradient(ellipse,#1b1414 0%,#070606 70%);align-items:center;justify-content:center;padding:max(16px,var(--sat)) max(16px,var(--sar)) max(16px,var(--sab)) max(16px,var(--sal));display:none;position:fixed;top:0;right:0;bottom:0;left:0}.overlay.show{display:flex}.card{text-align:center;max-width:520px;width:100%}.card h1{letter-spacing:1px;margin:0 0 6px;font-size:26px}.card h1 small{color:#b9a89a;letter-spacing:0;margin-top:4px;font-size:13px;font-weight:500;display:block}.card p{color:#bbb;margin:10px 0;font-size:14px;line-height:1.55}.btn{color:#fff;background:var(--accent);border:0;border-radius:14px;margin:6px;padding:13px 22px;font-size:16px;font-weight:700;display:inline-block}.btn.ghost{color:#ddd;background:rgba(255,255,255,.1);font-weight:600}.btn:active{filter:brightness(1.2)}.err{color:#ff8a7a;white-space:pre-wrap;text-align:left;font-size:13px}#progress{background:rgba(255,255,255,.1);border-radius:3px;height:6px;max-width:300px;margin:14px auto;overflow:hidden}#progress div{background:var(--accent);height:100%;width:0;transition:width.2s}#tap .card h2{margin:0 0 6px;font-size:20px}#settings{z-index:20;background:rgba(0,0,0,.72)}#settings .panel{touch-action:pan-y;background:#1c1b1f;border:1px solid rgba(255,255,255,.1);border-radius:18px;width:min(560px,100%);max-height:100%;padding:14px 16px 10px;overflow-y:auto;-webkit-overflow-scrolling:touch}.panel h3{justify-content:space-between;align-items:center;margin:2px 0 10px;font-size:17px;display:flex}.row{border-top:1px solid rgba(255,255,255,.07);align-items:center;justify-content:space-between;gap:10px;padding:8px 0;display:flex}.row label{color:#ddd;font-size:14px}.row .hint{color:#8f8f96;margin-top:2px;font-size:11.5px;display:block}.seg{background:rgba(255,255,255,.07);border-radius:10px;flex-shrink:0;padding:3px;display:flex}.seg button{color:#bbb;white-space:nowrap;background:none;border:0;border-radius:8px;padding:7px 10px;font-size:13px}.seg button.on{color:#fff;background:var(--accent);font-weight:700}.credits{color:#7d7d84;margin-top:8px;font-size:11px;line-height:1.5}#toast{z-index:30;color:#fff;opacity:0;pointer-events:none;background:rgba(20,20,22,.9);border-radius:12px;padding:9px 14px;font-size:13px;transition:opacity.25s;position:fixed;left:50%;top:calc(12px + var(--sat));transform:translate(-50%)}#toast.show{opacity:1}</style></head><body>
+    <div id=probe></div>
+    <div id=frame>
+      <div id=stage><canvas id=screen></canvas><canvas id=fx></canvas></div>
+      <div class=side id=side>
+        <button id=btn-settings aria-label=설정>
+          <svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2><circle cx=12 cy=12 r=3 /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        </button>
+        <button id=btn-back aria-label=메뉴/뒤로>
+          <svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2.2><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <button id=btn-skip aria-label="장면 넘기기">#</button>
+      </div>
+    </div>
+
+    <div class=overlay id=home>
+      <div class=card>
+        <h1>영웅서기5<small>칠흑의 계약 · 아이폰 플레이어</small></h1>
+        <p id=home-text>갖고 있는 게임 파일(zip 또는 apk)을 한 번만 넣어 주세요.<br>이 기기에 저장돼서 다음부터는 바로 시작돼요.</p>
+        <div id=progress><div></div></div>
+        <button class=btn id=btn-import>게임 파일 넣기</button>
+        <input type=file id=file hidden>
+        <p class=err id=home-err></p>
+      </div>
+    </div>
+
+    <div class=overlay id=tap>
+      <div class=card>
+        <h2>영웅서기5</h2>
+        <p id=tap-text>화면을 터치하면 시작해요</p>
+        <p class=err id=tap-err></p>
+      </div>
+    </div>
+
+    <div class=overlay id=settings>
+      <div class=panel>
+        <h3>설정 <button class="btn ghost" id=btn-close style="padding:8px 14px;margin:0">닫기</button></h3>
+        <div class=row><label>화질<span class=hint>고화질은 계단 모양 테두리를 다듬어 크게 그려요</span></label>
+          <div class=seg data-pref=quality><button data-v=sharp>고화질</button><button data-v=smooth>부드럽게</button><button data-v=pixel>원본 픽셀</button></div></div>
+        <div class=row><label>색감<span class=hint>색을 조금 더 또렷하게</span></label>
+          <div class=seg data-pref=color><button data-v=vivid>또렷하게</button><button data-v=original>원본</button></div></div>
+        <div class=row><label>타격감<span class=hint>맞힐 때 섬광·불꽃·잠깐 멈춤·흔들림</span></label>
+          <div class=seg data-pref=impact><button data-v=strong>강하게</button><button data-v=normal>보통</button><button data-v=off>끄기</button></div></div>
+        <div class=row><label>화면 크기<span class=hint>게임을 다시 시작하면 적용돼요</span></label>
+          <div class=seg data-pref=area><button data-v=safe>안전 영역</button><button data-v=full>가장자리까지</button></div></div>
+        <div class=row><label>소리</label>
+          <div class=seg data-pref=sound><button data-v=on>켜기</button><button data-v=off>끄기</button></div></div>
+        <div class=row><label>버튼 위치<span class=hint>설정·메뉴·넘기기 버튼</span></label>
+          <div class=seg data-pref=side><button data-v=left>왼쪽</button><button data-v=right>오른쪽</button></div></div>
+        <div class=row><label>세이브 백업<span class=hint>홈 화면 앱을 지우기 전에 내보내 두세요</span></label>
+          <div class=seg><button id=btn-export>내보내기</button><button id=btn-import-save>가져오기</button></div></div>
+        <div class=row><label>게임 파일</label>
+          <div class=seg><button id=btn-restart>다시 시작</button><button id=btn-replace>다시 넣기</button></div></div>
+        <input type=file id=save-file accept=.json,application/json hidden>
+        <p class=credits>
+          영웅서기5 © Electronic Arts. 게임 파일은 이 기기에만 저장되고 어디로도 보내지 않아요.<br>
+          ARM 실행기와 안드로이드 대체층은 이 페이지에 맞춰 새로 만들었어요.<br>
+          This project is based on <a href=https://github.com/dlunch/wie style=color:#9aa>wie</a>, created by Inseok Lee.
+        </p>
+      </div>
+    </div>
+
+    <div id=toast></div>
+    <script type=module src="hl5.js?v=1"></script>
+  
+
+</body></html>
