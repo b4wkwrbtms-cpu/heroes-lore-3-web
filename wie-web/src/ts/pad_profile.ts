@@ -14,6 +14,11 @@ export interface PadProfile {
   buttons: Record<string, { key: string; title: string; caption: string }>;
   /** Full-keypad sheet buttons, keyed by their default `data-key`: the key they press instead and their label. */
   sheet?: Record<string, { key: string; label: string }>;
+  /**
+   * Pad arrangement, set on the player view as `data-pad-layout`. `keypad`: the phone's own d-pad (arrows and OK) on
+   * top, and the keys around attack laid out like the phone's keypad (1 3 / 5 / 7 CLR 9 / * 0 #).
+   */
+  layout?: "keypad";
 }
 
 const DEFAULT_PROFILE: PadProfile = {
@@ -23,23 +28,24 @@ const DEFAULT_PROFILE: PadProfile = {
 
 /**
  * 이노티아 연대기 (Com2uS, 2007): every screen (title menus, pop-ups, dialogs with 승낙/거절, the field and its menus)
- * moves with 2/4/6/8 and confirms, talks and attacks with 5; OK is ignored in quest windows, and on the field the
- * arrow keys are shortcuts (↑ skills, ↓ map). Quick slots are 1·7·*·3·9·#, CLR opens the menu and goes back.
+ * moves with 2/4/6/8 and confirms, talks and attacks with 5; OK is ignored in quest windows. The phone's own arrow
+ * keys scroll long descriptions and set up the party, and on the field they are shortcuts (↑ skills, ↓ map). Quick
+ * slots are 1·7·*·3·9·#, CLR opens the menu and goes back.
  */
 const INOTIA_PROFILE: PadProfile = {
   name: "inotia",
+  layout: "keypad",
   directions: { UP: "2", DOWN: "8", LEFT: "4", RIGHT: "6" },
   keys: { OK: "5" },
   buttons: {
     "*": { key: "DOWN", title: "지도", caption: "" },
     CALL: { key: "UP", title: "스킬창", caption: "" },
-    // The game's own quick-slot bar, row by row: 1 · 7 · * on the inner ring around attack, 3 · 9 · # on the outer.
-    "7": { key: "1", title: "1", caption: "단축" },
-    "1": { key: "7", title: "7", caption: "단축" },
-    "3": { key: "*", title: "*", caption: "단축" },
-    "9": { key: "3", title: "3", caption: "단축" },
-    "0": { key: "9", title: "9", caption: "단축" },
-    "#": { key: "#", title: "#", caption: "단축·스킵" },
+    "1": { key: "1", title: "1", caption: "단축" },
+    "3": { key: "3", title: "3", caption: "단축" },
+    "7": { key: "7", title: "7", caption: "단축" },
+    "9": { key: "9", title: "9", caption: "단축" },
+    "0": { key: "0", title: "0", caption: "" },
+    "#": { key: "#", title: "#", caption: "스킵" },
     OK: { key: "5", title: "공격", caption: "확인 · 대화 (5)" },
     CLR: { key: "CLR", title: "메뉴", caption: "CLR · 뒤로" },
   },
@@ -68,9 +74,11 @@ export const applyPadProfile = (buttons: Iterable<HTMLButtonElement>, profile: P
       continue;
     }
     if (!button.closest(".pad")) continue;
+    button.dataset.defaultKey ??= button.dataset.key ?? "";
+    // Raw keys (the d-pad, the keypad layout's own * and CLR) always press what they show.
+    if (button.dataset.raw !== undefined) continue;
     const title = button.querySelector("b") ?? button.querySelector("span");
     const caption = button.querySelector("b") ? button.querySelector("span") : null;
-    button.dataset.defaultKey ??= button.dataset.key ?? "";
     if (title) title.dataset.defaultText ??= title.textContent ?? "";
     if (caption) caption.dataset.defaultText ??= caption.textContent ?? "";
     const override = profile.buttons[button.dataset.defaultKey];

@@ -65,6 +65,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   applyPadProfile(buttons, padProfile);
   if (padProfile.name) playerView.dataset.padProfile = padProfile.name;
   else delete playerView.dataset.padProfile;
+  if (padProfile.layout) playerView.dataset.padLayout = padProfile.layout;
+  else delete playerView.dataset.padLayout;
   // Landscape sizes the screen column from the game's own aspect (240×320, 176×220, ...).
   const gameCanvas = document.getElementById("canvas") as HTMLCanvasElement;
   const feedback = backend.rendering === "canvas" && isHeroesLore3(app.id) ? new Hl3Feedback(gameCanvas, app.id) : undefined;

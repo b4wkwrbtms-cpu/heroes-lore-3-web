@@ -163,6 +163,14 @@
               </button>
             </p>
           </div>
+          <!-- The phone's own d-pad (keypad layout only): scrolls long descriptions and sets up the party. -->
+          <div class="pad-dpad" aria-label="방향키">
+            <button class="key key-dpad dpad-up" data-key="UP" data-raw aria-label="위">▲</button>
+            <button class="key key-dpad dpad-left" data-key="LEFT" data-raw aria-label="왼쪽">◀</button>
+            <button class="key key-dpad dpad-ok" data-key="OK" data-raw aria-label="확인">OK</button>
+            <button class="key key-dpad dpad-right" data-key="RIGHT" data-raw aria-label="오른쪽">▶</button>
+            <button class="key key-dpad dpad-down" data-key="DOWN" data-raw aria-label="아래">▼</button>
+          </div>
           <!-- Touch anywhere on the left half: the stick comes to the thumb. -->
           <div class="pad-left joystick-zone">
             <div id="joystick" class="joystick" role="application" aria-label="조이스틱">
@@ -181,6 +189,8 @@
             <button class="key key-ring key-slot ring-i3" data-key="3"><b>3</b><span>단축</span></button>
             <button class="key key-ring key-slot ring-i2" data-key="1"><b>1</b><span>단축</span></button>
             <button class="key key-ring key-sub ring-i1" data-key="7"><b>보조</b><span>7</span></button>
+            <button class="key key-ring key-extra" data-key="*" data-raw><b>*</b><span>단축</span></button>
+            <button class="key key-ring key-extra key-clr" data-key="CLR" data-raw><b>취소</b><span>메뉴</span></button>
             <button class="key key-ring key-ok key-attack" data-key="OK"><b>공격</b><span>확인 · 대화</span></button>
           </div>
         </div>

@@ -8,7 +8,10 @@ import {
   setAllSkillLevels, setGold, setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
 } from "./hl3";
 import { HL3_ITEMS } from "./hl3_items";
-import { INOTIA, readRolledStats, setRolledStats } from "./inotia";
+import {
+  GOLD_MAX, INOTIA, countDamagedItems, getGold as getInotiaGold, healParty, isInItemTable, keepGold, readRolledStats, repairItems,
+  setGold as setInotiaGold, setRolledStats,
+} from "./inotia";
 import { isInotia } from "./pad_profile";
 
 export interface CheatContext {
@@ -67,32 +70,70 @@ type Step =
 const storageKey = (appId: string) => `wie_cheats_${appId}`;
 const BATTLE_KEY = "전투 능력치 최대 고정";
 const AUTO_HEAL_KEY = "자동 회복";
+const GOLD_KEY = "소지금 유지";
+/** Saved toggles that run in the background rather than freezing an address. */
+const TOGGLE_KEYS: string[] = [BATTLE_KEY, AUTO_HEAL_KEY, GOLD_KEY];
 
-let autoHealTimer: number | undefined;
-let autoHealContextId: string | undefined;
+const isInotiaContext = (context: CheatContext) => isInotia({ id: context.appId });
 
-const stopAutoHeal = () => {
-  if (autoHealTimer !== undefined) window.clearInterval(autoHealTimer);
-  autoHealTimer = undefined;
-  autoHealContextId = undefined;
+let tickTimer: number | undefined;
+let tickContextId: string | undefined;
+
+const stopTicks = () => {
+  if (tickTimer !== undefined) window.clearInterval(tickTimer);
+  tickTimer = undefined;
+  tickContextId = undefined;
 };
 
-const startAutoHeal = (context: CheatContext) => {
-  stopAutoHeal();
-  autoHealContextId = context.appId;
-  const state = { spPeak: 0 };
-  autoHealTimer = window.setInterval(() => {
+/** Runs the app's toggled background cheats (auto-heal, gold top-up); stops whatever ran before. */
+const startTicks = (context: CheatContext, cheats: SavedCheat[]) => {
+  stopTicks();
+  const live = context.getCheats();
+  if (!live) return;
+  const on = (name: string) => cheats.some(cheat => cheat.name === name);
+  const ticks: Array<(api: CheatApi) => void> = [];
+  if (isHeroesLore3(context.appId) && isHeroesLore3Binary(live) && on(AUTO_HEAL_KEY)) {
+    const state = { spPeak: 0 };
+    ticks.push(api => {
+      autoHealTick(api, state);
+    });
+  }
+  if (isInotiaContext(context)) {
+    if (on(AUTO_HEAL_KEY)) ticks.push(api => healParty(api));
+    if (on(GOLD_KEY)) ticks.push(api => keepGold(api, GOLD_MAX));
+  }
+  if (ticks.length === 0) return;
+  tickContextId = context.appId;
+  tickTimer = window.setInterval(() => {
     const api = context.getCheats();
     if (!api) {
-      stopAutoHeal();
+      stopTicks();
       return;
     }
-    try {
-      autoHealTick(api, state);
-    } catch {
-      // game not in a playable state yet
+    for (const tick of ticks) {
+      try {
+        tick(api);
+      } catch {
+        // game not in a playable state yet
+      }
     }
   }, 150);
+};
+
+let movedCheatsNotice = "";
+
+/**
+ * 이노티아 keeps gold and item values in records that move with the bag, so a cheat pinned to one of those addresses
+ * ends up overwriting whichever item moves in. Drops such saved cheats and leaves a notice for the panel.
+ */
+const dropMovingCheats = (context: CheatContext, cheats: SavedCheat[]): SavedCheat[] => {
+  if (!isInotiaContext(context)) return cheats;
+  const kept = cheats.filter(cheat => !isInItemTable(cheat.address));
+  if (kept.length === cheats.length) return cheats;
+  const names = cheats.filter(cheat => !kept.includes(cheat)).map(cheat => `‘${cheat.name}’`).join(", ");
+  storeSaved(context.appId, kept);
+  movedCheatsNotice = `저장돼 있던 ${names} 치트를 지웠어요. 이노티아는 아이템 칸 자리가 계속 바뀌어서, 한 자리를 고정하면 그 자리로 옮겨 온 장비 수치를 덮어써요 (DMG/DEF가 튀던 원인). 위의 ‘아이템 수치 복구’를 눌러 주세요.`;
+  return kept;
 };
 
 const loadSaved = (appId: string): SavedCheat[] => {
@@ -265,7 +306,7 @@ const buildDiagnostics = async (live: CheatApi, context: CheatContext, saved: Sa
   };
   const json = JSON.stringify(payload);
   let blob = new Blob([json], { type: "application/json" });
-  let filename = `hl3-diagnostics-${Date.now()}.json`;
+  let filename = `${context.appTitle.replace(/[\\/:*?"<>|\s]+/g, "_")}-diagnostics-${Date.now()}.json`;
   if (typeof CompressionStream === "function") {
     const compressed = blob.stream().pipeThrough(new CompressionStream("gzip"));
     blob = await new Response(compressed).blob();
@@ -275,7 +316,7 @@ const buildDiagnostics = async (live: CheatApi, context: CheatContext, saved: Sa
 };
 
 /** Must be called directly from a tap: the share sheet needs a fresh user gesture. */
-const shareDiagnostics = (file: File): Promise<string> => {
+const shareDiagnostics = (file: File, appTitle: string): Promise<string> => {
   const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
   const fallback = () => {
     const url = URL.createObjectURL(file);
@@ -289,7 +330,7 @@ const shareDiagnostics = (file: File): Promise<string> => {
     return `파일로 저장했어요 (${Math.round(file.size / 1024)}KB). 파일 앱 → 다운로드에서 찾아 보내 주세요.`;
   };
   if (typeof navigator.share === "function" && (!nav.canShare || nav.canShare({ files: [file] }))) {
-    return navigator.share({ files: [file], title: "영웅서기3 진단 파일" })
+    return navigator.share({ files: [file], title: `${appTitle} 진단 파일` })
       .then(() => `보냈어요 (${Math.round(file.size / 1024)}KB).`)
       .catch((error: Error) => (error.name === "AbortError" ? "공유를 취소했어요." : fallback()));
   }
@@ -372,6 +413,70 @@ export const getCheatPanel = (): CheatPanel => {
 
   const renderInotia = (live: CheatApi) => {
     body.append(el("p", "cheat-lead", "🐉 이노티아 전용 치트"));
+    body.append(el("p", "cheat-muted", "게임 메모리 구조를 분석해서 만든 전용 기능이에요. 캐릭터로 필드에 나온 상태에서 쓰세요."));
+
+    // 소지금: the pouch is an item and moves with the bag, so every write looks it up again.
+    let goldText = "";
+    try {
+      goldText = ` (지금 ${formatNumber(getInotiaGold(live))})`;
+    } catch {
+      goldText = "";
+    }
+    const goldOn = saved.some(cheat => cheat.name === GOLD_KEY) && tickTimer !== undefined;
+    const goldRow = el("div", "cheat-item-actions");
+    goldRow.append(
+      button(`💰 소지금 ${formatNumber(GOLD_MAX)}${goldText}`, "primary-command", () => {
+        try {
+          setInotiaGold(live, GOLD_MAX);
+          setStatus(`소지금을 ${formatNumber(GOLD_MAX)}으로 바꿨어요. 메뉴를 열면 바로 보여요.`);
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }),
+      button(goldOn ? "무제한 끄기" : "무제한 (써도 다시 채움)", goldOn ? "primary-command" : "secondary-command", () => {
+        saved = saved.filter(cheat => cheat.name !== GOLD_KEY);
+        if (!goldOn) saved.push({ name: GOLD_KEY, address: INOTIA.PARTY, width: 4, bigEndian: false, value: GOLD_MAX, freeze: false });
+        persist();
+        if (context) startTicks(context, saved);
+        setStatus(goldOn ? "소지금 무제한을 껐어요." : "소지금이 줄면 바로 다시 채워요. 게임을 켤 때마다 자동 적용.");
+      }),
+    );
+    body.append(goldRow);
+
+    // 아이템 수치 복구
+    let damaged = 0;
+    try {
+      damaged = countDamagedItems(live);
+    } catch {
+      damaged = 0;
+    }
+    if (damaged > 0) {
+      body.append(el("p", "cheat-status error", `수치가 망가진 아이템이 ${damaged}개 있어요. DMG/DEF가 수백만으로 튀는 원인이에요.`));
+      const repairRow = el("div", "cheat-item-actions");
+      repairRow.append(button(`🛠 아이템 수치 복구 (${damaged}개)`, "primary-command", () => {
+        try {
+          const fixed = repairItems(live);
+          setStatus(`${fixed}개를 고쳤어요. 이제 메뉴(취소) → 시스템 → 저장, 그다음 나가기 → 이어하기를 하면 DMG/DEF가 정상으로 다시 계산돼요.`);
+        } catch (error) {
+          setStatus(String(error), true);
+        }
+      }));
+      body.append(repairRow);
+    }
+
+    // 파티 자동 회복
+    const healOn = saved.some(cheat => cheat.name === AUTO_HEAL_KEY) && tickTimer !== undefined;
+    const healRow = el("div", "cheat-item-actions");
+    healRow.append(button(healOn ? "💊 파티 자동 회복 끄기" : "💊 파티 자동 회복 켜기 (물약 없이 HP/MP 채움)", healOn ? "primary-command" : "secondary-command", () => {
+      saved = saved.filter(cheat => cheat.name !== AUTO_HEAL_KEY);
+      if (!healOn) saved.push({ name: AUTO_HEAL_KEY, address: INOTIA.PARTY, width: 4, bigEndian: false, value: 0, freeze: false });
+      persist();
+      if (context) startTicks(context, saved);
+      setStatus(healOn ? "파티 자동 회복을 껐어요." : "주인공과 용병의 HP·MP가 35% 아래로 떨어지면 바로 가득 채워요. 쓰러진 동료는 그대로 둬요. 게임을 켤 때마다 자동 적용.");
+    }));
+    body.append(healRow);
+
+    // 스탯 결정
     let current = "";
     try {
       current = readRolledStats(live).map((value, i) => `${INOTIA.STAT_NAMES[i]} ${value}`).join(" · ");
@@ -379,7 +484,7 @@ export const getCheatPanel = (): CheatPanel => {
       current = "";
     }
     const statRow = el("div", "cheat-item-actions");
-    statRow.append(button("🎲 스탯 전부 20", "primary-command", () => {
+    statRow.append(button("🎲 스탯 전부 20", "secondary-command", () => {
       try {
         setRolledStats(live, 20);
         setStatus("STR·DEX·CON·INT·MEN·LUK을 전부 20으로 바꿨어요. 창을 닫고 REROLL 없이 바로 확인을 누르세요.");
@@ -768,19 +873,14 @@ export const getCheatPanel = (): CheatPanel => {
     });
 
     // 치트 회복 (메모리 방식)
-    const autoOn = saved.some(cheat => cheat.name === AUTO_HEAL_KEY) && autoHealTimer !== undefined;
+    const autoOn = saved.some(cheat => cheat.name === AUTO_HEAL_KEY) && tickTimer !== undefined;
     const healRow = el("div", "cheat-item-actions");
     healRow.append(button(autoOn ? "💊 치트 회복 끄기" : "💊 치트 회복 켜기 (물약 없이 HP/SP 채움)", autoOn ? "primary-command" : "secondary-command", () => {
       saved = saved.filter(cheat => cheat.name !== AUTO_HEAL_KEY);
-      if (autoOn) {
-        stopAutoHeal();
-        setStatus("치트 회복을 껐어요.");
-      } else {
-        if (context) startAutoHeal(context);
-        saved.push({ name: AUTO_HEAL_KEY, address: HL3.HP, width: 2, bigEndian: false, value: 0, freeze: false });
-        setStatus("HP가 35% 아래로 떨어지면 메모리로 바로 가득 채워요 (SP도). 물약은 안 줄어요. 게임을 켤 때마다 자동 적용.");
-      }
+      if (!autoOn) saved.push({ name: AUTO_HEAL_KEY, address: HL3.HP, width: 2, bigEndian: false, value: 0, freeze: false });
       persist();
+      if (context) startTicks(context, saved);
+      setStatus(autoOn ? "치트 회복을 껐어요." : "HP가 35% 아래로 떨어지면 메모리로 바로 가득 채워요 (SP도). 물약은 안 줄어요. 게임을 켤 때마다 자동 적용.");
     }));
     body.append(healRow);
 
@@ -909,7 +1009,7 @@ export const getCheatPanel = (): CheatPanel => {
       renderInotia(live);
     }
 
-    const generic = saved.filter(cheat => cheat.name !== BATTLE_KEY && cheat.name !== AUTO_HEAL_KEY);
+    const generic = saved.filter(cheat => !TOGGLE_KEYS.includes(cheat.name));
     if (generic.length > 0) {
       body.append(el("p", "cheat-lead", "저장된 치트"));
       const list = el("ul", "cheat-saved");
@@ -969,6 +1069,7 @@ export const getCheatPanel = (): CheatPanel => {
     body.append(el("p", "cheat-lead", "새 치트 만들기"));
     body.append(el("p", "cheat-muted", "물어보는 숫자만 입력하면 나머지는 자동으로 찾아서 바꿔 드려요. 게임을 켜 둔 채로 진행하세요."));
     for (const target of TARGETS) {
+      if (target.key === "gold" && context && isInotiaContext(context)) continue;
       const label = target.key === "gold" ? "💰 소지금 1천만으로" : target.key === "cash" ? "💎 캐시 무제한으로" : "🔧 다른 숫자 바꾸기";
       body.append(button(label, "primary-command cheat-big", () => {
         statusText = "";
@@ -977,12 +1078,12 @@ export const getCheatPanel = (): CheatPanel => {
       }));
     }
 
-    body.append(el("div", "cheat-divider"), el("p", "cheat-lead", "아이템·무기 강화·오브 치트 준비"));
-    body.append(el("p", "cheat-muted", "아이템 목록 치트를 만들려면 게임 데이터 구조를 분석해야 해요. 게임을 켜 둔 채(가능하면 소지금 치트를 먼저 찾은 뒤) 아래 버튼으로 진단 파일을 만들어 대화창에 보내 주세요. 게임 파일 자체는 포함되지 않아요."));
+    body.append(el("div", "cheat-divider"), el("p", "cheat-lead", "진단 파일 (치트·오류 분석용)"));
+    body.append(el("p", "cheat-muted", "새 치트를 만들거나 이상한 수치를 분석하려면 게임 메모리와 세이브가 필요해요. 게임을 켜 둔 채 아래 버튼으로 진단 파일을 만들어 대화창에 보내 주세요. 게임 파일 자체는 포함되지 않아요."));
     const noteRow = el("div", "cheat-row");
     const note = el("input") as HTMLInputElement;
     note.type = "text";
-    note.placeholder = "메모 (예: 소지금 1250, 포션 3개, 오브원석 2개)";
+    note.placeholder = "메모 (예: 소지금 1250, 포션 3개)";
     note.autocomplete = "off";
     noteRow.append(note);
     body.append(noteRow);
@@ -1007,7 +1108,7 @@ export const getCheatPanel = (): CheatPanel => {
     if (diagnosticsFile) {
       const file = diagnosticsFile;
       body.append(button("2) 📤 보내기 (공유 → Claude 또는 파일에 저장)", "primary-command cheat-big", () => {
-        void shareDiagnostics(file).then(text => setStatus(text));
+        void shareDiagnostics(file, context?.appTitle ?? "WIE").then(text => setStatus(text));
       }));
     }
   };
@@ -1175,6 +1276,11 @@ export const getCheatPanel = (): CheatPanel => {
       const actions = el("div", "cheat-actions");
       actions.append(
         button("네, 바뀌었어요!", "primary-command", () => {
+          if (context && isInotiaContext(context) && isInItemTable(address)) {
+            step = { kind: "home" };
+            setStatus("바꿨어요. 다만 이 숫자는 아이템 칸에 있어서 가방이 바뀌면 자리가 옮겨져요. 다른 장비를 덮어쓰지 않도록 저장·자동 유지는 하지 않았어요.");
+            return;
+          }
           const name = target.key === "custom" ? `치트 ${saved.length + 1}` : target.label;
           saved = saved.filter(cheat => cheat.address !== address);
           saved.push({ name, address, width: current.width, bigEndian: current.bigEndian, value: current.value, freeze: current.freeze });
@@ -1229,17 +1335,19 @@ export const getCheatPanel = (): CheatPanel => {
 
   panel = {
     detach(appId) {
-      if (autoHealContextId === appId) stopAutoHeal();
+      if (tickContextId === appId) stopTicks();
       if (context?.appId === appId) {
         context = undefined;
         dialog.close();
       }
     },
     open(next) {
-      if (!context || context.appId !== next.appId) {
-        saved = loadSaved(next.appId);
+      if (!context || context.appId !== next.appId || movedCheatsNotice) {
+        saved = dropMovingCheats(next, loadSaved(next.appId));
         step = { kind: "home" };
-        statusText = "";
+        statusText = movedCheatsNotice;
+        statusError = false;
+        movedCheatsNotice = "";
       }
       context = next;
       render();
@@ -1248,23 +1356,17 @@ export const getCheatPanel = (): CheatPanel => {
     restore(next) {
       const live = next.getCheats();
       if (!live) return;
-      const cheatsForApp = loadSaved(next.appId);
-      const supportedHl3 = isHeroesLore3(next.appId) && isHeroesLore3Binary(live);
-      if (supportedHl3 && cheatsForApp.some(cheat => cheat.name === BATTLE_KEY)) {
+      const cheatsForApp = dropMovingCheats(next, loadSaved(next.appId));
+      if (isHeroesLore3(next.appId) && isHeroesLore3Binary(live) && cheatsForApp.some(cheat => cheat.name === BATTLE_KEY)) {
         try {
           freezeBattleStats(live, true);
         } catch {
           // ignore
         }
       }
-      if (supportedHl3 && cheatsForApp.some(cheat => cheat.name === AUTO_HEAL_KEY)) {
-        startAutoHeal(next);
-      } else if (autoHealContextId !== undefined && autoHealContextId !== next.appId) {
-        stopAutoHeal();
-      }
+      startTicks(next, cheatsForApp);
       for (const cheat of cheatsForApp) {
-        if (cheat.name === BATTLE_KEY || cheat.name === AUTO_HEAL_KEY) continue;
-        if (!cheat.freeze) continue;
+        if (TOGGLE_KEYS.includes(cheat.name) || !cheat.freeze) continue;
         try {
           live.freeze(cheat.address, cheat.width, cheat.bigEndian, cheat.value);
         } catch {

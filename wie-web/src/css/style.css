@@ -1004,6 +1004,83 @@ html[data-screen-fit="contain"] #canvas {
   color: rgba(254, 202, 202, 0.65);
 }
 
+/* ---- Keypad layout (이노티아) ----
+   The phone's own d-pad sits above the stick (it scrolls long descriptions and sets up the party), and the keys
+   around attack follow the phone's keypad: 1 and 3 on top, 7 · 취소 · 9 under attack, * · 0 · # at the bottom. */
+.pad-dpad,
+.action-cluster > .key-extra {
+  display: none;
+}
+
+.player-view[data-pad-layout="keypad"] .pad {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.player-view[data-pad-layout="keypad"] .pad-dpad {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-areas:
+    ". up ."
+    "left ok right"
+    ". down .";
+  grid-template-columns: repeat(3, 42px);
+  grid-template-rows: repeat(3, 36px);
+  gap: 3px;
+  justify-content: center;
+}
+
+.player-view[data-pad-layout="keypad"] .pad-left {
+  grid-row: 2;
+}
+
+.player-view[data-pad-layout="keypad"] .pad-tools-bar {
+  position: relative;
+  z-index: 1;
+  height: 40px;
+  align-self: start;
+}
+
+/* The keypad reaches up beside the d-pad, under the top bar, so it keeps its size on short screens. */
+.player-view[data-pad-layout="keypad"] .action-cluster {
+  grid-row: 1 / span 2;
+  padding-top: 46px;
+}
+
+/* 취소 lives in the keypad; the top bar keeps only the map, skills and ⋯. */
+.player-view[data-pad-layout="keypad"] .pad-utils .key-menu {
+  display: none;
+}
+
+.key-dpad {
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+
+.dpad-up { grid-area: up; }
+.dpad-left { grid-area: left; }
+.dpad-ok { grid-area: ok; font-size: 0.75rem; }
+.dpad-right { grid-area: right; }
+.dpad-down { grid-area: down; }
+
+.player-view[data-pad-layout="keypad"] .action-cluster > .key-extra {
+  display: flex;
+}
+
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="1"] { --x: 200; --y: 205; --d: 54; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="3"] { --x: 40; --y: 205; --d: 54; }
+.player-view[data-pad-layout="keypad"] .action-cluster > .key-attack { --x: 120; --y: 168; --d: 80; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="7"] { --x: 200; --y: 100; --d: 54; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="CLR"] { --x: 120; --y: 96; --d: 52; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="9"] { --x: 40; --y: 100; --d: 54; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="*"] { --x: 200; --y: 32; --d: 50; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="0"] { --x: 120; --y: 30; --d: 50; }
+.player-view[data-pad-layout="keypad"] .action-cluster > [data-default-key="#"] { --x: 40; --y: 32; --d: 50; }
+
+.player-view[data-pad-layout="keypad"] .action-cluster > .key-clr b {
+  font-size: calc(var(--d) * var(--u) * 0.27);
+}
+
 /* Floating joystick: rests dimmed in the lower middle of its zone and jumps to wherever the thumb lands. */
 .joystick {
   position: absolute;
@@ -1230,6 +1307,25 @@ html[data-screen-fit="contain"] #canvas {
   .pad-left {
     grid-column: 1;
     grid-row: 1 / span 2;
+  }
+
+  .player-view[data-pad-layout="keypad"] .player-main {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .player-view[data-pad-layout="keypad"] .pad-dpad {
+    grid-column: 1;
+    grid-row: 1;
+    padding-top: 6px;
+  }
+
+  .player-view[data-pad-layout="keypad"] .pad-left {
+    grid-row: 2;
+  }
+
+  .player-view[data-pad-layout="keypad"] .action-cluster {
+    grid-row: 2;
+    padding-top: 0;
   }
 
   .action-cluster {
