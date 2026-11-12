@@ -24,7 +24,8 @@ contains EA Mobile Korea's WIPI-C kernel ("Midas") and the game. This core runs 
 - `tweaks.c` — rule changes the player asked for, each checked against the exact instruction words of this
   library build: twice the stat points and three times the skill points on level up, twice the experience,
   extra drops of the best equipment for the hero's class and level from field and story bosses, critical +25
-  for every equipped accessory, hero buffs that do not run out, and a free revival on the game-over screen.
+  for every equipped accessory, hero buffs that do not run out, a free revival on the game-over screen, and a cash shop that hands out its
+  items (or what its boxes hold) for free, since buying needed EA's servers.
 
 Build (clang with the wasm32 target and wasm-ld): `./build.sh ../public/hl5/hl5core.wasm`
 

@@ -1,5 +1,5 @@
 // 영웅서기5 player: runs the game's ARM library in hl5core.wasm and presents it on an iPhone in landscape.
-const VERSION = "6";
+const VERSION = "7";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -863,6 +863,11 @@ class Core {
   call(name) { return this.ex.app_call(this.cstr(name)); }
   regs() { return new Int32Array(this.mem.buffer, this.ex.cpu_state(), 4); }
   rd32(a) { return new Int32Array(this.mem.buffer)[(this.ex.guest_base() + (a & 0x3ffffff)) >> 2]; }
+  gstr(a, max = 64) { // EUC-KR string in guest memory
+    const m = new Uint8Array(this.mem.buffer, this.ex.guest_base() + (a & 0x3ffffff), max);
+    const n = m.indexOf(0);
+    return this.euc.decode(m.slice(0, n < 0 ? max : n));
+  }
   // Drawing advances the game's animation counters, so in-between frames start from the state saved
   // when the game began drawing its last frame (slot 0, see the "paint" watch); that gives exactly the
   // poses of the real frame. Draws it with some 32-bit guest values replaced and returns a view of the
@@ -1046,6 +1051,11 @@ function onCoreEvent(kind, a, b, c) {
       return -1;
     case 4: // network: report it available so the game's connection attempts fail at once
       return 1;
+    case 5: { // the cash shop gave an item for free (a: 1 when all of it fit in the bag, b: its name)
+      const name = core.gstr(b);
+      setTimeout(() => toast(a ? `${name} 받았어요 · 무료` : `가방이 가득 차서 ${name}을(를) 다 받지 못했어요`, 2600), 0);
+      return 0;
+    }
     case 100: { // Monster::Draw(this, fb, camX, camY)
       const r = core.regs();
       const obj = r[0] >>> 0;

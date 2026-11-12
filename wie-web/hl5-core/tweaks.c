@@ -7,6 +7,8 @@
 //    level: the highest grade available, always with attack %, critical and critical damage
 //  - every equipped accessory adds critical +25 on top of its own options
 //  - the hero's buffs (buff skills, stance and spirit buffs) do not run out
+//  - trait points from quests are tripled too
+//  - the cash shop gives everything for free (it needed EA's servers): the item, or what a box holds
 //  - on the game-over screen the hero can always revive: the game asks to use a revival charm as if one
 //    were in the bag, and reviving does not take one (buying one needs EA's servers, which are gone)
 #include "base.h"
@@ -72,15 +74,14 @@ static int pick(int cat, int cls, int lvl) {
 #define OPT_MELEE 28
 #define OPT_RANGED 29
 #define OPT_CRIT_DAMAGE 45
-static void drop_item(int cat, int idx, int cls, int lvl, s32 x, s32 y) {
-  u32 it = rd32(ITEM_TABLE);
-  u32 e = rd32(it + 0x28 + cat * 4) + ITEM_SIZE * idx;
+static void gear_options(u32 e, int cls, int lvl, s32 *grade, s32 type[3], s32 val[3]) {
   int g = (s8)rd8(e + 0x15c);
   int lv = rd8(e + 0x15d);
   if (lv < lvl) lv = lvl;
-  const int type[3] = {cls == 2 ? OPT_RANGED : OPT_MELEE, OPT_CRITICAL, OPT_CRIT_DAMAGE};
   const int scale[3] = {10, 10, 25};
-  s32 val[3];
+  type[0] = cls == 2 ? OPT_RANGED : OPT_MELEE;
+  type[1] = OPT_CRITICAL;
+  type[2] = OPT_CRIT_DAMAGE;
   for (int k = 0; k < 3; k++) {
     int v = scale[k] * lv / 100 * 120 / 100;
     if (v < 5) v = 5;
@@ -89,7 +90,14 @@ static void drop_item(int cat, int idx, int cls, int lvl, s32 x, s32 y) {
     val[k] = v > 100 ? 100 : v;
   }
   // plain and rare items come as unique (grade 3), the lowest grade that shows three options
-  s32 grade = g < 3 ? 3 : -1;
+  *grade = g < 3 ? 3 : -1;
+}
+
+static void drop_item(int cat, int idx, int cls, int lvl, s32 x, s32 y) {
+  u32 it = rd32(ITEM_TABLE);
+  u32 e = rd32(it + 0x28 + cat * 4) + ITEM_SIZE * idx;
+  s32 grade, type[3], val[3];
+  gear_options(e, cls, lvl, &grade, type, val);
   u32 a[12] = {rd32(MAP_ITEMS), (u32)x, (u32)y, (u32)cat, (u32)idx, (u32)grade,
                (u32)type[0], (u32)val[0], (u32)type[1], (u32)val[1], (u32)type[2], (u32)val[2]};
   call_guest(fn_new_drop, 12, a);
@@ -121,6 +129,84 @@ static void hle_set_drop_item(void) {
   int t = rd8(mon + 0x22c);
   if (t == 1 || t == 3) boss_drops(mon, t == 3);
   exec_displaced(drop_insn, LOAD_BASE + DROP_ENTRY);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cash shop: StateCashShop::Process calls NETWORK::netConnect(3) once a purchase is confirmed; the
+// server then sent the items. Instead the items go straight into the bag and the bag is saved.
+#define SHOP_CONNECT_A 0xdd4a8u
+#define SHOP_CONNECT_B 0xdd52cu
+static u32 fn_new_item, fn_new_bag_item, fn_delete_item, fn_make_socket, fn_new_item_to_bag, fn_bag_ptr, fn_save_bag;
+
+static int give(int cat, int idx, int count) {
+  u32 a[5] = {rd32(ITEM_TABLE), (u32)cat, (u32)idx, (u32)count, 0};
+  return call_guest(fn_new_item_to_bag, 5, a) != 0;
+}
+
+// the strongest item of an equipment slot, with the boss-drop options, into the bag
+static int give_gear(int cat, int cls, int lvl) {
+  int idx = pick(cat, cls, lvl);
+  if (idx < 0) return 0;
+  u32 it = rd32(ITEM_TABLE), hero = rd32(HERO_PTR);
+  u32 na[3] = {it, (u32)cat, (u32)idx};
+  u32 item = call_guest(fn_new_item, 3, na);
+  if (!item) return 0;
+  s32 grade, type[3], val[3];
+  gear_options(item, cls, lvl, &grade, type, val);
+  if (grade >= 0) wr8(item + 0x15c, (u8)grade);
+  for (int k = 0; k < 3; k++) { wr8(item + 0x15f + k, (u8)type[k]); wr8(item + 0x162 + k, (u8)val[k]); }
+  u32 ms[2] = {it, item};
+  call_guest(fn_make_socket, 2, ms);
+  u32 bag = call_guest(fn_bag_ptr, 1, &hero);
+  u32 nb[3] = {bag, item, 0};
+  int ok = call_guest(fn_new_bag_item, 3, nb) != 0;
+  u32 di[2] = {it, item};
+  call_guest(fn_delete_item, 2, di);
+  return ok;
+}
+
+// cash item index (category 18) and count from the shop's own table
+static int grant(int cash, int count) {
+  u32 hero = rd32(HERO_PTR);
+  int cls = (s8)rd8(hero + 0x22c), lvl = rd8(hero + 0x22d), ok = 1;
+  if (count < 1) count = 1;
+  if (cash == 34) return give(11, 8, count);                                               // elixir potions
+  if (cash == 6) { for (int i = 0; i < 5 * count; i++) ok &= give(12, 1 + (int)rnd(13), 1); return ok; } // 5 orbs
+  if (cash == 7) { for (int i = 0; i < count; i++) ok &= give(12, 40 + (int)rnd(13), 1); return ok; }     // hyper orb, top tier
+  if (cash >= 15 && cash <= 18) { // relic boxes: 1..4 pieces, each box from different slots
+    int slots[7] = {cls, 10, 5, 6, 7, 8, 9}, ns = cls == 3 ? 7 : 6;
+    for (int c = 0; c < count; c++) {
+      for (int i = ns - 1; i > 0; i--) { int j = (int)rnd((u32)i + 1), t = slots[i]; slots[i] = slots[j]; slots[j] = t; }
+      for (int i = 0; i < cash - 14; i++) ok &= give_gear(slots[i], cls, lvl);
+    }
+    return ok;
+  }
+  if (cash == 43) return give(10, 17, count);                                              // void necklace
+  if (cash >= 44 && cash <= 48 && cls >= 0 && cls <= 3) return give(cls, 81 + cash - 44, count); // void weapon of the class
+  return give(18, cash, count); // charms, books, souls, resets, ... as the cash item itself
+}
+
+static void shop_buy(u32 site) {
+  u32 self = R[6], hero = rd32(HERO_PTR);
+  u32 shop = rd32(self + 0x14);
+  int sel = (s8)rd8(self + 15);
+  if (hero && shop && sel >= 0 && sel < (s16)rd16(shop + 2)) {
+    u32 e = rd32(shop + 4) + 24 * (u32)sel;
+    int ok = grant((s8)rd8(e + 8), rd8(e + 9));
+    u32 sa[2] = {hero, (u32)(s32)(s8)rd8(GMAIN + 0x1970)};
+    call_guest(fn_save_bag, 2, sa);
+    host_event(5, ok, (int)rd32(e + 4), 0); // the page says what was given
+  }
+  cpu_pc = LOAD_BASE + site + 4;
+}
+static void hle_shop_buy_a(void) { shop_buy(SHOP_CONNECT_A); }
+static void hle_shop_buy_b(void) { shop_buy(SHOP_CONNECT_B); }
+
+// QuestMgr::QuestRewardData, reward type 20 (trait points): add r2, r1, r2 -> r2 + 3 x r1
+#define QUEST_TRAIT 0xd492cu
+static void hle_quest_trait(void) {
+  R[2] = R[2] + 3 * R[1];
+  cpu_pc = LOAD_BASE + QUEST_TRAIT + 4;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -184,6 +270,20 @@ EXPORT(apply_tweaks) int apply_tweaks(u32 seed) {
   n += patch(0xdeba0, 0xebff02f5u, 0xe3a00001u); // StateGame::TouchGameOver: same
   n += patch(0xe036c, 0xebfefd02u, 0xe3a00001u); // StateGame::KeyGameOver: same
   n += patch(0xe03b8, 0xebff0657u, 0xe1a00000u); // StateGame::KeyGameOver: bl DeleteBagItemCategoryIndex -> nop
+  if (rd32(LOAD_BASE + QUEST_TRAIT) == 0xe0812002u) { hook_at(LOAD_BASE + QUEST_TRAIT, hle_quest_trait, "quest_trait"); n++; }
+  fn_new_item = find_symbol("_ZN9ItemTable7NewItemEaa");
+  fn_new_bag_item = find_symbol("_ZN7BagItem10NewBagItemEP8ItemInfoh");
+  fn_delete_item = find_symbol("_ZN9ItemTable10DeleteItemEP8ItemInfo");
+  fn_make_socket = find_symbol("_ZN9ItemTable10MakeSocketEP8ItemInfo");
+  fn_new_item_to_bag = find_symbol("_ZN9ItemTable12NewItemToBagEaash");
+  fn_bag_ptr = find_symbol("_ZN4HERO13GetBagItemPtrEv");
+  fn_save_bag = find_symbol("_ZN4HERO11SaveBagDataEa");
+  if (fn_new_item && fn_new_bag_item && fn_delete_item && fn_make_socket && fn_new_item_to_bag && fn_bag_ptr && fn_save_bag &&
+      rd32(LOAD_BASE + SHOP_CONNECT_A) == 0xebffb425u && rd32(LOAD_BASE + SHOP_CONNECT_B) == 0xebffb404u) {
+    hook_at(LOAD_BASE + SHOP_CONNECT_A, hle_shop_buy_a, "shop_buy");
+    hook_at(LOAD_BASE + SHOP_CONNECT_B, hle_shop_buy_b, "shop_buy");
+    n += 2;
+  }
   fn_new_drop = find_symbol("_ZN7MapItem11NewDropItemEiiaaaaaaaaa");
   if (fn_new_drop && rd32(LOAD_BASE + DROP_ENTRY) == 0xe92d4ff0u) {
     drop_insn = rd32(LOAD_BASE + DROP_ENTRY);
