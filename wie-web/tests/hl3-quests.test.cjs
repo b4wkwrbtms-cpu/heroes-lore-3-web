@@ -82,7 +82,7 @@ function memory() {
   const put = (a, b) => b.forEach((value, i) => data.set(a + i, value));
   const write = (a, value, width = 4) => { for (let i = 0; i < width; i++) data.set(a + i, (value >>> (i * 8)) & 255); };
   const api = {
-    read(a, width, bigEndian) { assert.equal(bigEndian, false); reads++; let v = 0; for (let i = 0; i < width; i++) v |= (data.get(a + i) ?? 0) << (8 * i); return v >>> 0; },
+    read(a, width, bigEndian) { assert.equal(bigEndian, false); assert.ok(width === 2 || width === 4, "WASM read supports only 16/32 bits"); reads++; let v = 0; for (let i = 0; i < width; i++) v |= (data.get(a + i) ?? 0) << (8 * i); return v >>> 0; },
     dump(a, size) { reads++; return Uint8Array.from({ length: size }, (_, i) => data.get(a + i) ?? 0); },
     write() { assert.fail("quest guide must never write memory"); }, writeBytes() { assert.fail("quest guide must never write memory"); },
   };
@@ -91,6 +91,7 @@ function memory() {
   write(0x5e46c, 108); write(0x5e470, 84); write(MAP + 0x50, 640, 2); write(MAP + 0x52, 640, 2);
   write(G + 0x44, 240); write(G + 0x48, 320);
   write(PLAYER + 0x10, 200, 2); write(PLAYER + 0x12, 200, 2);
+  write(MENU + 0x5d, 255, 1); // Adjacent bytes must not contaminate the one-byte quest count.
   const apply = snapshot => {
     put(MENU + 0x48, bytes(snapshot.list)); put(G + 0x9f98, bytes(snapshot.quest));
     put(G + 0x9e98, bytes(snapshot.local)); put(G + 0xa266, bytes(snapshot.counters));
