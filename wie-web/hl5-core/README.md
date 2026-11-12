@@ -21,6 +21,11 @@ contains EA Mobile Korea's WIPI-C kernel ("Midas") and the game. This core runs 
 - `fs.c` — the file system behind the guest's libc; `data.vfs` is read from the page on demand and every
   file the game writes is reported to the page, which keeps it in IndexedDB.
 
+- `tweaks.c` — rule changes the player asked for, each checked against the exact instruction words of this
+  library build: twice the stat points and three times the skill points on level up, twice the experience,
+  extra drops of the best equipment for the hero's class and level from field and story bosses, critical +25
+  for every equipped accessory, and hero buffs that do not run out.
+
 Build (clang with the wasm32 target and wasm-ld): `./build.sh ../public/hl5/hl5core.wasm`
 
 No game files are part of this repository: the page asks for the player's own zip or apk and keeps it on the device.

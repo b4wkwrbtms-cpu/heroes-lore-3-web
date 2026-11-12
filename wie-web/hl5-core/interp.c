@@ -84,3 +84,9 @@ EXPORT(paint_only) int paint_only(u16 *out, u32 out_stride, u32 out_h) {
   for (u32 y = 0; y < h; y++) memcpy(out + y * out_stride, gptr(data + y * bpl), w * 2);
   return 0;
 }
+
+// Calls a guest function (up to 12 word arguments read from `args`); for tools and tests.
+EXPORT(guest_call) u32 guest_call(u32 addr, int nargs, const u32 *args) {
+  if (nargs < 0 || nargs > 12 || cpu_halt) return 0;
+  return call_guest(addr, nargs, args);
+}

@@ -1,5 +1,5 @@
 // 영웅서기5 player: runs the game's ARM library in hl5core.wasm and presents it on an iPhone in landscape.
-const VERSION = "4";
+const VERSION = "5";
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -841,6 +841,7 @@ class Core {
     ex.host_free(p);
     ex.set_logging(window.HL5_DEBUG ? 1 : 0);
     ex.set_native_hooks(1);
+    ex.apply_tweaks(Date.now() >>> 0); // the rule changes the player asked for (see hl5-core/tweaks.c)
     WATCHES.forEach(([sym], i) => ex.watch_symbol(this.cstr(sym), i));
     ex.set_vfs_size(vfs.length);
     for (const [path, data] of files) {

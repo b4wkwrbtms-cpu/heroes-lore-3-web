@@ -865,7 +865,7 @@ static void hle_filla_loop(void) {
   cpu_pc = LOAD_BASE + FILLA_EXIT;
 }
 
-static void hook_at(u32 addr, Hle fn, const char *name) {
+void hook_at(u32 addr, Hle fn, const char *name) {
   if (nimports >= MAX_IMPORTS) return;
   int idx = nimports++;
   import_fn[idx] = fn;
