@@ -17,9 +17,11 @@ export interface PadProfile {
   sheet?: Record<string, { key: string; label: string }>;
   /**
    * Pad arrangement, set on the player view as `data-pad-layout`. `keypad`: the phone's own d-pad (arrows and OK) on
-   * top, and the keys around attack laid out like the phone's keypad (1 3 / 5 / 7 CLR 9 / * 0 #).
+   * top, and the keys around attack laid out like the phone's keypad (1 3 / 5 / 7 CLR 9 / * 0 #). `phone`: no stick;
+   * call · C, the d-pad with OK and R on the left and the whole number pad on the right, below the screen in portrait
+   * and on both sides of it in landscape.
    */
-  layout?: "keypad";
+  layout?: "keypad" | "phone";
   /**
    * The game walks diagonally while two directions are held, so the stick has eight sectors and holds both keys of a
    * diagonal. Without it the stick has four sectors and holds one key at a time.
@@ -88,12 +90,25 @@ const ZERO_PROFILE: PadProfile = {
   },
 };
 
-/** PID from the KTF __adf__; a renamed archive must not select another game's controls. */
+/**
+ * 영웅서기4 - 환영의 가면 (EA Mobile Korea, 2010, LGT): the touch keypad of its Android release, kept as it was. The
+ * game walks with the arrows or 2/4/6/8 (tapping one twice rolls or teleports), talks with OK or 5, uses 1·3·7·9·0
+ * as quick slots, # swaps the slot belt, * shows the minimap, C opens the menu and the call key quick-saves.
+ */
+const HEROES_LORE_4_PROFILE: PadProfile = {
+  name: "hl4",
+  layout: "phone",
+  directions: { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT" },
+  buttons: {},
+};
+
+/** PID from the KTF __adf__ or LGT app_info; a renamed archive must not select another game's controls. */
 export const isInotia = (app: Pick<LibraryApp, "id">): boolean => app.id === "PD005362";
 export const isZero = (app: Pick<LibraryApp, "id">): boolean => isZeroPid(app.id);
+export const isHeroesLore4 = (app: Pick<LibraryApp, "id">): boolean => app.id === "PD140249";
 
 export const padProfileFor = (app: Pick<LibraryApp, "id">): PadProfile =>
-  isInotia(app) ? INOTIA_PROFILE : isZero(app) ? ZERO_PROFILE : DEFAULT_PROFILE;
+  isInotia(app) ? INOTIA_PROFILE : isZero(app) ? ZERO_PROFILE : isHeroesLore4(app) ? HEROES_LORE_4_PROFILE : DEFAULT_PROFILE;
 
 /**
  * Points the pad buttons at the profile's keys and labels. The markup's own key and labels are kept in data
@@ -111,7 +126,7 @@ export const applyPadProfile = (buttons: Iterable<HTMLButtonElement>, profile: P
     }
     if (!button.closest(".pad")) continue;
     button.dataset.defaultKey ??= button.dataset.key ?? "";
-    // Raw keys (the d-pad, the keypad layout's own * and CLR) always press what they show.
+    // Raw keys (the d-pad, the keypad layout's own * and CLR, the phone layout's keys) always press what they show.
     if (button.dataset.raw !== undefined) continue;
     const title = button.querySelector("b") ?? button.querySelector("span");
     const caption = button.querySelector("b") ? button.querySelector("span") : null;

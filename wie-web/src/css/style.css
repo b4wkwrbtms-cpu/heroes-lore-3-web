@@ -1143,6 +1143,116 @@ html[data-screen-fit="contain"] #canvas {
   font-size: calc(var(--d) * var(--u) * 0.27);
 }
 
+/* ---- Phone layout (영웅서기4) ----
+   The touch keypad of the game's Android release, kept as it was: call · C over the d-pad with OK, R under it, and
+   the whole number pad beside them; flat dark keys that turn green while held. No stick and no top bar. */
+.pad-phone-left,
+.pad-phone-right {
+  display: none;
+}
+
+.player-view[data-pad-layout="phone"] .pad {
+  height: auto;
+  min-height: calc(200px + var(--safe-bottom));
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 12px calc(10px + var(--safe-bottom));
+  background: #0d0d0f;
+}
+
+.player-view[data-pad-layout="phone"] .pad-left,
+.player-view[data-pad-layout="phone"] .action-cluster,
+.player-view[data-pad-layout="phone"] .pad-utils {
+  display: none;
+}
+
+/* Only the ⋯ pop-up is left of the top bar; it opens over the left keys, next to their ⋯. */
+.player-view[data-pad-layout="phone"] .pad-tools-bar {
+  display: contents;
+}
+
+.player-view[data-pad-layout="phone"] .pad-tools {
+  right: auto;
+  left: 12px;
+}
+
+.player-view[data-pad-layout="phone"] .pad-phone-left {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-areas:
+    "call call call clear clear clear"
+    ". . up up . ."
+    "left left ok ok right right"
+    ". . down down . ."
+    "r r . . more more";
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.player-view[data-pad-layout="phone"] .pad-phone-right {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.key.key-phone {
+  color: #e8e8e8;
+  background: #1b1b20;
+  border: 1px solid #333;
+  border-radius: 8px;
+  box-shadow: none;
+  font-weight: 600;
+  transition: background 0.04s, transform 0.04s;
+}
+
+.key.key-phone:active,
+.key.key-phone.pressed {
+  color: #fff;
+  background: #4caf50;
+  border-color: #7be08a;
+  box-shadow: 0 0 0 2px #7be08a inset;
+  transform: scale(0.94);
+}
+
+.pad-phone-right .key-phone {
+  font-size: clamp(22px, 7.2vw, 32px);
+  font-weight: 700;
+}
+
+.phone-call { grid-area: call; }
+.phone-clear { grid-area: clear; font-size: 16px; }
+.phone-up { grid-area: up; }
+.phone-left { grid-area: left; }
+.phone-ok { grid-area: ok; font-size: 15px; }
+.phone-right { grid-area: right; }
+.phone-down { grid-area: down; }
+.phone-r { grid-area: r; font-size: 16px; }
+
+.phone-call svg {
+  width: 18px;
+  height: 18px;
+}
+
+.phone-up,
+.phone-left,
+.phone-right,
+.phone-down {
+  font-size: 20px;
+}
+
+.player-view[data-pad-layout="phone"] .phone-more {
+  grid-area: more;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+}
+
 /* Floating joystick: rests dimmed in the lower middle of its zone and jumps to wherever the thumb lands. */
 .joystick {
   position: absolute;
@@ -1396,6 +1506,36 @@ html[data-screen-fit="contain"] #canvas {
     grid-column: 3;
     grid-row: 2;
     margin: 0 8px 8px 0;
+  }
+
+  /* Phone layout: the left keys and the number pad stand on either side of the screen, vertically centred. */
+  .player-view[data-pad-layout="phone"] .pad-phone-left,
+  .player-view[data-pad-layout="phone"] .pad-phone-right {
+    grid-row: 1 / span 2;
+    align-self: center;
+    justify-self: center;
+  }
+
+  .player-view[data-pad-layout="phone"] .pad-phone-left {
+    grid-column: 1;
+    width: min(100%, 186px);
+    height: min(100%, 300px);
+  }
+
+  .player-view[data-pad-layout="phone"] .pad-phone-right {
+    grid-column: 3;
+    width: min(100%, 200px);
+    height: min(100%, 250px);
+  }
+
+  .player-view[data-pad-layout="phone"] .pad-phone-right .key-phone {
+    font-size: 22px;
+  }
+
+  .player-view[data-pad-layout="phone"] .pad-tools {
+    top: calc(8px + var(--safe-top));
+    bottom: auto;
+    left: calc(8px + var(--safe-left));
   }
 }
 

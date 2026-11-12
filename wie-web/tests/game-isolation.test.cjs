@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const { test } = require("node:test");
 const ts = require("typescript");
 
-const HL3 = "PD119037", INOTIA = "PD005362", ZERO = "PD005576"; // app_info / __adf__ from the actual archives
+const HL3 = "PD119037", INOTIA = "PD005362", ZERO = "PD005576", HL4 = "PD140249"; // app_info / __adf__ from the actual archives
 function modules(globals = {}) {
   const cache = new Map();
   function load(name) {
@@ -37,9 +37,9 @@ test("game identity ignores misleading titles and filenames; controls follow the
   assert.equal(hl3.isHeroesLore3Binary({ read: addr => addr === 0x38620 ? 0x307eb500 : 0xb0a8b5f0 }), true);
 });
 
-test("영웅서기 제로 gets its own pad by PID while the other games keep theirs", () => {
+test("영웅서기 제로 and 영웅서기4 get their own pads by PID while the other games keep theirs", () => {
   const load = modules();
-  const pad = load("pad_profile"), zero = load("zero");
+  const pad = load("pad_profile"), zero = load("zero"), hl3 = load("hl3");
   const renamedZero = { id: ZERO, title: "영웅서기3", filename: "heroes-lore-3.zip" };
   const hl3Pad = pad.padProfileFor({ id: HL3 }), inotiaPad = pad.padProfileFor({ id: INOTIA }), zeroPad = pad.padProfileFor(renamedZero);
   assert.equal(pad.isZero(renamedZero), true);
@@ -66,6 +66,22 @@ test("영웅서기 제로 gets its own pad by PID while the other games keep the
   assert.deepEqual(["1", "3", "7", "9", "0", "#"].map(key => zeroPad.buttons[key].key), ["1", "3", "7", "9", "0", "#"]);
   assert.equal(zeroPad.buttons.CALL.key, zero.ZERO_SAVE_KEY);
   assert.equal(zeroPad.windowed(undefined), false);
+  // 영웅서기4: the phone layout by PID only, pressing every key as it is; the others never get it.
+  const renamedHl4 = { id: HL4, title: "영웅서기3", filename: "heroes-lore-3.zip" };
+  const hl4Pad = pad.padProfileFor(renamedHl4);
+  assert.equal(pad.isHeroesLore4(renamedHl4), true);
+  assert.equal(hl4Pad.name, "hl4");
+  assert.equal(hl4Pad.layout, "phone");
+  assert.equal(hl4Pad.diagonals, undefined);
+  assert.deepEqual({ ...hl4Pad.directions }, { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT" });
+  assert.equal(Object.keys(hl4Pad.buttons).length, 0);
+  assert.equal(pad.remapKey(hl4Pad, "OK"), "OK");
+  for (const other of [HL3, INOTIA, ZERO]) {
+    assert.equal(pad.isHeroesLore4({ id: other }), false);
+    assert.notEqual(pad.padProfileFor({ id: other }).layout, "phone");
+  }
+  assert.equal(hl3.isHeroesLore3(HL4), false);
+  assert.equal(zero.isZero(HL4), false);
 });
 
 test("legacy presentation choices migrate only to their owner; switching games preserves separate values", () => {

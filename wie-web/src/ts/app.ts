@@ -333,21 +333,24 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     if (!window.confirm("게임을 끝내고 라이브러리로 갈까요? 저장하지 않은 진행은 사라져요.")) return;
     void finish();
   }, { signal: abortController.signal });
-  // The system tools hide behind ⋯ so a thumb sliding off the joystick cannot hit them.
-  const padMore = document.getElementById("pad-more") as HTMLButtonElement | null;
+  // The system tools hide behind ⋯ so a thumb sliding off the joystick cannot hit them. The phone layout has its own ⋯
+  // beside R, where the top bar's would be out of the way.
+  const padMores = playerView.querySelectorAll<HTMLButtonElement>(".pad-tool-more");
   const padTools = document.getElementById("pad-tools") as HTMLElement | null;
   let padToolsTimer: number | undefined;
   const showPadTools = (show: boolean) => {
-    if (!padTools || !padMore) return;
+    if (!padTools) return;
     padTools.hidden = !show;
-    padMore.setAttribute("aria-expanded", String(show));
+    for (const padMore of padMores) padMore.setAttribute("aria-expanded", String(show));
     window.clearTimeout(padToolsTimer);
     if (show) padToolsTimer = window.setTimeout(() => showPadTools(false), 6000);
   };
-  padMore?.addEventListener("click", () => {
-    releaseKeys();
-    showPadTools(padTools?.hidden !== false);
-  }, { signal: abortController.signal });
+  for (const padMore of padMores) {
+    padMore.addEventListener("click", () => {
+      releaseKeys();
+      showPadTools(padTools?.hidden !== false);
+    }, { signal: abortController.signal });
+  }
   padTools?.addEventListener("click", () => showPadTools(false), { signal: abortController.signal });
   abortController.signal.addEventListener("abort", () => window.clearTimeout(padToolsTimer));
   appSettings.addEventListener("click", () => {
@@ -401,6 +404,9 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     if (document.hidden) releaseKeys();
   }, { signal: abortController.signal });
 
+  // Arrows marked data-slide (the phone layout's d-pad) follow a thumb sliding from one to another, like a real
+  // d-pad: the touch stays captured by the arrow it started on, which tracks the arrow now under it.
+  const slidTo = new Map<number, HTMLButtonElement>();
   for (const button of buttons) {
     const key = button.dataset.key!;
     button.addEventListener(
@@ -421,11 +427,24 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     const releaseKey = (event: PointerEvent) => {
       event.preventDefault();
       button.classList.remove("pressed");
+      slidTo.get(event.pointerId)?.classList.remove("pressed");
+      slidTo.delete(event.pointerId);
       setKey(`pointer:${event.pointerId}`);
     };
     button.addEventListener("pointerup", releaseKey, { signal: abortController.signal });
     button.addEventListener("pointercancel", releaseKey, { signal: abortController.signal });
     button.addEventListener("lostpointercapture", releaseKey, { signal: abortController.signal });
+    if (button.dataset.slide === undefined) continue;
+    button.addEventListener("pointermove", (event) => {
+      if (!button.hasPointerCapture(event.pointerId)) return;
+      const under = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLButtonElement>("button[data-slide]");
+      const current = slidTo.get(event.pointerId) ?? button;
+      if (!under || under === current || under.parentElement !== button.parentElement) return;
+      current.classList.remove("pressed");
+      under.classList.add("pressed");
+      slidTo.set(event.pointerId, under);
+      setKey(`pointer:${event.pointerId}`, under.dataset.key);
+    }, { signal: abortController.signal });
   }
 
   // iOS turns a held or sliding touch into its own gestures (loupe, callout, pinch zoom) and then cancels the touch:
