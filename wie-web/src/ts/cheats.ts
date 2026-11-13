@@ -1,14 +1,8 @@
 import { X, createIcons } from "lucide";
 
-import { type AutoConfig, MACRO_NAMES, SLOT_KEYS, type SkillRef, type SlotKey, automation, loadAutoConfig, macroCandidates, skillSlotKeys, storeAutoConfig } from "./automation";
 import type { CheatApi } from "./backend";
 import { loadGamePreference, storeGamePreference } from "./game_preferences";
-import {
-  CASH_ITEMS, HL3, HL3_SKILL_LABELS, ORBS, QUICK_ITEMS, SLOT_ORDER, autoHealTick, displayName, freezeBattleStats, freezeGold, getGold, getLevel,
-  getSkillPoints, getStatPoints, giveItem, gradeLabel, isHeroesLore3, isHeroesLore3Binary, prepareAutoPotions, readBag, readEquipment, readSkills, readVitals,
-  setAllSkillLevels, setGold, setItemStat, setLevel, setOrb, setSkillPoints, setStatPoints,
-} from "./hl3";
-import { HL3_ITEMS } from "./hl3_items";
+import { allowsCheats, clearRetiredCheats } from "./cheat_policy";
 import {
   type ExpWatch, GOLD_MAX, INOTIA, countDamagedItems, getGold as getInotiaGold, healParty, isInItemTable, keepElixirFree, keepGold,
   multiplyExp, readRolledStats, repairItems, setGold as setInotiaGold, setRolledStats,
@@ -69,13 +63,12 @@ type Step =
   | { kind: "done"; target: Target; name: string };
 
 const storageKey = (appId: string) => `wie_cheats_${appId}`;
-const BATTLE_KEY = "전투 능력치 최대 고정";
 const AUTO_HEAL_KEY = "자동 회복";
 const GOLD_KEY = "소지금 유지";
 const EXP_KEY = "경험치 3배";
 const EXP_FACTOR = 3;
 /** Saved toggles that run in the background rather than freezing an address. */
-const TOGGLE_KEYS: string[] = [BATTLE_KEY, AUTO_HEAL_KEY, GOLD_KEY, EXP_KEY];
+const TOGGLE_KEYS: string[] = [AUTO_HEAL_KEY, GOLD_KEY, EXP_KEY];
 
 const isInotiaContext = (context: CheatContext) => isInotia({ id: context.appId });
 
@@ -95,12 +88,6 @@ const startTicks = (context: CheatContext, cheats: SavedCheat[]) => {
   if (!live) return;
   const on = (name: string) => cheats.some(cheat => cheat.name === name);
   const ticks: Array<(api: CheatApi) => void> = [];
-  if (isHeroesLore3(context.appId) && isHeroesLore3Binary(live) && on(AUTO_HEAL_KEY)) {
-    const state = { spPeak: 0 };
-    ticks.push(api => {
-      autoHealTick(api, state);
-    });
-  }
   if (isInotiaContext(context)) {
     if (on(AUTO_HEAL_KEY)) ticks.push(api => healParty(api));
     if (on(GOLD_KEY)) ticks.push(api => keepGold(api, GOLD_MAX));
@@ -412,11 +399,6 @@ export const getCheatPanel = (): CheatPanel => {
     if (statusText) body.prepend(el("p", `cheat-status${statusError ? " error" : ""}`, statusText));
   };
 
-  let hl3Category = 18;
-  let hl3Index = 7;
-  let hl3Count = 99;
-  let hl3ShowBag = false;
-
   const renderInotia = (live: CheatApi) => {
     body.append(el("p", "cheat-lead", "🐉 이노티아 전용 치트"));
     body.append(el("p", "cheat-muted", "게임 메모리 구조를 분석해서 만든 전용 기능이에요. 캐릭터로 필드에 나온 상태에서 쓰세요."));
@@ -541,515 +523,9 @@ export const getCheatPanel = (): CheatPanel => {
     body.append(el("div", "cheat-divider"));
   };
 
-  const renderHl3 = (live: CheatApi) => {
-    body.append(el("p", "cheat-lead", "⚔️ 영웅서기3 전용 치트"));
-    body.append(el("p", "cheat-muted", "게임 메모리 구조를 분석해서 만든 전용 기능이에요. 캐릭터로 필드에 나온 상태에서 쓰세요."));
-
-    // 소지금
-    let goldText = "";
-    try {
-      goldText = ` (지금 ${formatNumber(getGold(live))})`;
-    } catch {
-      goldText = "";
-    }
-    const goldRow = el("div", "cheat-item-actions");
-    goldRow.append(
-      button(`💰 소지금 1천만${goldText}`, "primary-command", () => {
-        try {
-          setGold(live, 10_000_000);
-          setStatus("소지금을 10,000,000으로 바꿨어요. 메뉴를 열면 바로 보여요.");
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }),
-      button("무제한(항상 1천만 유지)", "secondary-command", () => {
-        try {
-          freezeGold(live, 10_000_000);
-          saved = saved.filter(cheat => cheat.address !== HL3.GOLD);
-          saved.push({ name: "소지금", address: HL3.GOLD, width: 4, bigEndian: false, value: 10_000_000, freeze: true });
-          persist();
-          setStatus("소지금을 항상 1천만으로 유지해요. 게임을 다시 켜도 자동 적용됩니다.");
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }),
-    );
-    body.append(goldRow);
-
-    // 빠른 지급
-    body.append(el("p", "cheat-lead", "🎒 아이템 바로 넣기 (99개)"));
-    const quick = el("div", "cheat-item-actions");
-    for (const [category, index, label] of QUICK_ITEMS) {
-      quick.append(button(label, "secondary-command", () => {
-        try {
-          const result = giveItem(live, category, index, 99);
-          setStatus(`${label} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸${result.stacked ? "에 합쳤어요" : "에 넣었어요"}. 가방을 열어 확인하세요.`);
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }));
-    }
-    body.append(quick);
-
-    // 캐시 아이템
-    body.append(el("p", "cheat-lead", "💎 캐시 아이템 넣기 (캐시 상점 전용이던 것들)"));
-    body.append(el("p", "cheat-muted", "원래는 네트워크 결제로만 살 수 있던 아이템이에요. 가방에 바로 넣어 드려요 (싱글 플레이에서 안 먹히는 것도 있을 수 있어요)."));
-    const cash = el("div", "cheat-item-actions");
-    for (const [category, index, label, description] of CASH_ITEMS) {
-      const cashButton = button(label, "secondary-command", () => {
-        try {
-          const result = giveItem(live, category, index, 10);
-          setStatus(`${label} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸. ${description}.`);
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      });
-      cashButton.title = description;
-      cash.append(cashButton);
-    }
-    body.append(cash);
-
-    // 아이템 선택 지급
-    body.append(el("p", "cheat-lead", "🗡️ 아이템 골라서 넣기 (무기·방어구·장신구·오브·재료 전부)"));
-    const pickRow = el("div", "cheat-row");
-    const categorySelect = el("select") as HTMLSelectElement;
-    for (const key of Object.keys(HL3_ITEMS).map(Number).sort((a, b) => a - b)) {
-      const option = el("option", undefined, HL3_ITEMS[key].label);
-      option.value = String(key);
-      categorySelect.append(option);
-    }
-    categorySelect.value = String(hl3Category);
-    const itemSelect = el("select") as HTMLSelectElement;
-    const fillItems = () => {
-      itemSelect.replaceChildren();
-      const table = HL3_ITEMS[hl3Category];
-      for (const item of table.items) {
-        if (item.n.includes("아래부터")) continue;
-        const extra = item.s !== undefined && item.s > 0 ? ` · ${table.kind === "equip" ? (hl3Category <= 3 || hl3Category === 11 ? "방" : "공") + item.s : ""}` : "";
-        const level = item.l !== undefined && item.l > 0 && item.l < 200 ? ` · Lv${item.l}` : "";
-        const grade = gradeLabel(item.n);
-        const option = el("option", undefined, `${displayName(item.n)}${grade ? ` [${grade}]` : ""}${level}${extra}`);
-        option.value = String(item.i);
-        itemSelect.append(option);
-      }
-      if (!table.items[hl3Index]) hl3Index = 0;
-      itemSelect.value = String(hl3Index);
-    };
-    fillItems();
-    categorySelect.addEventListener("change", () => {
-      hl3Category = Number(categorySelect.value);
-      hl3Index = 0;
-      fillItems();
-    });
-    itemSelect.addEventListener("change", () => {
-      hl3Index = Number(itemSelect.value);
-    });
-    pickRow.append(categorySelect);
-    body.append(pickRow);
-    const pickRow2 = el("div", "cheat-row");
-    pickRow2.append(itemSelect);
-    body.append(pickRow2);
-    const countRow = el("div", "cheat-row");
-    const countInput = el("input") as HTMLInputElement;
-    countInput.type = "text";
-    countInput.inputMode = "numeric";
-    countInput.value = String(hl3Count);
-    countInput.addEventListener("change", () => {
-      hl3Count = parseNumber(countInput.value) ?? 1;
-    });
-    countRow.append(el("span", undefined, "개수"), countInput, button("넣기", "primary-command", () => {
-      const count = parseNumber(countInput.value) ?? 1;
-      hl3Count = count;
-      try {
-        const table = HL3_ITEMS[hl3Category];
-        const item = table.items[hl3Index];
-        const result = giveItem(live, hl3Category, hl3Index, count);
-        setStatus(`${item.n} ${formatNumber(result.count)}개 — 가방 ${result.slot + 1}번 칸에 넣었어요.${table.kind === "equip" ? " 장비는 가방에서 선택해 장착하세요 (요구 레벨 미달이면 장착 불가)." : ""}`);
-      } catch (error) {
-        setStatus(String(error), true);
-      }
-    }));
-    body.append(countRow);
-
-    // 캐릭터
-    body.append(el("p", "cheat-lead", "⬆️ 캐릭터"));
-    let levelText = "";
-    try {
-      levelText = ` (지금 Lv${getLevel(live)})`;
-    } catch {
-      levelText = "";
-    }
-    const battleOn = saved.some(cheat => cheat.name === BATTLE_KEY);
-    const charRow = el("div", "cheat-item-actions");
-    charRow.append(
-      button(`레벨 70 (게임 최대)${levelText}`, "secondary-command", () => {
-        try {
-          setLevel(live, 70);
-          setStatus("레벨을 70(게임 최대치)으로 바꿨어요. 높은 레벨 장비를 바로 장착할 수 있어요. 포인트는 아래 '포인트 주기'로 따로 받으세요.");
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }),
-      button(battleOn ? "전투 능력치 최대 고정 끄기" : "전투 능력치 최대 고정 (공·방 9999)", battleOn ? "primary-command" : "secondary-command", () => {
-        try {
-          freezeBattleStats(live, !battleOn);
-          saved = saved.filter(cheat => cheat.name !== BATTLE_KEY);
-          if (!battleOn) saved.push({ name: BATTLE_KEY, address: HL3.FINAL, width: 2, bigEndian: false, value: 9999, freeze: true });
-          persist();
-          setStatus(!battleOn ? "ATT/DEF 9999, 명중·회피·기절·저항 255로 고정했어요. 게임을 켤 때마다 자동 적용." : "능력치 고정을 껐어요.");
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }),
-    );
-    body.append(charRow);
-
-    // 스탯·스킬 포인트
-    let pointsText = "";
-    try {
-      pointsText = `지금 스탯 포인트 ${formatNumber(getStatPoints(live))} · 스킬 포인트 ${formatNumber(getSkillPoints(live))}`;
-    } catch {
-      pointsText = "";
-    }
-    body.append(el("p", "cheat-lead", "🎯 포인트 주기"));
-    body.append(el("p", "cheat-muted", `스탯은 상태창에서, 스킬은 스킬창(포인트투자)에서 직접 찍어요. 게임이 주는 상한은 스탯 276 · 스킬 44인데 더 줘도 돼요.${pointsText ? ` ${pointsText}` : ""}`));
-    const pointsRow = el("div", "cheat-item-actions");
-    pointsRow.append(
-      button("스탯 포인트 276", "secondary-command", () => {
-        try {
-          setStatPoints(live, 276);
-          setStatus("스탯 포인트를 276으로 맞췄어요. 메뉴 → STATUS에서 힘·체력·정신·민첩에 찍으세요.");
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }),
-      button("스탯 포인트 999", "secondary-command", () => {
-        try {
-          setStatPoints(live, 999);
-          setStatus("스탯 포인트를 999로 맞췄어요. 상태창에서 찍으세요 (100 넘는 스탯은 2포인트씩 들어요).");
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }),
-      button("스킬 포인트 99", "secondary-command", () => {
-        try {
-          setSkillPoints(live, 99);
-          setStatus("스킬 포인트를 99로 맞췄어요. 메뉴 → SKILL → 스킬 선택 → 포인트투자로 찍으세요 (스킬당 최대 5).");
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }),
-      button("모든 스킬 Lv5", "secondary-command", () => {
-        try {
-          setAllSkillLevels(live, 5);
-          const names = readSkills(live).filter(skill => skill.index > 0).map(skill => skill.name).join(", ");
-          setStatus(`주무기·보조무기 스킬을 전부 Lv5로 올렸어요: ${names}. 스킬창을 열어 확인하고 단축키에 등록하세요.`);
-        } catch (error) {
-          setStatus(String(error), true);
-        }
-      }),
-    );
-    body.append(pointsRow);
-
-    // 자동화 (자동 물약 · 자동 스킬 · 치트 회복)
-    body.append(el("p", "cheat-lead", "🤖 자동화"));
-    const auto = context && automation.appId === context.appId ? automation.current : loadAutoConfig(context?.appId ?? "");
-    const saveAuto = (next: AutoConfig) => {
-      if (context && automation.appId === context.appId) automation.update(next);
-      else if (context) storeAutoConfig(context.appId, next);
-      render();
-    };
-    let vitalsText = "";
-    try {
-      const vitals = readVitals(live);
-      if (vitals.hpMax > 0) vitalsText = `지금 HP ${formatNumber(vitals.hp)}/${formatNumber(vitals.hpMax)} · SP ${formatNumber(Math.floor(vitals.sp / 10))}`;
-    } catch {
-      vitalsText = "";
-    }
-
-    // 자동 물약
-    const potionRow = el("div", "cheat-item-actions");
-    potionRow.append(button(auto.potionOn ? "🧪 자동 물약 끄기" : "🧪 자동 물약 켜기", auto.potionOn ? "primary-command" : "secondary-command", () => {
-      saveAuto({ ...auto, potionOn: !auto.potionOn });
-      setStatus(!auto.potionOn
-        ? `HP ${auto.hpPercent}% 아래면 ${auto.hpKey}번, SP ${auto.spPercent}% 아래면 ${auto.spKey}번 칸을 자동으로 눌러요. 게임에서 그 칸에 물약을 등록해 두세요.`
-        : "자동 물약을 껐어요.");
-    }));
-    body.append(potionRow);
-    body.append(el("p", "cheat-muted", `게임 단축키 칸에 등록한 물약을 대신 눌러 주는 방식이에요 (물약은 실제로 줄어요).${vitalsText ? ` ${vitalsText}` : ""}`));
-    const slotSelect = (value: SlotKey, onChange: (key: SlotKey) => void): HTMLSelectElement => {
-      const select = el("select") as HTMLSelectElement;
-      for (const key of SLOT_KEYS) {
-        const option = el("option", undefined, `${key}번 칸`);
-        option.value = key;
-        select.append(option);
-      }
-      select.value = value;
-      select.addEventListener("change", () => {
-        const key = select.value;
-        if (key === "1" || key === "3" || key === "9" || key === "0" || key === "#") onChange(key);
-      });
-      return select;
-    };
-    const percentInput = (value: number, onChange: (percent: number) => void): HTMLInputElement => {
-      const input = el("input", "cheat-short") as HTMLInputElement;
-      input.type = "text";
-      input.inputMode = "numeric";
-      input.value = String(value);
-      input.addEventListener("change", () => {
-        const percent = parseNumber(input.value);
-        if (percent === undefined || percent < 5 || percent > 95) {
-          setStatus("5~95 사이 숫자로 입력해 주세요.", true);
-          return;
-        }
-        onChange(percent);
-      });
-      return input;
-    };
-    const hpRow = el("div", "cheat-row");
-    hpRow.append(el("span", undefined, "HP 물약"), slotSelect(auto.hpKey, key => saveAuto({ ...auto, hpKey: key })), percentInput(auto.hpPercent, percent => saveAuto({ ...auto, hpPercent: percent })), el("span", undefined, "% 아래면"));
-    body.append(hpRow);
-    const spRow = el("div", "cheat-row");
-    spRow.append(el("span", undefined, "SP 물약"), slotSelect(auto.spKey, key => saveAuto({ ...auto, spKey: key })), percentInput(auto.spPercent, percent => saveAuto({ ...auto, spPercent: percent })), el("span", undefined, "% 아래면"));
-    body.append(spRow);
-    const prepRow = el("div", "cheat-item-actions");
-    prepRow.append(button(`🧴 물약 준비 (${auto.hpKey}번 엘릭서 · ${auto.spKey}번 요정수 99개 등록)`, "secondary-command", () => {
-      try {
-        const names = prepareAutoPotions(live, SLOT_ORDER.indexOf(auto.hpKey), SLOT_ORDER.indexOf(auto.spKey));
-        setStatus(`${auto.hpKey}번 칸에 ${names.hp}, ${auto.spKey}번 칸에 ${names.sp}를 99개씩 넣고 등록했어요. 화면 아래 단축키 칸에 아이콘이 떠요.`);
-      } catch (error) {
-        setStatus(String(error), true);
-      }
-    }));
-    body.append(prepRow);
-    const infiniteCheck = el("label", "cheat-check");
-    const infiniteBox = el("input") as HTMLInputElement;
-    infiniteBox.type = "checkbox";
-    infiniteBox.checked = auto.infinitePotions;
-    infiniteBox.addEventListener("change", () => saveAuto({ ...auto, infinitePotions: infiniteBox.checked }));
-    infiniteCheck.append(infiniteBox, el("span", undefined, "등록한 물약 안 줄어들게 (개수 99 유지)"));
-    body.append(infiniteCheck);
-
-    // 자동 조준
-    const aimRow = el("div", "cheat-item-actions");
-    aimRow.append(button(auto.aimOn ? "🎯 자동 조준 끄기" : "🎯 자동 조준 켜기", auto.aimOn ? "primary-command" : "secondary-command", () => {
-      saveAuto({ ...auto, aimOn: !auto.aimOn });
-      setStatus(!auto.aimOn
-        ? "공격(OK)을 누르면 가까운 몬스터 쪽으로, 몬스터가 없으면 바로 옆 NPC 쪽으로 몸을 돌려요."
-        : "자동 조준을 껐어요.");
-    }));
-    body.append(aimRow);
-    body.append(el("p", "cheat-muted", "공격 버튼을 누를 때 근처 몬스터(없으면 옆에 있는 NPC) 쪽으로 돌아서 공격하거나 말을 걸어요. 게임이 4방향이라 대각선에 있으면 더 가까운 쪽으로 돌아요. 방향키를 누르고 있을 땐 손대지 않아요."));
-
-    // 자동 스킬
-    const skillRow = el("div", "cheat-item-actions");
-    skillRow.append(button(auto.skillOn ? "✨ 자동 스킬 끄기" : "✨ 자동 스킬 켜기", auto.skillOn ? "primary-command" : "secondary-command", () => {
-      saveAuto({ ...auto, skillOn: !auto.skillOn });
-      setStatus(!auto.skillOn
-        ? "공격을 3번 이상 연타하면, 그다음 공격 입력 중 일부가 체크한 칸의 스킬 키로 바뀌어 나가요(눌린 칸이 노랗게 반짝여요). 연타를 멈추면 1.5초 뒤 꺼져요."
-        : "자동 스킬을 껐어요.");
-    }));
-    body.append(skillRow);
-    body.append(el("p", "cheat-muted", "게임에서 스킬을 등록해 둔 칸을 체크하세요. 공격 3연타부터 켜지고, 연타하는 공격 입력 중 0.4초마다 하나가 스킬 키로 바뀌어 나가요(콤보 중간에 끼워 넣으면 게임이 무시해서 이 방식이에요). 메뉴에선 멈추고, 쿨타임 중인 스킬은 게임이 넘겨요."));
-    const slotRow = el("div", "cheat-row cheat-wrap");
-    for (const key of skillSlotKeys(auto)) {
-      const check = el("label", "cheat-check");
-      const box = el("input") as HTMLInputElement;
-      box.type = "checkbox";
-      box.checked = auto.skillSlots.includes(key);
-      box.addEventListener("change", () => saveAuto({ ...auto, skillSlots: SLOT_KEYS.filter(slot => (slot === key ? box.checked : auto.skillSlots.includes(slot))) }));
-      check.append(box, el("span", undefined, `${key}번`));
-      slotRow.append(check);
-    }
-    body.append(slotRow);
-
-    // 스킬 묶음
-    body.append(el("p", "cheat-lead", "🧩 스킬 묶음 (패드에 버튼 추가)"));
-    body.append(el("p", "cheat-muted", "게임 단축키는 5개뿐이라, 묶음 버튼에 스킬을 여러 개 넣어 두면 누를 때 차례로 다 나가요. 배운 스킬(Lv1 이상)만 돼요 — 위 '모든 스킬 Lv5'를 먼저 누르면 전부 쓸 수 있어요."));
-    let skillList: ReturnType<typeof readSkills> = [];
-    try {
-      skillList = macroCandidates(readSkills(live));
-    } catch {
-      skillList = [];
-    }
-    const macroSlotRow = el("div", "cheat-row");
-    macroSlotRow.append(el("span", undefined, "묶음이 빌려 쓰는 칸"), slotSelect(auto.macroSlot, key => saveAuto({ ...auto, macroSlot: key })), el("span", undefined, "(끝나면 원래대로 돌려놔요)"));
-    body.append(macroSlotRow);
-    if (auto.potionOn && (auto.macroSlot === auto.hpKey || auto.macroSlot === auto.spKey)) {
-      body.append(el("p", "cheat-alert", "물약 키와 같은 칸이에요. 묶음이 빌려 쓰는 칸을 다른 키로 바꿔 주세요."));
-    }
-    auto.macros.forEach((macro, i) => {
-      const item = el("div", "cheat-item");
-      const head = el("div", "cheat-item-info");
-      head.append(el("strong", undefined, `묶음 ${MACRO_NAMES[i]}`), el("span", undefined, macro.skills.length ? `${macro.skills.length}개 등록됨` : "비어 있음 (패드에 안 보여요)"));
-      item.append(head);
-      const row = el("div", "cheat-row cheat-wrap");
-      for (const skill of skillList) {
-        const check = el("label", "cheat-check");
-        const box = el("input") as HTMLInputElement;
-        box.type = "checkbox";
-        box.checked = macro.skills.some(ref => ref.weapon === skill.weapon && ref.index === skill.index);
-        box.disabled = skill.level <= 0;
-        box.addEventListener("change", () => {
-          const ref: SkillRef = { weapon: skill.weapon, index: skill.index };
-          const skills = box.checked
-            ? [...macro.skills, ref]
-            : macro.skills.filter(other => !(other.weapon === ref.weapon && other.index === ref.index));
-          const macros = auto.macros.map((other, j) => (j === i ? { ...other, skills } : other));
-          saveAuto({ ...auto, macros });
-        });
-        check.append(box, el("span", undefined, `${skill.name}${skill.level > 0 ? ` Lv${skill.level}` : " (안 배움)"} · ${HL3_SKILL_LABELS[skill.category] ?? skill.weapon}`));
-        row.append(check);
-      }
-      if (skillList.length === 0) row.append(el("span", undefined, "캐릭터로 필드에 나오면 스킬 목록이 보여요."));
-      item.append(row);
-      const autoCheck = el("label", "cheat-check");
-      const autoBox = el("input") as HTMLInputElement;
-      autoBox.type = "checkbox";
-      autoBox.checked = macro.auto;
-      autoBox.addEventListener("change", () => {
-        const macros = auto.macros.map((other, j) => (j === i ? { ...other, auto: autoBox.checked } : other));
-        saveAuto({ ...auto, macros });
-      });
-      autoCheck.append(autoBox, el("span", undefined, "공격 버튼 누르는 동안 이 묶음도 자동으로 돌리기"));
-      item.append(autoCheck);
-      body.append(item);
-    });
-
-    // 치트 회복 (메모리 방식)
-    const autoOn = saved.some(cheat => cheat.name === AUTO_HEAL_KEY) && tickTimer !== undefined;
-    const healRow = el("div", "cheat-item-actions");
-    healRow.append(button(autoOn ? "💊 치트 회복 끄기" : "💊 치트 회복 켜기 (물약 없이 HP/SP 채움)", autoOn ? "primary-command" : "secondary-command", () => {
-      saved = saved.filter(cheat => cheat.name !== AUTO_HEAL_KEY);
-      if (!autoOn) saved.push({ name: AUTO_HEAL_KEY, address: HL3.HP, width: 2, bigEndian: false, value: 0, freeze: false });
-      persist();
-      if (context) startTicks(context, saved);
-      setStatus(autoOn ? "치트 회복을 껐어요." : "HP가 35% 아래로 떨어지면 메모리로 바로 가득 채워요 (SP도). 물약은 안 줄어요. 게임을 켤 때마다 자동 적용.");
-    }));
-    body.append(healRow);
-
-    // 장착 장비 강화
-    body.append(el("p", "cheat-lead", "🔨 장착 장비 강화 (오브 결합 · 공/방 수치)"));
-    body.append(el("p", "cheat-muted", "오브 효과는 바로 표시돼요. 공/방 수치는 장비를 한 번 해제했다가 다시 장착해야 전투에 반영됩니다."));
-    try {
-      const gear = readEquipment(live);
-      if (gear.length === 0) body.append(el("p", "cheat-muted", "장착 중인 장비가 없어요."));
-      const seen = new Set<string>();
-      for (const entry of gear) {
-        const key = `${entry.category}:${entry.index}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const item = el("div", "cheat-item");
-        const info = el("div", "cheat-item-info");
-        const orb = ORBS.find(o => o.i === entry.orb);
-        const isWeapon = entry.category >= 4 && entry.category <= 10;
-        info.append(
-          el("strong", undefined, `${orb ? `${orb.n} ` : ""}${displayName(entry.name)}`),
-          el("span", undefined, `${HL3_ITEMS[entry.category]?.label ?? ""} · ${isWeapon ? "공" : "방"} ${entry.stat}${orb ? ` · ${orb.d.replace("%", `${entry.orbValue}%`)}` : ""}`),
-        );
-        item.append(info);
-        const row1 = el("div", "cheat-row");
-        const statInput = el("input") as HTMLInputElement;
-        statInput.type = "text";
-        statInput.inputMode = "numeric";
-        statInput.value = String(Math.min(9999, Math.max(entry.stat * 5, 500)));
-        row1.append(el("span", undefined, isWeapon ? "공격" : "방어"), statInput, button("적용", "secondary-command", () => {
-          const value = parseNumber(statInput.value);
-          if (value === undefined) {
-            setStatus("숫자를 입력해 주세요.", true);
-            return;
-          }
-          try {
-            setItemStat(live, entry, value);
-            setStatus(`${displayName(entry.name)} ${isWeapon ? "공격" : "방어"} ${formatNumber(value)} 적용. 장비 해제 후 다시 장착하면 전투에 반영돼요.`);
-          } catch (error) {
-            setStatus(String(error), true);
-          }
-        }));
-        item.append(row1);
-        const row2 = el("div", "cheat-row");
-        const orbSelect = el("select") as HTMLSelectElement;
-        const none = el("option", undefined, "오브 없음");
-        none.value = "-1";
-        orbSelect.append(none);
-        for (const o of ORBS) {
-          const option = el("option", undefined, `${o.n} 오브 (${o.d})`);
-          option.value = String(o.i);
-          orbSelect.append(option);
-        }
-        orbSelect.value = String(orb ? orb.i : isWeapon ? 2 : 3);
-        const pctInput = el("input") as HTMLInputElement;
-        pctInput.type = "text";
-        pctInput.inputMode = "numeric";
-        pctInput.value = String(entry.orbValue || 50);
-        row2.append(orbSelect, pctInput, el("span", undefined, "%"), button("결합", "secondary-command", () => {
-          const pct = parseNumber(pctInput.value) ?? 50;
-          try {
-            setOrb(live, entry, Number(orbSelect.value), pct);
-            setStatus(`${displayName(entry.name)}에 오브를 결합했어요. 가방에서 아이템 설명을 열면 효과가 보여요.`);
-          } catch (error) {
-            setStatus(String(error), true);
-          }
-        }));
-        item.append(row2);
-        body.append(item);
-      }
-      if (gear.length > 0) {
-        body.append(button("⚡ 장착 장비 전부 한 번에: 공/방 ×5 + 무기 뇌제의 50% · 방어구 금강의 50%", "primary-command cheat-big", () => {
-          try {
-            const done = new Set<string>();
-            for (const entry of readEquipment(live)) {
-              const key = `${entry.category}:${entry.index}`;
-              if (done.has(key)) continue;
-              done.add(key);
-              const isWeaponItem = entry.category >= 4 && entry.category <= 10;
-              setItemStat(live, entry, Math.min(9999, Math.max(entry.stat * 5, 500)));
-              setOrb(live, entry, isWeaponItem ? 2 : 3, 50);
-            }
-            setStatus("장착 장비를 전부 강화했어요. 장비를 해제 후 다시 장착하면 공/방이 전투에 반영돼요.");
-          } catch (error) {
-            setStatus(String(error), true);
-          }
-        }));
-      }
-    } catch (error) {
-      body.append(el("p", "cheat-alert", String(error)));
-    }
-
-    // 가방 보기
-    const bagRow = el("div", "cheat-item-actions");
-    bagRow.append(button(hl3ShowBag ? "가방 내용 숨기기" : "가방 내용 보기", "secondary-command", () => {
-      hl3ShowBag = !hl3ShowBag;
-      render();
-    }));
-    body.append(bagRow);
-    if (hl3ShowBag) {
-      try {
-        const bag = readBag(live).filter(entry => entry.count > 0 || entry.name);
-        const list = el("ul", "cheat-saved");
-        for (const entry of bag) {
-          const item = el("li", "cheat-item");
-          const info = el("div", "cheat-item-info");
-          info.append(
-            el("strong", undefined, `${entry.slot + 1}. ${entry.name}${entry.equipped ? " (장착 중)" : ""}`),
-            el("span", undefined, `${HL3_ITEMS[entry.category]?.label ?? `분류 ${entry.category}`} · ${formatNumber(entry.count)}개`),
-          );
-          item.append(info);
-          list.append(item);
-        }
-        body.append(el("p", "cheat-muted", `가방 ${bag.length}/${HL3.SLOTS}칸 사용 중`), list);
-      } catch (error) {
-        body.append(el("p", "cheat-alert", String(error)));
-      }
-    }
-    body.append(el("div", "cheat-divider"));
-  };
-
   const renderHome = (live: CheatApi) => {
     title.textContent = "치트";
-    if (context && isHeroesLore3(context.appId) && isHeroesLore3Binary(live)) {
-      renderHl3(live);
-    } else if (context && isInotia({ id: context.appId })) {
+    if (context && isInotia({ id: context.appId })) {
       renderInotia(live);
     }
 
@@ -1386,6 +862,10 @@ export const getCheatPanel = (): CheatPanel => {
       }
     },
     open(next) {
+      if (!allowsCheats(next.appId)) {
+        clearRetiredCheats(next.appId, next.getCheats());
+        return;
+      }
       if (!context || context.appId !== next.appId || movedCheatsNotice) {
         saved = dropMovingCheats(next, loadSaved(next.appId));
         step = { kind: "home" };
@@ -1398,16 +878,14 @@ export const getCheatPanel = (): CheatPanel => {
       dialog.showModal();
     },
     restore(next) {
+      if (!allowsCheats(next.appId)) {
+        if (tickContextId === next.appId) stopTicks();
+        clearRetiredCheats(next.appId, next.getCheats());
+        return;
+      }
       const live = next.getCheats();
       if (!live) return;
       const cheatsForApp = dropMovingCheats(next, loadSaved(next.appId));
-      if (isHeroesLore3(next.appId) && isHeroesLore3Binary(live) && cheatsForApp.some(cheat => cheat.name === BATTLE_KEY)) {
-        try {
-          freezeBattleStats(live, true);
-        } catch {
-          // ignore
-        }
-      }
       startTicks(next, cheatsForApp);
       for (const cheat of cheatsForApp) {
         if (TOGGLE_KEYS.includes(cheat.name) || !cheat.freeze) continue;

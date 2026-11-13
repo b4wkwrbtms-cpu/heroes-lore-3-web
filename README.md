@@ -71,5 +71,13 @@
 ## Credits
 This project is based on [wie](https://github.com/dlunch/wie), created by Inseok Lee.
 
+### 영웅서기 3 전달용 v8
+
+영웅서기 3(PID `PD119037`)은 원작 드랍·경험치·스탯·스킬·마나 소비·쿨타임 규칙으로 복구합니다. 예외는 소지금 99,999,999 자동 유지, 제련석 없이 강화, 모든 강화 단계의 성공률 80%입니다. 원작의 강화 가능 부위, +10 상한, 실패 시 결과는 유지합니다. 그래픽·조작·퀘스트 안내와 로딩 최적화도 유지합니다.
+
+사용자의 전달용 초기화 요청에 따라 **v8 첫 실행 직전에 영웅서기 3의 기존 저장 기록을 한 번 삭제**합니다. 이후의 새 저장은 재실행해도 유지됩니다. 이노티아·영웅서기 4 등 다른 PID의 기록과 설정은 변경하지 않습니다. 예전 영웅서기 3 치트·매크로 설정은 제거하며, 이 게임의 치트 메뉴와 자동 재적용 경로도 제거했습니다.
+
+원본·v5·v6·v7 게임 파일은 SHA-256을 확인한 뒤 해당 앱의 보관 파일만 자동 갱신합니다. 알 수 없는 파일은 수정하거나 실행하지 않고 전달용 v8 ZIP을 다시 추가하도록 안내합니다. 입력 ZIP과 게임 저장은 별도 보관되며, 게임 파일에 개인 저장 데이터는 포함하지 않습니다.
+
 The MA-3 FM synthesizer follows the YMF825 (SD-1) tone parameter documentation published by Yamaha
 for the YMF825Board, and the SMAF voice exclusive layouts documented by [go-smaf](https://github.com/but80/go-smaf) (MIT).

@@ -16,7 +16,7 @@ function modules(globals = {}) {
     const compiled = ts.transpileModule(fs.readFileSync(file, "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText;
-    vm.runInNewContext(compiled, { exports, ...globals, require: dep => load(dep.replace(/^\.\//, "")) });
+    vm.runInNewContext(compiled, { exports, ...globals, require: dep => dep === "lucide" ? { createIcons() {}, X: {} } : load(dep.replace(/^\.\//, "")) });
     return exports;
   }
   return load;
@@ -35,6 +35,40 @@ test("game identity ignores misleading titles and filenames; controls follow the
   assert.equal(hl3.isHeroesLore3Binary({ read: () => 0 }), false);
   assert.equal(hl3.isHeroesLore3Binary({ read: () => { throw Error("unmapped"); } }), false);
   assert.equal(hl3.isHeroesLore3Binary({ read: addr => addr === 0x38620 ? 0x307eb500 : 0xb0a8b5f0 }), true);
+});
+
+test("HL3 cannot open or restore cheats, and only its saved cheat/macro preferences are removed", () => {
+  const saved = JSON.stringify([{ name: "old freeze", address: 0x1503c18, width: 2, value: 9999, freeze: true }]);
+  const data = new Map([[`wie_cheats_${HL3}`, saved], [`wie_auto_${HL3}`, "old macros"],
+    [`wie_cheats_${INOTIA}`, saved], [`wie_auto_${INOTIA}`, "keep"], [`wie_cheats_${HL4}`, saved],
+    [`wie_game_${HL3}_screen_quality`, "hq"]]);
+  let shown = 0, cleared = 0; const frozen = [];
+  const dialog = { addEventListener() {}, showModal() { shown++; }, close() {} };
+  const load = modules({
+    document: { getElementById: () => dialog },
+    window: { localStorage: { getItem: k => data.get(k) ?? null, setItem: (k, v) => data.set(k, v), removeItem: k => data.delete(k) },
+      setInterval() {}, clearInterval() {} },
+  });
+  const panel = load("cheats").getCheatPanel();
+  const context = { appId: HL3, appTitle: "이노티아로 이름을 바꿔도 HL3", getCheats: () => ({ clearFreezes() { cleared++; }, freeze: (...args) => frozen.push(args) }) };
+  panel.restore(context); panel.open(context);
+  assert.equal(shown, 0); assert.equal(frozen.length, 0); assert.equal(cleared, 2);
+  assert.equal(data.has(`wie_cheats_${HL3}`), false); assert.equal(data.has(`wie_auto_${HL3}`), false);
+  for (const id of [INOTIA, HL4]) assert.equal(data.get(`wie_cheats_${id}`), saved);
+  assert.equal(data.get(`wie_auto_${INOTIA}`), "keep");
+  assert.equal(data.get(`wie_game_${HL3}_screen_quality`), "hq");
+  panel.restore({ ...context, appId: HL4 });
+  assert.equal(frozen.length, 1, "other games still restore their own settings");
+  assert.equal(cleared, 2, "other games' freezes are not cleared");
+});
+
+test("blocked storage still cannot reactivate retired HL3 cheats", () => {
+  let cleared = 0;
+  const policy = modules({ window: { localStorage: { removeItem() { throw Error("blocked"); } } } })("cheat_policy");
+  policy.clearRetiredCheats(HL3, { clearFreezes() { cleared++; } });
+  assert.equal(cleared, 1);
+  assert.equal(policy.allowsCheats(HL3), false);
+  for (const id of [INOTIA, ZERO, HL4]) assert.equal(policy.allowsCheats(id), true);
 });
 
 test("영웅서기 제로 and 영웅서기4 get their own pads by PID while the other games keep theirs", () => {
@@ -109,31 +143,4 @@ test("legacy presentation choices migrate only to their owner; switching games p
   const before = [...data];
   put(undefined, "screen_quality", "pixel");
   assert.deepEqual([...data], before, "library settings cannot overwrite a running game's choices");
-});
-
-test("leaving a game clears queued macros, attack state and timers before another session starts", () => {
-  const timers = new Map(); let id = 0, writes = 0, presses = 0;
-  const load = modules({
-    window: { localStorage: { getItem: () => null, setItem() {} }, setInterval: fn => { timers.set(++id, fn); return id; }, clearInterval: key => timers.delete(key) },
-    performance: { now: () => 100 },
-  });
-  const { automation, defaultAutoConfig } = load("automation");
-  const api = { read: () => 0, write: () => writes++ };
-  automation.attach({ appId: HL3, getCheats: () => api, pressKey: () => presses++ });
-  const config = defaultAutoConfig();
-  config.macros[0].skills = [{ weapon: "A", index: 0 }];
-  config.potionOn = config.skillOn = true;
-  automation.update(config);
-  assert.equal(automation.runMacro(0), true);
-  const staleTick = [...timers.values()][0];
-  let last; const unsubscribe = automation.onChange(value => { last = value; });
-  automation.detach();
-  assert.equal(timers.size, 0);
-  assert.equal(automation.appId, undefined);
-  assert.equal(last.potionOn, false); assert.equal(last.skillOn, false);
-  assert.equal(last.macros[0].skills.length, 0);
-  assert.equal(automation.runMacro(0), false);
-  staleTick(); automation.aim(true); automation.interceptAttack();
-  assert.equal(writes, 0); assert.equal(presses, 0);
-  unsubscribe();
 });

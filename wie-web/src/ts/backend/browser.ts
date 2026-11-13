@@ -3,6 +3,8 @@ import { extractAppMetadata, migrateSaves } from "@pkg";
 import { AppLibraryStore } from "../app_library_store";
 import type { LibraryApp, Wie } from "../backend";
 import { configStore } from "../config_store";
+import { resetGameProgress } from "../game_reset";
+import { prepareGameArchive } from "../game_update";
 import { t } from "../i18n";
 import { setMasterVolume, setPcmVolume } from "../midi";
 import { startWasmSession } from "./wasm";
@@ -28,7 +30,7 @@ export const initializeWie = async (): Promise<Wie> => {
           icon: icon.length ? new Blob([new Uint8Array(icon).buffer]) : undefined,
         };
         // Reimport replaces the archive atomically; PID-scoped saves live separately.
-        await store.save(app, archive);
+        await store.save(app, await prepareGameArchive(app.id, archive));
       } finally {
         extracted.free();
       }
@@ -60,12 +62,17 @@ export const initializeWie = async (): Promise<Wie> => {
         fetch(new URL("../../../../assets/neodgm.ttf", import.meta.url)),
       ]);
       if (!app || !archive) throw new Error(t("appFileMissing"));
+      const readyArchive = await prepareGameArchive(app.id, archive);
+      if (readyArchive !== archive) await store.save(app, readyArchive);
       if (!fontResponse.ok) throw new Error(`Failed to load font: ${fontResponse.status} ${fontResponse.statusText}`);
       const fontData = new Uint8Array(await fontResponse.arrayBuffer());
-      await migrateSaves(app.filename, archive, app.id);
+      await migrateSaves(app.filename, readyArchive, app.id);
+      const reset = await resetGameProgress(app.id);
       setMasterVolume(settings.midiVolume);
       setPcmVolume(settings.pcmVolume);
-      return startWasmSession(app.filename, archive, fontData, onEvent);
+      const session = await startWasmSession(app.filename, readyArchive, fontData, onEvent);
+      if (reset) onEvent({ type: "warning", message: "영웅서기 3을 새 게임으로 초기화했어요. 돈 무한 · 제련석 없이 강화 · 성공률 80%" });
+      return session;
     },
   };
   return backend;

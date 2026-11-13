@@ -1,11 +1,11 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Ellipsis, Keyboard, Map as MapIcon, Save, Settings, Sparkles, X, createIcons } from "lucide";
 
 import { recordPageView } from "./analytics";
-import { type AutoConfig, SLOT_KEYS, type SlotKey, automation, macroCandidates, skillSlotKeys } from "./automation";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
+import { allowsCheats, clearRetiredCheats } from "./cheat_policy";
 import { getCheatPanel } from "./cheats";
 import { loadGamePreference } from "./game_preferences";
-import { isHeroesLore3, isHeroesLore3Binary, readSkills } from "./hl3";
+import { isHeroesLore3 } from "./hl3";
 import { Hl3Feedback } from "./hl3_feedback";
 import { Hl3QuestGuide } from "./hl3_quest_guide";
 import { Hl4Feedback } from "./hl4_feedback";
@@ -65,6 +65,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   const backToLibrary = document.getElementById("back-to-library") as HTMLButtonElement;
   const appSettings = document.getElementById("app-settings") as HTMLButtonElement;
   const appCheats = document.getElementById("app-cheats") as HTMLButtonElement | null;
+  if (appCheats) appCheats.hidden = !allowsCheats(app.id);
+  clearRetiredCheats(app.id);
   const keypadToggle = document.getElementById("keypad-toggle") as HTMLButtonElement | null;
   const keypadSheet = document.getElementById("keypad-sheet") as HTMLElement | null;
   const keypadSheetClose = document.getElementById("keypad-sheet-close") as HTMLButtonElement | null;
@@ -128,7 +130,6 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     playerStatus.hidden = !preparing || ending;
     playerView.setAttribute("aria-busy", String(busy));
     for (const button of buttons) button.disabled = busy;
-    for (const button of macroButtons) button.disabled = busy;
   };
   const finish = async (error?: unknown, failed = false) => {
     if (ending) return;
@@ -139,10 +140,8 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     feedback?.dispose();
     slotIcons?.dispose();
     questGuide?.dispose();
-    automation.detach();
     hunt?.stop();
     getCheatPanel().detach(app.id);
-    unsubscribeAuto();
     for (const timer of flashTimers.values()) window.clearTimeout(timer);
     for (const button of buttons) button.classList.remove("pressed", "auto-flash");
     inputs.clear();
@@ -175,24 +174,11 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     if (!session || preparing || suspended || ending) return;
     // While a save walks the game's menu, the player's presses would land in it.
     if (saving && key && !source.startsWith("auto:")) return;
-    // Face the nearest monster (or NPC to talk to) unless the player is steering with a direction key.
-    if (key === "OK" && inputs.get(source) !== "OK" && ![...inputs.values()].some(held => DIRECTION_KEYS.has(held))) {
-      automation.aim(!source.startsWith("auto:"));
-    }
-    // While the player mashes attack, the automation turns some of those presses into skill keys.
-    if (key === "OK" && !source.startsWith("auto:")) {
-      const replacement = automation.interceptAttack();
-      if (replacement) {
-        key = replacement;
-        flashKey(replacement);
-      }
-    }
     const previous = inputs.get(source);
     if (previous === key) return;
     if (previous) {
       inputs.delete(source);
       if (![...inputs.values()].includes(previous)) {
-        automation.notifyKey(previous, false);
         void session.key(previous, false).catch(finish);
       }
     }
@@ -201,7 +187,6 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       const pressed = [...inputs.values()].includes(key);
       inputs.set(source, key);
       if (!pressed) {
-        automation.notifyKey(key, true);
         void session.key(key, true).catch(finish);
       }
     }
@@ -301,54 +286,6 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     playerWarning.hidden = false;
     warningTimer = setTimeout(() => { playerWarning.hidden = true; }, result === "saved" ? 2000 : 5000);
   };
-  let autoPressId = 0;
-  const pressKey = (key: string, holdMs = 90) => {
-    const source = `auto:${key}:${autoPressId++}`;
-    flashKey(key);
-    setKey(source, key);
-    window.setTimeout(() => setKey(source), holdMs);
-  };
-  const slotCaptions = new Map<HTMLButtonElement, string>();
-  const macroButtons = playerView.querySelectorAll<HTMLButtonElement>("button[data-macro]");
-  const macroBar = playerView.querySelector<HTMLElement>(".pad-macros");
-  if (macroBar) macroBar.hidden = true;
-  for (const button of macroButtons) button.hidden = true;
-  const skillName = (weapon: "A" | "B", index: number): string => {
-    const api = cheatContext.getCheats();
-    if (!api) return `${weapon}${index}`;
-    try {
-      return macroCandidates(readSkills(api)).find(skill => skill.weapon === weapon && skill.index === index)?.name ?? `${weapon}${index}`;
-    } catch {
-      return `${weapon}${index}`;
-    }
-  };
-  const applyPadLabels = (config: AutoConfig) => {
-    let anyMacro = false;
-    macroButtons.forEach((button, i) => {
-      const macro = config.macros[i];
-      const show = isHeroesLore3(app.id) && !!macro && macro.skills.length > 0;
-      button.hidden = !show;
-      if (show) {
-        anyMacro = true;
-        const caption = button.querySelector("span");
-        if (caption) caption.textContent = macro.skills.map(ref => skillName(ref.weapon, ref.index)).join("·");
-      }
-    });
-    if (macroBar) macroBar.hidden = !anyMacro;
-    for (const button of buttons) {
-      const key = button.dataset.key;
-      if (!key || !button.classList.contains("key-slot") || !(SLOT_KEYS as readonly string[]).includes(key)) continue;
-      const slot = key as SlotKey;
-      const caption = button.querySelector("span");
-      if (!caption) continue;
-      if (!slotCaptions.has(button)) slotCaptions.set(button, caption.textContent ?? "");
-      let text = slotCaptions.get(button) ?? "";
-      if (config.potionOn && slot === config.hpKey) text = "HP 물약";
-      else if (config.potionOn && slot === config.spKey) text = "SP 물약";
-      else if (config.skillOn && skillSlotKeys(config).includes(slot) && config.skillSlots.includes(slot)) text = "자동 스킬";
-      caption.textContent = text;
-    }
-  };
   const releaseKeys = () => {
     hunt?.stop();
     inputs.clear();
@@ -362,6 +299,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   }, { signal: abortController.signal });
   // The system tools hide behind ⋯ so a thumb sliding off the joystick cannot hit them.
   const padMore = document.getElementById("pad-more") as HTMLButtonElement | null;
+  padMore?.setAttribute("aria-label", allowsCheats(app.id) ? "설정·치트·나가기 메뉴" : "설정·나가기 메뉴");
   const padTools = document.getElementById("pad-tools") as HTMLElement | null;
   let padToolsTimer: number | undefined;
   const showPadTools = (show: boolean) => {
@@ -386,27 +324,9 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     appTitle: app.title,
     getCheats: () => (session && !ending ? session.cheats : undefined),
   };
-  const unsubscribeAuto = automation.onChange(applyPadLabels);
-  macroButtons.forEach((button, i) => {
-    button.addEventListener("pointerdown", event => {
-      event.preventDefault();
-      if (!session || preparing || suspended || ending) return;
-      button.classList.add("pressed");
-      automation.runMacro(i);
-    }, { signal: abortController.signal });
-    const release = () => button.classList.remove("pressed");
-    button.addEventListener("pointerup", release, { signal: abortController.signal });
-    button.addEventListener("pointercancel", release, { signal: abortController.signal });
-    button.addEventListener("pointerleave", release, { signal: abortController.signal });
-  });
-  const attachAutomation = () => {
-    const api = cheatContext.getCheats();
-    if (!isHeroesLore3(app.id) || !api || !isHeroesLore3Binary(api) || automation.appId === app.id) return;
-    automation.attach({ appId: app.id, getCheats: cheatContext.getCheats, pressKey });
-  };
   appCheats?.addEventListener("click", () => {
     releaseKeys();
-    getCheatPanel().open(cheatContext);
+    if (allowsCheats(app.id)) getCheatPanel().open(cheatContext);
   }, { signal: abortController.signal });
   if (keypadSheet) {
     keypadSheet.hidden = true;
@@ -711,7 +631,6 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         preparing = false;
         updateControls();
         getCheatPanel().restore(cheatContext);
-        attachAutomation();
         break;
       case "suspended":
         suspended = event.suspended;
@@ -740,7 +659,6 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     updateControls();
     if (!preparing) {
       getCheatPanel().restore(cheatContext);
-      attachAutomation();
     }
   }).catch(finish);
 });
