@@ -4,53 +4,45 @@ import { Hl3QuestResources, isCurrentQuestSnapshot, readHl3Quests, type QuestSna
 
 /** A throttled, read-only HUD. No timers, key injection, save writes or guest-memory writes. */
 export class Hl3QuestGuide {
-  private readonly dock = document.createElement("div");
   private readonly root = document.createElement("section");
   private readonly toggle = document.createElement("button");
   private readonly title = document.createElement("strong");
   private readonly objective = document.createElement("span");
   private readonly direction = document.createElement("span");
   private readonly details = document.createElement("div");
-  private readonly select = document.createElement("select");
   private readonly description = document.createElement("p");
   private readonly marker = document.createElement("div");
   private readonly abort = new AbortController();
   private readonly observer: ResizeObserver;
   private resources?: Hl3QuestResources;
-  private selectedId?: number;
   private snapshot?: QuestSnapshot;
   private nextSample = 0;
   private lastValidSample = -Infinity;
-  private listKey = "";
   private disposed = false;
   private width = 0;
   private height = 0;
 
   constructor(private readonly game: HTMLCanvasElement, private readonly appId: string) {
-    // Reserve one stable row outside the native screen, including during menus/loading.
-    // Hiding the tracker must never resize the game and move its camera or boss health bar.
-    this.dock.className = "hl3-quest-dock";
+    // Float inside the existing stick zone. Never take space from the native screen or pad.
     this.root.className = "hl3-quest-guide";
-    this.root.setAttribute("aria-label", "영웅서기3 퀘스트 안내");
+    this.root.setAttribute("aria-label", "영웅서기3 메인 퀘스트 안내");
     this.root.hidden = true;
     this.toggle.type = "button";
     this.toggle.className = "hl3-quest-toggle";
-    this.toggle.textContent = "퀘스트";
+    this.toggle.textContent = "메인 퀘스트";
     this.toggle.setAttribute("aria-expanded", "false");
     this.title.className = "hl3-quest-title";
     this.objective.className = "hl3-quest-objective";
     this.direction.className = "hl3-quest-direction";
     this.details.className = "hl3-quest-details";
     this.details.hidden = true;
-    this.select.setAttribute("aria-label", "안내할 퀘스트 선택");
-    this.details.append(this.objective, this.select, this.description);
+    this.details.append(this.objective, this.description);
     this.root.append(this.toggle, this.title, this.direction, this.details);
     this.marker.className = "hl3-quest-marker";
     this.marker.hidden = true;
     this.marker.setAttribute("aria-hidden", "true");
     game.parentElement!.append(this.marker);
-    this.dock.append(this.root);
-    game.parentElement!.after(this.dock);
+    document.querySelector(".pad-left")!.append(this.root);
     this.root.dataset.compact = loadGamePreference(appId, "quest_compact", "false");
     const options = { signal: this.abort.signal };
     this.toggle.addEventListener("click", () => {
@@ -60,7 +52,6 @@ export class Hl3QuestGuide {
       else this.root.dataset.compact = "true";
       storeGamePreference(appId, "quest_compact", this.root.dataset.compact);
     }, options);
-    this.select.addEventListener("change", () => { this.selectedId = Number(this.select.value); this.clear(); }, options);
     for (const event of ["pointerdown", "pointerup", "touchstart", "touchend", "keydown", "keyup"]) {
       this.root.addEventListener(event, e => e.stopPropagation(), options);
     }
@@ -93,32 +84,21 @@ export class Hl3QuestGuide {
     if (now < this.nextSample) return;
     this.nextSample = now + 250;
     try {
-      const snapshot = readHl3Quests(this.appId, session.cheats, this.resources, this.selectedId);
+      const snapshot = readHl3Quests(this.appId, session.cheats, this.resources);
       if (!snapshot) { this.retrySample(session, now); return; }
       this.lastValidSample = now;
       this.snapshot = snapshot;
-      this.root.hidden = false;
       const selected = snapshot.selected;
-      this.selectedId = selected?.id;
+      if (!selected) { this.root.hidden = this.marker.hidden = true; return; }
+      this.root.hidden = false;
       const text = (node: HTMLElement, value: string) => { if (node.textContent !== value) node.textContent = value; };
-      text(this.toggle, `퀘스트 ${snapshot.quests.length}`);
-      this.toggle.setAttribute("aria-label", `퀘스트 ${snapshot.quests.length}개 · ${this.details.hidden ? "보기" : "접기"}`);
-      text(this.title, selected?.title ?? "진행 중인 퀘스트 없음");
+      text(this.toggle, "메인 퀘스트");
+      this.toggle.setAttribute("aria-label", `메인 퀘스트 ${snapshot.quests.length}개 · ${this.details.hidden ? "보기" : "접기"}`);
+      text(this.title, selected.title);
       const progress = selected?.progress.map(p => `${Math.min(p.current, p.required)}/${p.required}`).join(" · ");
       text(this.objective, selected ? `${selected.location.replace(/;/g, " · ")}${progress ? `  ${progress}` : ""}` : "");
       text(this.direction, snapshot.guidance);
-      text(this.description, selected?.description ?? "NPC와 대화해 퀘스트를 받아보세요.");
-      const listKey = snapshot.quests.map(q => `${q.id}:${q.title}`).join("|");
-      if (listKey !== this.listKey) {
-        this.listKey = listKey;
-        this.select.replaceChildren(...snapshot.quests.map(q => {
-          const option = document.createElement("option");
-          option.value = String(q.id); option.textContent = q.title;
-          return option;
-        }));
-      }
-      this.select.hidden = !selected;
-      this.select.value = String(selected?.id ?? "");
+      text(this.description, selected.description);
       this.positionMarker();
     } catch { this.retrySample(session, now); }
   }
@@ -165,7 +145,7 @@ export class Hl3QuestGuide {
     this.resources = undefined;
     this.observer.disconnect();
     this.abort.abort();
-    this.dock.remove();
+    this.root.remove();
     this.marker.remove();
   }
 }

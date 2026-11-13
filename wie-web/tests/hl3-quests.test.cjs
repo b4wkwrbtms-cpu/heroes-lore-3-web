@@ -25,10 +25,11 @@ function syntheticSnapshot(name, current, active) {
   return { name, list: hex(list), quest: hex(quest), local: hex(local), counters: hex(counters) };
 }
 const collection = new Uint8Array(91);
-collection[0] = 14; collection[15] = 5; collection[30] = 50; collection[75] = 120; collection[90] = 1;
+collection[0] = 14; collection[15] = 5; collection[30] = 50; collection[75] = 0; collection[90] = 1;
 const fixture = {
   firstText: { 0: textRecord("Quest A", "Test forest;Target"), 1: textRecord("Quest B", "Test port;Target") },
-  scene0: sceneBytes(0, "Test town", [[23, 0, 0, 255, 0, 5, 255, 2, 4, 1, 250, 22, 1, 0, 1]], [[40, 8, 26, 20, 0], [52, 1]]),
+  scene0: sceneBytes(0, "Test town", [[23, 0, 0, 255, 0, 5, 255, 2, 4, 1, 250, 22, 1, 0, 1], [8, 0, 0, 255, 0, 5, 2]],
+    [[40, 8, 26, 20, 0], [52, 1], [40, 9, 20, 20, 0]]),
   scene8: sceneBytes(6, "Test forest 1", [[26, 21, 0, 255, 0, 5, 0], [10, 12, 0, 0, 0, 4, 250, 3, 1, 3]],
     [[40, 0, 23, 1, 1], [35, 255, 1], [35, 255, 1], [34, 0, 0]]),
   collection: Buffer.from(collection).toString("hex"),
@@ -64,9 +65,13 @@ const G = 0x1503ab0, MENU = 0x48000000, MAP = 0x48020000, PLAYER = 0x48021000;
 const bytes = hex => new Uint8Array(Buffer.from(hex, "hex"));
 function archive() {
   const files = new Map();
-  for (const character of [0, 1]) for (const kind of [0, 1]) files.set(`res/dat/quest_${character}${kind}_dat`, bytes(fixture.firstText[character]));
+  for (const character of [0, 1]) {
+    files.set(`res/dat/quest_${character}0_dat`, bytes(fixture.firstText[character] + textRecord("Quest C", "Test port;Target")));
+    files.set(`res/dat/quest_${character}1_dat`, bytes(textRecord("Side quest", "Test forest;Target")));
+  }
   files.set("res/event/e0000_scn", bytes(fixture.scene0));
   files.set("res/event/e0008_scn", bytes(fixture.scene8));
+  files.set("res/event/e0009_scn", bytes(sceneBytes(7, "Test port", [], [])));
   return files;
 }
 function resources() { return new Hl3QuestResources(archive()); }
@@ -143,8 +148,8 @@ test("same-map marker follows a living quest monster, never an unrelated or dead
 
 test("collection goals read the current bag instead of a stale event counter", () => {
   const r = resources(), m = memory(); m.apply(fixture.snapshots[1]);
-  r.texts.set("01", Array.from({ length: 7 }, () => ({ title: "수집", description: "", location: "Test forest;Material", category: "서브" })));
-  m.write(MENU + 0x48, 120, 1); m.write(G + 0x9f98 + 120, 1, 1); m.write(G + 0x9f98 + 121, 1, 1);
+  r.texts.set("00", [{ title: "수집", description: "", location: "Test forest;Material", category: "메인퀘스트" }]);
+  m.write(G + 0xa2b1, 0, 1);
   m.put(G + 0xa2b3, bytes(fixture.collection));
   const item = MENU + 0x394;
   m.write(item + 0x1f, 1, 1); m.write(item + 0x22, 14, 2); m.write(item + 0x24, 5, 2); m.write(item + 0x26, 23, 2);
@@ -188,11 +193,11 @@ function hud(width = 390, height = 520) {
     replaceChildren(...children) { this.children = children; }
     remove() { this.removed = true; }
   }
-  const document = new Element(), parent = new Element(), storage = new Map();
+  const document = new Element(), parent = new Element(), stickZone = new Element(), storage = new Map();
   document.documentElement = { dataset: { screenFit: "contain" } };
   document.createElement = () => new Element();
   document.getElementById = () => undefined;
-  document.querySelector = () => document.modal ? {} : null;
+  document.querySelector = selector => selector === ".pad-left" ? stickZone : document.modal ? {} : null;
   let disconnected = false;
   const preferences = load("game_preferences", { window: { localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) } } });
   const { Hl3QuestGuide } = load("hl3_quest_guide", {
@@ -207,13 +212,13 @@ function hud(width = 390, height = 520) {
   const m = memory(), guide = new Hl3QuestGuide({ parentElement: parent }, "PD119037");
   const session = { cheats: m.api, readResources: () => archive() };
   guide.attach(session);
-  const [marker] = parent.children, [dock] = parent.siblings, [root] = dock.children;
+  const [marker] = parent.children, [root] = stickZone.children;
   const [toggle, title, direction, details] = root.children, [objective] = details.children;
-  return { guide, m, session, marker, dock, root, toggle, title, direction, details, objective, document, storage, disconnected: () => disconnected };
+  return { guide, m, session, marker, root, parent, toggle, title, direction, details, objective, document, storage, disconnected: () => disconnected };
 }
 
 test("HUD stays outside the native screen, throttles full reads, folds and tears down before another game", () => {
-  const { guide, m, session, marker, dock, root, toggle, title, objective, direction, details, document, storage, disconnected } = hud();
+  const { guide, m, session, marker, root, parent, toggle, title, objective, direction, details, document, storage, disconnected } = hud();
   m.apply(fixture.snapshots[1]); m.write(G + 0x9e08, 8, 2); m.write(G + 0x9e1c, 6);
   m.write(0x150db48, 0x00010103);
   guide.sample(session, 0);
@@ -226,8 +231,8 @@ test("HUD stays outside the native screen, throttles full reads, folds and tears
   document.modal = true; guide.sample(session, 251); assert.equal(root.hidden, true); assert.equal(marker.hidden, true);
   document.modal = false; guide.sample(session, 500); assert.equal(root.hidden, false);
   document.hidden = true; document.dispatchEvent(new Event("visibilitychange")); assert.equal(root.hidden, true);
-  assert.equal(dock.hidden, false, "the reserved dock never collapses when its content hides");
-  guide.dispose(); assert.equal(dock.removed, true); assert.equal(marker.removed, true); assert.equal(disconnected(), true);
+  assert.equal(parent.siblings.length, 0, "never add a layout row beside the game canvas");
+  guide.dispose(); assert.equal(root.removed, true); assert.equal(marker.removed, true); assert.equal(disconnected(), true);
   const finalReads = m.reads(); guide.sample(session, 1000); assert.equal(m.reads(), finalReads);
 });
 
@@ -290,15 +295,62 @@ test("exit arrows avoid the native boss HUD and hotkeys with both screen fits an
   assert.equal(marker.hidden, true, "do not flash a marker at the origin before the first resize");
 });
 
-test("selecting another quest clears the previous waypoint even if its next read is incomplete", () => {
-  const { guide, m, session, marker, details } = hud();
-  m.apply(fixture.snapshots.find(s => s.name === "kill5"));
-  m.write(G + 0x9e08, 8, 2); m.write(G + 0x9e1c, 6);
+test("both characters exclude side quests even when they are first, last, or the only accepted quest", () => {
+  for (const character of [0, 1]) {
+    const m = memory(), r = resources(), threshold = [108, 84][character];
+    m.apply(fixture.snapshots[1]); m.write(G + 0xa314, character);
+    // Test the exact native main/sub boundary, with a valid main immediately below it.
+    r.texts.set(`${character}0`, Array.from({ length: threshold / 2 }, (_, i) => ({
+      title: `Main ${i}`, description: "", location: "Test forest", category: "메인퀘스트",
+    })));
+    m.write(G + 0x9f98 + threshold - 2, 1, 1); m.write(G + 0x9f98 + threshold - 1, 1, 1);
+    m.write(G + 0x9f98 + threshold, 1, 1); m.write(G + 0x9f98 + threshold + 1, 1, 1);
+    m.write(MENU + 0x5c, 2, 1);
+    for (const ids of [[threshold, threshold - 2], [threshold - 2, threshold]]) {
+      m.put(MENU + 0x48, ids);
+      const s = readHl3Quests("PD119037", m.api, r);
+      assert.equal(s.quests.length, 1); assert.equal(s.selected.id, threshold - 2);
+    }
+    m.write(MENU + 0x48, threshold, 1); m.write(MENU + 0x5c, 1, 1);
+    const sideOnly = readHl3Quests("PD119037", m.api, r);
+    assert.equal(sideOnly.quests.length, 0); assert.equal(sideOnly.selected, undefined); assert.equal(sideOnly.point, undefined);
+  }
+});
+
+test("main-quest handoff updates its title and exit immediately while side quests stay accepted", () => {
+  const { guide, m, session, marker, root, title, direction } = hud();
+  m.apply(fixture.snapshots[1]); m.write(G + 0x9e98 + 22, 1, 1);
+  m.write(G + 0x9f98 + 108, 1, 1); m.write(G + 0x9f98 + 109, 1, 1);
+  m.put(MENU + 0x48, [108, 0]); m.write(MENU + 0x5c, 2, 1);
+  guide.sample(session, 0);
+  assert.equal(marker.hidden, false); assert.equal(title.textContent, "Quest A");
+  const previousX = marker.style.left;
+  m.write(G + 0x9f98 + 1, 0, 1); // turn in main; side quest remains
+  m.write(MENU + 0x5c, 1, 1);
+  guide.sample(session, 1);
+  assert.equal(root.hidden, true); assert.equal(marker.hidden, true);
+  m.put(MENU + 0x48, [108, 2]); m.write(MENU + 0x5c, 2, 1);
+  m.write(G + 0x9f98 + 2, 1, 1); m.write(G + 0x9f98 + 3, 1, 1);
+  guide.sample(session, 2); // no 250ms wait after an empty main-quest list
+  assert.equal(title.textContent, "Quest C"); assert.match(direction.textContent, /Test port/);
+  assert.equal(marker.hidden, false); assert.notEqual(marker.style.left, previousX);
+  // Accept a main with a lower ID last: follow native acceptance order, not numeric ID.
+  m.write(G + 0x9f98 + 1, 1, 1); m.put(MENU + 0x48, [2, 0, 108]); m.write(MENU + 0x5c, 3, 1);
+  guide.sample(session, 3);
+  assert.equal(title.textContent, "Quest A"); assert.equal(marker.style.left, previousX);
+});
+
+test("a newly accepted main quest clears the old arrow during an incomplete read, then recovers promptly", () => {
+  const { guide, m, session, marker, root, title } = hud();
+  m.apply(fixture.snapshots[1]); m.write(G + 0x9e98 + 22, 1, 1);
   guide.sample(session, 0);
   assert.equal(marker.hidden, false);
-  const select = details.children[1];
-  select.value = "2"; select.dispatchEvent(new Event("change"));
+  // The old quest's flags are still active while the event appends the next main quest.
+  m.put(MENU + 0x48, [0, 2]); m.write(MENU + 0x5c, 2, 1);
+  m.write(G + 0x9f98 + 2, 1, 1); m.write(G + 0x9f98 + 3, 1, 1);
   m.write(G + 0x9c68, 0);
   guide.sample(session, 1);
-  assert.equal(marker.hidden, true);
+  assert.equal(marker.hidden, true); assert.equal(root.hidden, true);
+  m.write(G + 0x9c68, MAP); guide.sample(session, 51);
+  assert.equal(marker.hidden, false); assert.equal(title.textContent, "Quest C");
 });

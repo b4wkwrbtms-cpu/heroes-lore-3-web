@@ -144,6 +144,7 @@ export interface ActiveQuest extends QuestText { id: number; progress: QuestProg
 export interface QuestPoint { x: number; y: number; kind: "exit" | "target"; label: string }
 export interface QuestSnapshot {
   quests: ActiveQuest[];
+  mainQuestIds: number[];
   selected?: ActiveQuest;
   scene: number;
   character: number;
@@ -154,6 +155,22 @@ export interface QuestSnapshot {
   camera: { x: number; y: number };
 }
 
+/** 0x3f470 appends accepted quests and removes turned-in quests, preserving acceptance order. */
+function readMainQuestIds(api: CheatApi, character: number): number[] | undefined {
+  const read = (address: number, width = 4) => api.read(address, width, false);
+  const menu = read(G + 0x9e00);
+  if (!heap(menu) || character > 1) return undefined;
+  const count = read(menu + 0x5c, 1), threshold = read(0x5e46c + character * 4);
+  if (count > 20 || threshold !== [108, 84][character]) return undefined;
+  const ids: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const id = read(menu + 0x48 + i, 1) & ~1;
+    if (id < threshold && !ids.includes(id) &&
+      read(G + 0x9f98 + id, 1) === 1 && read(G + 0x9f98 + id + 1, 1) === 1) ids.push(id);
+  }
+  return ids;
+}
+
 /** A cached presentation is usable only while its native scene and accepted quest still match. */
 export function isCurrentQuestSnapshot(appId: string, api: CheatApi, snapshot: QuestSnapshot): boolean {
   if (!isHeroesLore3(appId) || !isHeroesLore3Binary(api)) return false;
@@ -161,8 +178,9 @@ export function isCurrentQuestSnapshot(appId: string, api: CheatApi, snapshot: Q
     const read = (address: number, width = 4) => api.read(address, width, false);
     if (read(G + 0x50) !== 4 || read(0x0150db48, 1) !== 3 ||
       read(G + 0x9e08, 2) !== snapshot.scene || read(G + 0xa314) !== snapshot.character) return false;
-    const id = snapshot.selected?.id;
-    return id === undefined || (read(G + 0x9f98 + id, 1) === 1 && read(G + 0x9f98 + id + 1, 1) === 1);
+    const ids = readMainQuestIds(api, snapshot.character);
+    return ids !== undefined && ids.length === snapshot.mainQuestIds.length &&
+      ids.every((id, i) => id === snapshot.mainQuestIds[i]);
   } catch { return false; }
 }
 
@@ -192,18 +210,17 @@ function reachable(resources: Hl3QuestResources, start: number, state: QuestCond
   return routes;
 }
 
-/** Read-only projection. Accepted quests, progress and story flags always come from guest memory. */
-export function readHl3Quests(appId: string, api: CheatApi, resources: Hl3QuestResources, selectedId?: number): QuestSnapshot | undefined {
+/** Read-only main-quest projection. Acceptance, progress and story flags come from guest memory. */
+export function readHl3Quests(appId: string, api: CheatApi, resources: Hl3QuestResources): QuestSnapshot | undefined {
   if (!isHeroesLore3(appId) || !isHeroesLore3Binary(api)) return undefined;
   const read = (a: number, width = 4) => api.read(a, width, false);
   // 0x3b1ba reads one byte; the following bytes are independent scene/event flags.
   if (read(G + 0x50) !== 4 || read(0x0150db48, 1) !== 3) return undefined;
   const menu = read(G + 0x9e00), map = read(G + 0x9c68), collider = read(G + 0x9ba4);
   if (!heap(menu) || !heap(map) || !heap(collider)) return undefined;
-  const count = read(menu + 0x5c, 1), character = read(G + 0xa314);
-  if (count > 20 || character > 1) return undefined;
+  const character = read(G + 0xa314), mainQuestIds = readMainQuestIds(api, character);
+  if (!mainQuestIds) return undefined;
   const threshold = read(0x5e46c + character * 4);
-  if (threshold !== [108, 84][character]) return undefined;
   const mapWidth = s16(read(map + 0x50, 2)), mapHeight = s16(read(map + 0x52, 2));
   if (mapWidth <= 0 || mapHeight <= 0 || read(G + 0x44) !== 240 || read(G + 0x48) !== 320) return undefined;
   const quest = api.dump(G + 0x9f98, 256), local = api.dump(G + 0x9e98, 256);
@@ -217,9 +234,9 @@ export function readHl3Quests(appId: string, api: CheatApi, resources: Hl3QuestR
     },
   };
   const quests: ActiveQuest[] = [];
-  for (let i = 0; i < count; i++) {
-    const id = read(menu + 0x48 + i, 1) & ~1, text = resources.text(character, id, threshold);
-    if (!text || quest[id] !== 1 || quest[id + 1] !== 1 || quests.some(q => q.id === id)) continue;
+  for (const id of mainQuestIds) {
+    const text = resources.text(character, id, threshold);
+    if (!text) continue;
     const progress: QuestProgress[] = [];
     const kills = read(G + 0xa2b1, 1), items = read(G + 0xa30d, 1);
     if (kills > 15 || items > 15) return undefined;
@@ -234,14 +251,15 @@ export function readHl3Quests(appId: string, api: CheatApi, resources: Hl3QuestR
   const scene = read(G + 0x9e08, 2), currentScene = resources.scenes.get(scene);
   if (!currentScene || currentScene.map !== read(G + 0x9e1c)) return undefined;
   const player = { x: s16(read(collider + 0x10, 2)), y: s16(read(collider + 0x12, 2)) };
-  const selected = quests.find(q => q.id === selectedId) ?? quests[0];
+  // Follow the latest accepted main quest, not a pinned selection or the highest numeric ID.
+  const selected = quests.find(q => q.id === mainQuestIds.at(-1));
   const snapshot: QuestSnapshot = {
-    quests, selected, scene, character, region: currentScene.name, player,
+    quests, mainQuestIds, selected, scene, character, region: currentScene.name, player,
     camera: {
       x: cameraOffset(read(G + 0x9e6c) | 0, 240, mapWidth),
       y: cameraOffset(read(G + 0x9e70) | 0, 320, mapHeight),
     },
-    guidance: selected ? "퀘스트의 목표 지역을 확인하세요" : "퀘스트를 받으면 여기에 안내가 표시됩니다",
+    guidance: selected ? "메인 퀘스트의 목표 지역을 확인하세요" : "메인 퀘스트를 받으면 여기에 안내가 표시됩니다",
   };
   if (!selected) return snapshot;
   const routes = reachable(resources, scene, state);
