@@ -11,11 +11,9 @@ const textRecord = (title, location) => {
   return Buffer.from([b.length & 255, b.length >> 8, ...b]).toString("hex");
 };
 const groupBytes = rows => [rows.length, ...rows.map(r => r.length), ...rows.flat()];
-const sceneBytes = () => {
-  const triggers = [[26, 21, 0, 255, 0, 5, 0]];
-  const actions = [[40, 0, 23, 1, 1], [35, 255, 1], [35, 255, 1]];
-  return Buffer.from([6, 0, 0, 0, 0, 0, 0, 0, 0, ...groupBytes(triggers), ...groupBytes(actions), ...groupBytes([ascii("Test forest 1")])]).toString("hex");
-};
+const sceneBytes = (map, name, triggers, actions) => Buffer.from([
+  map, 0, 0, 0, 0, 0, 0, 0, 0, ...groupBytes(triggers), ...groupBytes(actions), ...groupBytes([ascii(name)]),
+]).toString("hex");
 function syntheticSnapshot(name, current, active) {
   const list = new Uint8Array(21), quest = new Uint8Array(256), local = new Uint8Array(256), counters = new Uint8Array(76);
   if (active) {
@@ -30,7 +28,10 @@ const collection = new Uint8Array(91);
 collection[0] = 14; collection[15] = 5; collection[30] = 50; collection[75] = 120; collection[90] = 1;
 const fixture = {
   firstText: { 0: textRecord("Quest A", "Test forest;Target"), 1: textRecord("Quest B", "Test port;Target") },
-  scene8: sceneBytes(), collection: Buffer.from(collection).toString("hex"),
+  scene0: sceneBytes(0, "Test town", [[23, 0, 0, 255, 0, 5, 255, 2, 4, 1, 250, 22, 1, 0, 1]], [[40, 8, 26, 20, 0], [52, 1]]),
+  scene8: sceneBytes(6, "Test forest 1", [[26, 21, 0, 255, 0, 5, 0], [10, 12, 0, 0, 0, 4, 250, 3, 1, 3]],
+    [[40, 0, 23, 1, 1], [35, 255, 1], [35, 255, 1], [34, 0, 0]]),
+  collection: Buffer.from(collection).toString("hex"),
   snapshots: [syntheticSnapshot("beforeAccept", 0, false), syntheticSnapshot("accepted", 0, true),
     ...Array.from({ length: 5 }, (_, i) => syntheticSnapshot(`kill${i + 1}`, i + 1, true)), syntheticSnapshot("turnedIn", 0, false)],
   conditions: [
@@ -64,26 +65,18 @@ const bytes = hex => new Uint8Array(Buffer.from(hex, "hex"));
 function archive() {
   const files = new Map();
   for (const character of [0, 1]) for (const kind of [0, 1]) files.set(`res/dat/quest_${character}${kind}_dat`, bytes(fixture.firstText[character]));
+  files.set("res/event/e0000_scn", bytes(fixture.scene0));
   files.set("res/event/e0008_scn", bytes(fixture.scene8));
   return files;
 }
-function resources() {
-  const result = new Hl3QuestResources(archive());
-  result.scenes.set(0, { id: 0, map: 0, name: "Test town", triggers: [
-    new Uint8Array([23, 0, 0, 255, 0, 5, 255, 2, 4, 1, 250, 22, 1, 0, 1]),
-  ], actions: [{ choice: false, commands: [[40, 8, 26, 20, 0]] }, { choice: false, commands: [[52, 1]] }] });
-  // A conditional NPC finish action, to exercise returning after the counter reaches five.
-  result.scenes.get(8).triggers.push(new Uint8Array([10, 12, 0, 0, 0, 4, 250, 3, 1, 3]));
-  result.scenes.get(8).actions.push({ choice: false, commands: [[34, 0, 0]] });
-  return result;
-}
+function resources() { return new Hl3QuestResources(archive()); }
 function memory() {
-  const data = new Map(); let reads = 0;
+  const data = new Map(); let reads = 0, dumps = 0;
   const put = (a, b) => b.forEach((value, i) => data.set(a + i, value));
   const write = (a, value, width = 4) => { for (let i = 0; i < width; i++) data.set(a + i, (value >>> (i * 8)) & 255); };
   const api = {
     read(a, width, bigEndian) { assert.equal(bigEndian, false); assert.ok(width === 1 || width === 2 || width === 4, "reads are 1, 2 or 4 bytes"); reads++; let v = 0; for (let i = 0; i < width; i++) v |= (data.get(a + i) ?? 0) << (8 * i); return v >>> 0; },
-    dump(a, size) { reads++; return Uint8Array.from({ length: size }, (_, i) => data.get(a + i) ?? 0); },
+    dump(a, size) { reads++; dumps++; return Uint8Array.from({ length: size }, (_, i) => data.get(a + i) ?? 0); },
     write() { assert.fail("quest guide must never write memory"); }, writeBytes() { assert.fail("quest guide must never write memory"); },
   };
   write(0x38620, 0x307eb500); write(0x17080, 0xb0a8b5f0);
@@ -96,7 +89,7 @@ function memory() {
     put(MENU + 0x48, bytes(snapshot.list)); put(G + 0x9f98, bytes(snapshot.quest));
     put(G + 0x9e98, bytes(snapshot.local)); put(G + 0xa266, bytes(snapshot.counters));
   };
-  return { api, write, apply, put, reads: () => reads };
+  return { api, write, apply, put, reads: () => reads, dumps: () => dumps };
 }
 
 test("acceptance → five kills → turn-in updates the read-only tracker", () => {
@@ -186,11 +179,12 @@ test("field state reads ignore adjacent guest flags", () => {
   }
 });
 
-test("HUD updates from guest state, throttles reads, supports folding and tears down before another game", () => {
+function hud(width = 390, height = 520) {
   class Element extends EventTarget {
-    hidden = false; textContent = ""; value = ""; dataset = {}; style = {}; children = []; attributes = {};
+    hidden = false; textContent = ""; value = ""; dataset = {}; style = {}; children = []; siblings = []; attributes = {};
     setAttribute(name, value) { this.attributes[name] = value; }
     append(...children) { this.children.push(...children); }
+    after(...siblings) { this.siblings.push(...siblings); }
     replaceChildren(...children) { this.children = children; }
     remove() { this.removed = true; }
   }
@@ -206,18 +200,25 @@ test("HUD updates from guest state, throttles reads, supports folding and tears 
     require: n => n === "./game_preferences" ? preferences : load(n.replace("./", "")),
     ResizeObserver: class {
       constructor(cb) { this.cb = cb; }
-      observe() { this.cb([{ contentRect: { width: 390, height: 520 } }]); }
+      observe() { this.cb([{ contentRect: { width, height } }]); }
       disconnect() { disconnected = true; }
     },
   });
   const m = memory(), guide = new Hl3QuestGuide({ parentElement: parent }, "PD119037");
   const session = { cheats: m.api, readResources: () => archive() };
-  guide.attach(session); m.apply(fixture.snapshots[1]); m.write(G + 0x9e08, 8, 2); m.write(G + 0x9e1c, 6);
+  guide.attach(session);
+  const [marker] = parent.children, [dock] = parent.siblings, [root] = dock.children;
+  const [toggle, title, direction, details] = root.children, [objective] = details.children;
+  return { guide, m, session, marker, dock, root, toggle, title, direction, details, objective, document, storage, disconnected: () => disconnected };
+}
+
+test("HUD stays outside the native screen, throttles full reads, folds and tears down before another game", () => {
+  const { guide, m, session, marker, dock, root, toggle, title, objective, direction, details, document, storage, disconnected } = hud();
+  m.apply(fixture.snapshots[1]); m.write(G + 0x9e08, 8, 2); m.write(G + 0x9e1c, 6);
   m.write(0x150db48, 0x00010103);
   guide.sample(session, 0);
-  const [marker, root] = parent.children, [toggle, title, objective, direction, details] = root.children;
   assert.equal(root.hidden, false); assert.equal(title.textContent, "Quest A"); assert.match(objective.textContent, /0\/5/);
-  const reads = m.reads(); guide.sample(session, 100); assert.equal(m.reads(), reads);
+  const dumps = m.dumps(); guide.sample(session, 100); assert.equal(m.dumps(), dumps, "only cheap context checks run between samples");
   m.apply(fixture.snapshots.find(s => s.name === "kill3")); guide.sample(session, 250); assert.match(objective.textContent, /3\/5/);
   toggle.dispatchEvent(new Event("click")); assert.equal(details.hidden, false); assert.equal(toggle.attributes["aria-expanded"], "true");
   toggle.dispatchEvent(new Event("click")); assert.equal(details.hidden, true); assert.equal(root.dataset.compact, "true");
@@ -225,6 +226,79 @@ test("HUD updates from guest state, throttles reads, supports folding and tears 
   document.modal = true; guide.sample(session, 251); assert.equal(root.hidden, true); assert.equal(marker.hidden, true);
   document.modal = false; guide.sample(session, 500); assert.equal(root.hidden, false);
   document.hidden = true; document.dispatchEvent(new Event("visibilitychange")); assert.equal(root.hidden, true);
-  guide.dispose(); assert.equal(root.removed, true); assert.equal(marker.removed, true); assert.equal(disconnected, true);
+  assert.equal(dock.hidden, false, "the reserved dock never collapses when its content hides");
+  guide.dispose(); assert.equal(dock.removed, true); assert.equal(marker.removed, true); assert.equal(disconnected(), true);
   const finalReads = m.reads(); guide.sample(session, 1000); assert.equal(m.reads(), finalReads);
+});
+
+
+test("one incomplete field sample keeps its waypoint, retries quickly, and expires instead of staying stale", () => {
+  const { guide, m, session, marker, root } = hud();
+  m.apply(fixture.snapshots.find(s => s.name === "kill5"));
+  m.write(G + 0x9e08, 8, 2); m.write(G + 0x9e1c, 6);
+  guide.sample(session, 0);
+  assert.equal(marker.hidden, false);
+  const location = marker.style.left;
+  m.write(G + 0x9c68, 0);
+  guide.sample(session, 250);
+  assert.equal(root.hidden, false); assert.equal(marker.hidden, false);
+  assert.equal(marker.style.left, location);
+  m.write(G + 0x9c68, MAP);
+  guide.sample(session, 300);
+  assert.equal(marker.hidden, false);
+  m.write(G + 0x9c68, 0);
+  guide.sample(session, 550);
+  guide.sample(session, 1100);
+  assert.equal(root.hidden, true); assert.equal(marker.hidden, true);
+});
+
+test("map changes, dialogs, characters and quest turn-in invalidate a waypoint before the next full sample", () => {
+  for (const change of [
+    m => m.write(G + 0x9e08, 9, 2),
+    m => m.write(0x150db48, 4, 1),
+    m => m.write(G + 0xa314, 1),
+    m => m.write(G + 0x9f98 + 1, 0, 1),
+  ]) {
+    const { guide, m, session, marker } = hud();
+    m.apply(fixture.snapshots.find(s => s.name === "kill5"));
+    m.write(G + 0x9e08, 8, 2); m.write(G + 0x9e1c, 6);
+    guide.sample(session, 0);
+    assert.equal(marker.hidden, false);
+    change(m);
+    m.write(G + 0x9c68, 0); // even during a simultaneous partial field update
+    guide.sample(session, 1);
+    assert.equal(marker.hidden, true);
+  }
+});
+
+test("exit arrows avoid the native boss HUD and hotkeys with both screen fits and zero-size layouts", () => {
+  for (const screenFit of ["contain", "fill"]) {
+    const { guide, m, session, marker, document } = hud(393, 460);
+    document.documentElement.dataset.screenFit = screenFit;
+    m.apply(fixture.snapshots[1]); m.write(G + 0x9e98 + 22, 1, 1);
+    guide.sample(session, 0);
+    const sy = screenFit === "fill" ? 460 / 320 : Math.min(393 / 240, 460 / 320);
+    const top = (460 - 320 * sy) / 2;
+    assert.equal(marker.hidden, false);
+    assert.ok(parseFloat(marker.style.top) - 16 >= top + 64 * sy - 0.001);
+    assert.ok(parseFloat(marker.style.top) + 16 <= top + 264 * sy + 0.001);
+    assert.equal(marker.textContent, "➤");
+  }
+  const { guide, m, session, marker } = hud(0, 0);
+  m.apply(fixture.snapshots[1]); m.write(G + 0x9e98 + 22, 1, 1);
+  guide.sample(session, 0);
+  assert.equal(marker.hidden, true, "do not flash a marker at the origin before the first resize");
+});
+
+test("selecting another quest clears the previous waypoint even if its next read is incomplete", () => {
+  const { guide, m, session, marker, details } = hud();
+  m.apply(fixture.snapshots.find(s => s.name === "kill5"));
+  m.write(G + 0x9e08, 8, 2); m.write(G + 0x9e1c, 6);
+  guide.sample(session, 0);
+  assert.equal(marker.hidden, false);
+  const select = details.children[1];
+  select.value = "2"; select.dispatchEvent(new Event("change"));
+  m.write(G + 0x9c68, 0);
+  guide.sample(session, 1);
+  assert.equal(marker.hidden, true);
 });

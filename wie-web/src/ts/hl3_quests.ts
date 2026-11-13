@@ -146,11 +146,24 @@ export interface QuestSnapshot {
   quests: ActiveQuest[];
   selected?: ActiveQuest;
   scene: number;
+  character: number;
   region: string;
   guidance: string;
   point?: QuestPoint;
   player: { x: number; y: number };
   camera: { x: number; y: number };
+}
+
+/** A cached presentation is usable only while its native scene and accepted quest still match. */
+export function isCurrentQuestSnapshot(appId: string, api: CheatApi, snapshot: QuestSnapshot): boolean {
+  if (!isHeroesLore3(appId) || !isHeroesLore3Binary(api)) return false;
+  try {
+    const read = (address: number, width = 4) => api.read(address, width, false);
+    if (read(G + 0x50) !== 4 || read(0x0150db48, 1) !== 3 ||
+      read(G + 0x9e08, 2) !== snapshot.scene || read(G + 0xa314) !== snapshot.character) return false;
+    const id = snapshot.selected?.id;
+    return id === undefined || (read(G + 0x9f98 + id, 1) === 1 && read(G + 0x9f98 + id + 1, 1) === 1);
+  } catch { return false; }
 }
 
 interface Route { scene: QuestScene; first?: QuestPoint; steps: number }
@@ -223,7 +236,7 @@ export function readHl3Quests(appId: string, api: CheatApi, resources: Hl3QuestR
   const player = { x: s16(read(collider + 0x10, 2)), y: s16(read(collider + 0x12, 2)) };
   const selected = quests.find(q => q.id === selectedId) ?? quests[0];
   const snapshot: QuestSnapshot = {
-    quests, selected, scene, region: currentScene.name, player,
+    quests, selected, scene, character, region: currentScene.name, player,
     camera: {
       x: cameraOffset(read(G + 0x9e6c) | 0, 240, mapWidth),
       y: cameraOffset(read(G + 0x9e70) | 0, 320, mapHeight),
