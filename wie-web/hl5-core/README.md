@@ -23,7 +23,7 @@ contains EA Mobile Korea's WIPI-C kernel ("Midas") and the game. This core runs 
 
 - `tweaks.c` — rule changes the player asked for, each checked against the exact instruction words of this
   library build: three times the skill points on level up, twice the experience,
-  the knight walking as fast as the rogue (in the 거창 stance too), extra drops of the best equipment for the hero's class and level from field and story bosses, critical +25
+  the knight walking as fast as the rogue (and at 12 in the 거창 stance), extra drops of the best equipment for the hero's class and level from field and story bosses, critical +25
   for every equipped accessory, hero buffs and SP that do not run out, a free revival on the game-over screen, skill books from the skill master
   for free and learnable at any level, refining for free and at no less than 80% success, and a cash shop that hands out its items (or what its boxes hold) for free, since buying needed EA's servers.
 

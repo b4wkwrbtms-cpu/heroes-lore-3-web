@@ -9,7 +9,7 @@
 //  - the hero's buffs (buff skills, stance and spirit buffs) do not run out
 //  - SP (기력) never runs out: it stays full
 //  - trait points from quests are tripled too
-//  - the knight walks as fast as the rogue (class move speed 6 -> 8), in the 거창 stance too
+//  - the knight walks as fast as the rogue (class move speed 6 -> 8) and moves at 12 in the 거창 stance
 //  - skill books from the skill master cost nothing and can be learned at any level
 //  - refining costs nothing and succeeds at least 80% of the time at every level
 //  - the cash shop gives everything for free (it needed EA's servers): the item, or what a box holds
@@ -266,15 +266,16 @@ static void hle_increase_sp(void) {
   cpu_pc = R[14] & ~1u;
 }
 
-// KNIGHT::Proc, 거창 stance (the knight's skill 9): the hero walks at 2 + step + step / 3 (step from the
-// stance's trait) instead of the class speed. At its bl CHAR::SetMove(speed in r1) the speed is raised to
-// what the knight walks at outside the stance (class speed + bonus), so it is the same in both.
+// KNIGHT::Proc, 거창 stance (the knight's skill 9): the hero moves at 2 + step + step / 3 (step from the
+// stance's trait), 2 without the trait. At its bl CHAR::SetMove(speed in r1) the speed is raised to
+// GEOCHANG_SPEED plus the hero's speed bonus (slows included); a faster speed from the trait is kept.
 #define GEOCHANG_MOVE 0xaaab4u
 #define CHAR_SET_MOVE 0x49c44u
+#define GEOCHANG_SPEED 12
 static void hle_geochang_move(void) {
   u32 hero = R[0];
-  s32 walk = (s8)rd8(hero + 0x11a) + (s16)rd16(hero + 426);
-  if (walk > (s32)R[1]) R[1] = (u32)walk;
+  s32 speed = GEOCHANG_SPEED + (s16)rd16(hero + 426);
+  if (speed > (s32)R[1]) R[1] = (u32)speed;
   R[14] = LOAD_BASE + GEOCHANG_MOVE + 4;
   cpu_pc = LOAD_BASE + CHAR_SET_MOVE;
 }
