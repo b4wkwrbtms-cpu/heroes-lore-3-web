@@ -1,0 +1,334 @@
+<!doctype html><html lang=ko><head><meta charset=UTF-8 name=viewport content="width=device-width,height=device-height,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"><meta name=apple-mobile-web-app-capable content=yes><meta name=apple-mobile-web-app-status-bar-style content=black><meta name=apple-mobile-web-app-title content=영웅서기3><link rel=apple-touch-icon href=assets/img/icon-180.png><link rel=manifest href=manifest.webmanifest><meta name=theme-color content=#1c1628><title data-i18n-text=pageTitle>wie - 피처폰 앱 에뮬레이터 (WIPI/J2ME)</title><meta name=description data-i18n-content=pageDescription content="옛 한국 피처폰의 WIPI/J2ME 앱을 웹 브라우저에서 바로 실행하는 에뮬레이터. 앱을 브라우저에 보관하고 모바일과 PC에서 실행할 수 있습니다."><meta name=keywords data-i18n-content=pageKeywords content="wie, WIPI, J2ME, 피처폰, 피처폰 앱, 에뮬레이터, 모바일 앱, 추억의 앱, 휴대폰 에뮬레이터"><meta property=og:type content=website><meta property=og:title data-i18n-content=socialTitle content="wie - 피처폰 앱 에뮬레이터"><meta property=og:description data-i18n-content=socialDescription content="옛 한국 피처폰의 WIPI/J2ME 앱을 웹 브라우저에서 바로 실행하는 에뮬레이터."><meta property=og:url content=https://wie.dlunch.net/><meta property=og:locale data-i18n-content=socialLocale content=ko_KR><meta name=twitter:card content=summary><link rel=icon type=image/png href=assets/img/favicon.png><link rel=stylesheet href=assets/css/style.00bf9f67.css><script src=assets/js/index.e8c873be.js defer></script><template id=advertising-scripts>
+      
+      <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7838202724819744" crossorigin=anonymous></script>
+      
+      <script>(adsbygoogle=window.adsbygoogle||[]).push({});</script>
+    </template></head><body>
+    <div id=library-view class=library-view>
+      <header class=library-header>
+        <div class=brand-block>
+          <img class=brand-icon src=assets/img/favicon.png alt width=42 height=42>
+          <strong class=brand-name>wie</strong>
+          <h1 data-i18n-text=library>라이브러리</h1>
+        </div>
+        <label class=library-language>
+          <i data-lucide=globe-2 aria-hidden=true></i>
+          <select id=library-language-preference class=language-preference title=언어 data-i18n-title=language aria-label=언어 data-i18n-aria-label=language>
+            <option value=ko>한국어</option>
+            <option value=en>English</option>
+          </select>
+        </label>
+        <div class=library-menu-wrap>
+          <button id=library-menu-toggle class=icon-button type=button title=메뉴 data-i18n-title=menu aria-label=메뉴 data-i18n-aria-label=menu aria-expanded=false>
+            <i data-lucide=ellipsis-vertical></i>
+          </button>
+          <div id=library-menu class=library-menu role=menu>
+            <button id=menu-add-app type=button role=menuitem>
+              <i data-lucide=plus></i>
+              <span data-i18n-text=addApp>앱 추가</span>
+            </button>
+            <button id=menu-manage-apps type=button role=menuitem>
+              <i data-lucide=trash-2></i>
+              <span id=manage-apps-label>앱 삭제</span>
+            </button>
+            <button id=menu-settings type=button role=menuitem>
+              <i data-lucide=settings></i>
+              <span data-i18n-text=settings>설정</span>
+            </button>
+            <button id=menu-help type=button role=menuitem>
+              <i data-lucide=circle-help></i>
+              <span data-i18n-text=help>조작 도움말</span>
+            </button>
+            <a href=https://github.com/dlunch/wie target=_blank rel="noopener noreferrer" role=menuitem data-external-link>
+              
+              <img src=https://cdn.simpleicons.org/github/0f172a alt width=18 height=18>
+              <span>GitHub</span>
+            </a>
+            <a href=https://wie-site.dlunch.net/ target=_blank rel="noopener noreferrer" role=menuitem data-external-link>
+              <i data-lucide=globe-2></i>
+              <span data-i18n-text=projectWebsite>웹사이트</span>
+            </a>
+          </div>
+        </div>
+      </header>
+
+      <main class=library-main>
+        <div id=library-pages class=library-pages aria-live=polite>
+          <p class=library-loading data-i18n-text=libraryLoading>라이브러리를 불러오는 중입니다.</p>
+        </div>
+        <div id=page-indicators class=page-indicators aria-label="라이브러리 페이지" data-i18n-aria-label=libraryPages></div>
+      </main>
+
+      <div class=library-ad>
+        <ins class=adsbygoogle aria-label=광고 data-i18n-aria-label=advertisement style=display:block;width:100%;height:100% data-ad-client=ca-pub-7838202724819744 data-ad-slot=8335895407 data-ad-format=auto data-full-width-responsive=true></ins>
+        <a class=library-sponsor href=https://github.com/sponsors/dlunch target=_blank rel="noopener noreferrer" data-external-link data-i18n-text=supportDevelopment hidden>개발을 후원해 주세요</a>
+      </div>
+    </div>
+
+    <section id=player-view class=player-view hidden>
+      <header class=player-toolbar>
+        <strong id=player-title class=player-title></strong>
+      </header>
+
+      <main class=player-main>
+        <div id=player-output>
+          <div id=player-status class=player-status role=status hidden>
+            <span id=player-status-label data-i18n-text=preparing>실행 준비중</span>
+            <progress aria-labelledby=player-status-label></progress>
+          </div>
+          <button class="softkey softkey-left" data-key=SOFT1 type=button aria-label="왼쪽 소프트키"></button>
+          <button class="softkey softkey-right" data-key=SOFT2 type=button aria-label="오른쪽 소프트키"></button>
+        </div>
+        <p id=player-warning class=player-warning role=status hidden></p>
+
+        <div class="button-container pad" aria-label="게임 컨트롤러">
+          <div class=pad-tools-bar>
+            <p id=pad-tools class=pad-tools hidden>
+              <button id=back-to-library class="icon-button pad-tool" type=button title=라이브러리 data-i18n-title=library aria-label="라이브러리로 돌아가기" data-i18n-aria-label=backToLibrary>
+                <i data-lucide=arrow-left></i>
+              </button>
+              <button id=app-settings class="icon-button pad-tool" type=button title=설정 data-i18n-title=settings aria-label=설정 data-i18n-aria-label=settings>
+                <i data-lucide=settings></i>
+              </button>
+              <button id=app-cheats class="icon-button pad-tool pad-tool-cheat" type=button title=치트 aria-label=치트>
+                <i data-lucide=sparkles></i>
+              </button>
+              <button id=keypad-toggle class="icon-button pad-tool" type=button title="전체 키패드" aria-label="전체 키패드">
+                <i data-lucide=keyboard></i>
+              </button>
+            </p>
+            <p class=pad-utils>
+              <button class="key key-util" data-key=*><i data-lucide=map></i><span>미니맵</span></button>
+              <button class="key key-util" data-key=CALL><i data-lucide=save></i><span>퀵세이브</span></button>
+              <button class="key key-util key-clr key-menu" data-key=CLR><b>메뉴</b><span>CLR</span></button>
+              <button id=pad-more class="icon-button pad-tool pad-tool-more" type=button title=메뉴 aria-label="설정·치트·나가기 메뉴" aria-expanded=false>
+                <i data-lucide=ellipsis></i>
+              </button>
+            </p>
+          </div>
+          
+          <div class=pad-dpad aria-label=방향키>
+            <button class="key key-dpad dpad-up" data-key=UP data-raw aria-label=위>▲</button>
+            <button class="key key-dpad dpad-left" data-key=LEFT data-raw aria-label=왼쪽>◀</button>
+            <button class="key key-dpad dpad-ok" data-key=OK data-raw aria-label=확인>OK</button>
+            <button class="key key-dpad dpad-right" data-key=RIGHT data-raw aria-label=오른쪽>▶</button>
+            <button class="key key-dpad dpad-down" data-key=DOWN data-raw aria-label=아래>▼</button>
+          </div>
+          
+          <div class="pad-left joystick-zone">
+            <div id=joystick class=joystick role=application aria-label=조이스틱>
+              <span class="joystick-arrow joystick-arrow-up" aria-hidden=true></span>
+              <span class="joystick-arrow joystick-arrow-down" aria-hidden=true></span>
+              <span class="joystick-arrow joystick-arrow-left" aria-hidden=true></span>
+              <span class="joystick-arrow joystick-arrow-right" aria-hidden=true></span>
+              <div class=joystick-knob></div>
+            </div>
+          </div>
+          
+          <div class="pad-right action-cluster">
+            <button class="key key-ring key-slot ring-o3" data-key=#><b>#</b><span>단축·스킵</span></button>
+            <button class="key key-ring key-slot ring-o2" data-key=0><b>0</b><span>단축</span></button>
+            <button class="key key-ring key-slot ring-o1" data-key=9><b>9</b><span>단축</span></button>
+            <button class="key key-ring key-slot ring-i3" data-key=3><b>3</b><span>단축</span></button>
+            <button class="key key-ring key-slot ring-i2" data-key=1><b>1</b><span>단축</span></button>
+            <button class="key key-ring key-sub ring-i1" data-key=7><b>보조</b><span>7</span></button>
+            <button class="key key-ring key-extra" data-key=* data-raw><b>*</b><span>단축</span></button>
+            <button class="key key-ring key-extra key-clr" data-key=CLR data-raw><b>취소</b><span>메뉴</span></button>
+            
+            <button class="key key-ring key-dodge" data-key=HL4_DODGE><b>회피</b><span>특수이동</span></button>
+            <button class="key key-ring key-ok key-attack" data-key=OK><b>공격</b><span>확인 · 대화</span></button>
+          </div>
+        </div>
+
+        <div id=keypad-sheet class=keypad-sheet hidden>
+          <div class=keypad-sheet-head>
+            <span>전체 키패드</span>
+            <button id=keypad-sheet-close class="icon-button pad-tool" type=button title=닫기 aria-label="전체 키패드 닫기">
+              <i data-lucide=x></i>
+            </button>
+          </div>
+          <div class=numpad>
+            <button class="key key-soft" data-key=SOFT1>메뉴 (L)</button>
+            <button class="key key-soft" data-key=SOFT2>취소 (R)</button>
+            <button class=key data-key=1>1</button>
+            <button class=key data-key=2>2</button>
+            <button class=key data-key=3>3</button>
+            <button class=key data-key=4>4</button>
+            <button class=key data-key=5>5</button>
+            <button class=key data-key=6>6</button>
+            <button class=key data-key=7>7</button>
+            <button class=key data-key=8>8</button>
+            <button class=key data-key=9>9</button>
+            <button class=key data-key=*>*</button>
+            <button class=key data-key=0>0</button>
+            <button class=key data-key=#>#</button>
+          </div>
+        </div>
+      </main>
+    </section>
+
+    <dialog id=settings-dialog class=app-dialog>
+      <form method=dialog>
+        <header class=dialog-header>
+          <h2 data-i18n-text=settings>설정</h2>
+          <button class="icon-button dialog-close" value=cancel title=닫기 data-i18n-title=close aria-label=닫기 data-i18n-aria-label=close>
+            <i data-lucide=x></i>
+          </button>
+        </header>
+        <div class=settings-fields>
+          <label class=language-setting>
+            <i data-lucide=languages></i>
+            <span data-i18n-text=language>언어</span>
+            <select id=language-preference class=language-preference>
+              <option value=ko>한국어</option>
+              <option value=en>English</option>
+            </select>
+          </label>
+          <label>
+            <i data-lucide=maximize></i>
+            <span>화면</span>
+            <select id=screen-fit class=screen-fit>
+              <option value=contain>원래 비율 (권장)</option>
+              <option value=fill>꽉 채우기 (늘어남)</option>
+            </select>
+          </label>
+          <label>
+            <i data-lucide=sparkles></i>
+            <span>화질</span>
+            <select id=screen-quality class=screen-fit>
+              <option value=hq>고화질 (화면 크기에 맞춰 선명하게)</option>
+              <option value=pixel>원본 픽셀 (선명)</option>
+            </select>
+          </label>
+
+          <label id=motion-setting hidden>
+            <i data-lucide=film></i>
+            <span>움직임</span>
+            <select id=motion class=screen-fit>
+              <option value=smooth>부드럽게 (중간 프레임 추가)</option>
+              <option value=original>원본 프레임만</option>
+            </select>
+          </label>
+          <label id=hit-effects-setting hidden>
+            <i data-lucide=sparkles></i>
+            <span>타격 효과</span>
+            <select id=hit-effects class=screen-fit>
+              <option value=on>강조 (명중 시 빛·파편)</option>
+              <option value=off>원본 효과만</option>
+            </select>
+          </label>
+          <label>
+            <i data-lucide=radio></i>
+            <span>BGM 음원</span>
+            <select id=bgm-engine class=screen-fit>
+              <option value=fm>MA-3 FM (원본 음색)</option>
+              <option value=gm>GM 사운드폰트</option>
+            </select>
+          </label>
+          <label>
+            <i data-lucide=music-2></i>
+            <span>배경음악</span>
+            <input type=range id=volume-midi min=0 max=100 value=50>
+          </label>
+          <label>
+            <i data-lucide=volume-2></i>
+            <span data-i18n-text=soundEffects>효과음</span>
+            <input type=range id=volume-pcm min=0 max=100 value=50>
+          </label>
+        </div>
+        <p class=settings-credits>This project is based on <a href=https://github.com/dlunch/wie target=_blank rel="noopener noreferrer" data-external-link>wie</a>, created by Inseok Lee.</p>
+      </form>
+    </dialog>
+
+    <dialog id=welcome-dialog class=app-dialog>
+      <form method=dialog>
+        <header class=dialog-header>
+          <h2 data-i18n-text=welcome>wie에 오신 것을 환영합니다</h2>
+        </header>
+        <p data-i18n-text=welcomeDescription>wie는 WIPI와 J2ME 앱을 이 기기에서 보관하고 실행할 수 있는 에뮬레이터입니다.</p>
+        <ol class=welcome-steps>
+          <li><strong data-i18n-text=addApp>앱 추가</strong><span data-i18n-text=welcomeAdd>WIPI ZIP 또는 J2ME JAR 파일을 선택합니다.</span></li>
+          <li><strong data-i18n-text=launchApp>앱 실행</strong><span data-i18n-text=welcomeLaunch>라이브러리에서 추가된 앱 아이콘을 누릅니다.</span></li>
+          <li><strong data-i18n-text=manageApps>앱 관리</strong><span data-i18n-text=welcomeManage>오른쪽 위 메뉴에서 앱을 삭제하거나 설정을 변경합니다.</span></li>
+        </ol>
+        <footer class="dialog-actions welcome-actions">
+          <button class=secondary-command value=cancel data-i18n-text=close>닫기</button>
+          <button id=dismiss-welcome data-i18n-text=dismissWelcome class=primary-command type=button>닫고 더 이상 보지 않기</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id=import-dialog class=app-dialog>
+      <form method=dialog>
+        <header class=dialog-header>
+          <h2 data-i18n-text=addApp>앱 추가</h2>
+          <button class="icon-button dialog-close" value=cancel title=닫기 data-i18n-title=close aria-label=닫기 data-i18n-aria-label=close>
+            <i data-lucide=x></i>
+          </button>
+        </header>
+        <p data-i18n-text=chooseArchiveDescription>WIPI ZIP 또는 J2ME JAR 파일을 선택하거나 여기에 끌어다 놓으세요. 영웅서기 3 전달용 v8은 첫 실행 때 기존 진행을 한 번 초기화합니다. 이후의 새 저장과 다른 게임의 저장 기록은 유지됩니다.</p>
+        <button id=choose-archive class=primary-command type=button autofocus>
+          <i data-lucide=upload></i>
+          <span data-i18n-text=chooseFile>파일 선택</span>
+        </button>
+        <p id=import-status class=dialog-status role=status aria-live=polite></p>
+      </form>
+    </dialog>
+    <input id=archive-input type=file accept=.zip,.jar,application/zip,application/java-archive multiple hidden>
+
+    <dialog id=delete-dialog class=app-dialog>
+      <form method=dialog>
+        <header class=dialog-header>
+          <h2 data-i18n-text=deleteApps>앱 삭제</h2>
+          <button class="icon-button dialog-close" value=cancel title=닫기 data-i18n-title=close aria-label=닫기 data-i18n-aria-label=close>
+            <i data-lucide=x></i>
+          </button>
+        </header>
+        <p><strong id=delete-app-title></strong><br><span data-i18n-text=deleteConfirmation>이 앱을 라이브러리에서 삭제합니다.</span></p>
+        <footer class=dialog-actions>
+          <button class=secondary-command value=cancel data-i18n-text=cancel>취소</button>
+          <button id=confirm-delete data-i18n-text=delete class=danger-command type=button>삭제</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <dialog id=cheat-dialog class="app-dialog cheat-dialog">
+      <form method=dialog>
+        <header class=dialog-header>
+          <h2 id=cheat-title>치트</h2>
+          <button class="icon-button dialog-close" value=cancel title=닫기 aria-label=닫기>
+            <i data-lucide=x></i>
+          </button>
+        </header>
+        <div id=cheat-body class=cheat-body></div>
+      </form>
+    </dialog>
+
+    <dialog id=help-dialog class="app-dialog help-dialog">
+      <form method=dialog>
+        <header class=dialog-header>
+          <h2 data-i18n-text=help>조작 도움말</h2>
+          <button class="icon-button dialog-close" value=cancel title=닫기 data-i18n-title=close aria-label=닫기 data-i18n-aria-label=close>
+            <i data-lucide=x></i>
+          </button>
+        </header>
+        <table>
+          <tbody>
+            <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd><td data-i18n-text=numbers123>숫자 1, 2, 3</tr>
+            <tr><td><kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd><td data-i18n-text=numbers456>숫자 4, 5, 6</tr>
+            <tr><td><kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd><td data-i18n-text=numbers789>숫자 7, 8, 9</tr>
+            <tr><td><kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd><td>*, 0, #</tr>
+            <tr><td data-i18n-text=arrowKeys>방향키<td data-i18n-text=move>이동</tr>
+            <tr><td><kbd>Enter</kbd> / <kbd>Space</kbd><td>OK</tr>
+            <tr><td><kbd>Backspace</kbd><td>CLR</tr>
+          </tbody>
+        </table>
+        <footer class=dialog-actions>
+          <label><input id=hide-help type=checkbox> <span data-i18n-text=hideHelp>다시 보지 않기</span></label>
+          <button class=secondary-command value=cancel data-i18n-text=close>닫기</button>
+        </footer>
+      </form>
+    </dialog>
+  
+
+</body></html>
