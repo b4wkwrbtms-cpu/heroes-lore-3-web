@@ -6,6 +6,7 @@ import { allowsCheats, clearRetiredCheats } from "./cheat_policy";
 import { getCheatPanel } from "./cheats";
 import { loadGamePreference } from "./game_preferences";
 import { isHeroesLore3 } from "./hl3";
+import { Hl3ComboTiming } from "./hl3_combo";
 import { Hl3Feedback } from "./hl3_feedback";
 import { Hl3MotionGame } from "./hl3_motion";
 import { Hl3QuestGuide } from "./hl3_quest_guide";
@@ -116,6 +117,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   const inputs = new Map<string, string>();
   let session: PlayerSession | undefined;
   let motion: { dispose(): void } | undefined;
+  let combo: Hl3ComboTiming | undefined;
   let preparing = true;
   let suspended = false;
   let ending = false;
@@ -142,6 +144,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     screenRatioObserver.disconnect();
     feedback?.dispose();
     motion?.dispose();
+    combo = undefined;
     slotIcons?.dispose();
     questGuide?.dispose();
     hunt?.stop();
@@ -191,6 +194,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       const pressed = [...inputs.values()].includes(key);
       inputs.set(source, key);
       if (!pressed) {
+        combo?.press(key);
         void session.key(key, true).catch(finish);
       }
     }
@@ -625,6 +629,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
       case "frame":
         if (!preparing && !suspended) {
           feedback?.sample(session?.cheats);
+          combo?.sample(performance.now());
           slotIcons?.update();
           openStyles?.();
           questGuide?.sample(session);
@@ -660,6 +665,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   void start.then(started => {
     session = started;
     if (started?.guest && isHeroesLore3(app.id)) motion = new InBetweenFrames(started, gameCanvas, new Hl3MotionGame(), app.id);
+    if (started && isHeroesLore3(app.id)) combo = new Hl3ComboTiming(started);
     questGuide?.attach(started);
     updateControls();
     if (!preparing) {
