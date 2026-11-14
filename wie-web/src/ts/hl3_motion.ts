@@ -14,6 +14,14 @@ import type { MotionGame, MotionWrite } from "./motion";
  * and no dialog is open (state + 0x9c44), the quick slots (0x54d28). The hero, NPCs and monsters are all such
  * sprites. Besides the screen, drawing only changes a few counters in .bss (the HUD's blink, a screen flash) and
  * each sprite's on-screen byte.
+ *
+ * The hero's picture is put together from parts (0x4a6e8 → 0x1b9f0). The class's animation set (the pointer at
+ * state + 0x9c0c, 0x28 bytes a class; class s8 at state + 0xa8) has per animation (s8 at state + 0x9b8d, 0x4b8
+ * bytes each from set + 0x18), direction (u8 at state + 0x9b8c, from 1) and frame (s16 at state + 0x9ba0) a record
+ * at [animation + 8 + 4 × (50 × direction + frame)] + [set + 0x20]: a count, then for each part a byte of layer
+ * (bits 0-4: head, body, hands, legs, slash, weapon, hair), flip (bits 5-6) and "transformed" (bit 7), the picture's
+ * number in the layer, x and y (s8, from the hero's position) and, when transformed, x scale, y scale, rotation,
+ * opacity and a flags byte. 0x7f instead of the first byte is an empty part of four bytes.
  */
 const STATE = 0x01503ab0;
 const DRAW_HANDLER = 0x01503aa4;
@@ -35,11 +43,31 @@ const MAX_SPRITES = 400;
 /** Anything that moved further than this in one game frame jumped (a warp, a new map): it is not moved gradually. */
 const NEAR = 48;
 
+/** The hero's animation: class, set table, animation, direction, frame. */
+const HERO_CLASS = STATE + 0xa8;
+const HERO_SETS = STATE + 0x9c0c;
+const HERO_ANIMATION = STATE + 0x9b8d;
+const HERO_DIRECTION = STATE + 0x9b8c;
+const HERO_FRAME = STATE + 0x9ba0;
+const MAX_PARTS = 32;
+/** A full turn of a part's rotation byte. */
+const TURN = 180;
+
 const heap = (p: number): boolean => p >= 0x40000000 && p < 0x50000000;
 const signed16 = (n: number): number => (n << 16) >> 16;
 /** Rounds the same way in both directions, so a camera and a sprite moving in step stay in step. */
 const between = (from: number, to: number, frac: number): number => from + Math.sign(to - from) * Math.floor(Math.abs(to - from) * frac + 0.5);
 const near = (a: number, b: number): boolean => Math.abs(a - b) <= NEAR;
+
+/** One part of the hero's picture in a frame's record. */
+interface Part {
+  /** Layer, picture and flip: the same piece of drawing in another frame has the same. */
+  piece: string;
+  /** Address of its x byte; y follows, then for a transformed part x scale, y scale, rotation and opacity. */
+  at: number;
+  /** x, y and, for a transformed part, x scale, y scale, rotation, opacity. */
+  values: number[];
+}
 
 export interface Hl3Motion {
   map: number;
@@ -47,6 +75,8 @@ export interface Hl3Motion {
   camera: [number, number];
   /** Sprite address → its map position. */
   sprites: Map<number, [number, number]>;
+  /** The record of the hero's frame and its parts; undefined when it cannot be read. */
+  pose?: { record: number; parts: Part[] };
 }
 
 export class Hl3MotionGame implements MotionGame<Hl3Motion> {
@@ -70,7 +100,32 @@ export class Hl3MotionGame implements MotionGame<Hl3Motion> {
         sprites.set(sprite, [signed16(read(sprite + 0x10, 2)), signed16(read(sprite + 0x12, 2))]);
       }
     }
-    return { map, camera, sprites };
+    return { map, camera, sprites, pose: this.pose(api) };
+  }
+
+  private pose(api: CheatApi): Hl3Motion["pose"] {
+    const read = (address: number, width = 4) => api.read(address, width, false);
+    const signed8 = (address: number) => (read(address, 1) << 24) >> 24;
+    const set = read(HERO_SETS) + 0x28 * signed8(HERO_CLASS);
+    const direction = read(HERO_DIRECTION, 1) - 1, frame = signed16(read(HERO_FRAME, 2));
+    if (!heap(set) || direction < 0 || direction > 3 || frame < 0 || frame >= 50) return undefined;
+    const animation = read(set + 0x18) + 0x4b8 * signed8(HERO_ANIMATION);
+    if (!heap(animation)) return undefined;
+    const record = read(animation + 8 + 4 * (50 * direction + frame)) + read(set + 0x20);
+    const count = heap(record) ? signed8(record) : 0;
+    if (count <= 0 || count > MAX_PARTS) return undefined;
+    const parts: Part[] = [];
+    let at = record + 1;
+    for (let i = 0; i < count; i++) {
+      const first = read(at, 1);
+      if (first === 0x7f) { at += 4; continue; }
+      const transformed = (first & 0x80) !== 0;
+      const values = [signed8(at + 2), signed8(at + 3)];
+      if (transformed) for (let k = 4; k < 8; k++) values.push(read(at + k, 1));
+      parts.push({ piece: `${first & 0x7f}:${read(at + 1, 1)}`, at: at + 2, values });
+      at += transformed ? 9 : 4;
+    }
+    return { record, parts };
   }
 
   place(prev: Hl3Motion, cur: Hl3Motion, frac: number): MotionWrite[] {
@@ -86,6 +141,25 @@ export class Hl3MotionGame implements MotionGame<Hl3Motion> {
       if (!before || !near(before[0], x) || !near(before[1], y)) continue;
       put(sprite + 0x10, 2, before[0], x);
       put(sprite + 0x12, 2, before[1], y);
+    }
+    if (prev.pose && cur.pose && prev.pose.record !== cur.pose.record) {
+      // Each piece of this frame that the frame before also had (the nth of its kind) starts where it was there.
+      const before = new Map<string, Part[]>();
+      for (const part of prev.pose.parts) before.set(part.piece, [...(before.get(part.piece) ?? []), part]);
+      for (const part of cur.pose.parts) {
+        const from = before.get(part.piece)?.shift();
+        if (!from) continue;
+        part.values.forEach((to, index) => {
+          let start = from.values[index];
+          // A piece not transformed in one of the frames is there at full size, unturned and opaque.
+          if (start === undefined) start = index === 4 ? to : index === 5 ? 255 : 25;
+          // The rotation goes the short way round.
+          if (index === 4 && Math.abs(to - start) > TURN / 2) start += to > start ? TURN : -TURN;
+          if (start === to) return;
+          const value = index === 4 ? (between(start, to, frac) + TURN) % TURN : between(start, to, frac);
+          writes.push({ address: part.at + index, width: 1, value: value & 0xff });
+        });
+      }
     }
     return writes;
   }

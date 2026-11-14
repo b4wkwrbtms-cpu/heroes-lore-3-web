@@ -118,6 +118,39 @@ test("영웅서기3: an in-between drawing runs the field's drawing steps withou
   assert.deepEqual([m.read(HERO + 0x22, 1), m.read(NPC + 0x22, 1)], [1, 0]);
 });
 
+test("영웅서기3: the hero's parts start each frame where the same piece was in the frame before", () => {
+  const m = hl3Field(), game = new Hl3MotionGame();
+  const SETS = 0x48070000, ANIMATION = 0x48071000, RECORDS = 0x48072000;
+  // Class 1's set; animation 2, facing direction 1 (stored as 2), frames 0 and 1.
+  m.write(STATE + 0xa8, 1, 1); m.write(STATE + 0x9c0c, SETS - 0x28); m.write(SETS + 0x18, ANIMATION - 2 * 0x4b8); m.write(SETS + 0x20, RECORDS);
+  m.write(STATE + 0x9b8d, 2, 1); m.write(STATE + 0x9b8c, 2, 1);
+  m.write(ANIMATION + 8 + 4 * 50, 0x00); m.write(ANIMATION + 8 + 4 * 51, 0x40);
+  const record = (at, bytes) => bytes.forEach((b, i) => m.write(RECORDS + at + i, b & 0xff, 1));
+  // Frame 0: body, a dagger (layer 5, picture 2) turned to 170 at full size, an empty part, a hand.
+  record(0x00, [4, 1, 0, 2, -12, 0x85, 2, -15, -20, 25, 25, 170, 255, 1, 0x7f, 0, 0, 0, 2, 6, -5, -18]);
+  // Frame 1: the same body lower, the dagger across at 10 and larger, a slash that is new, another hand picture.
+  record(0x40, [4, 1, 0, 2, -8, 0x85, 2, 19, -10, 35, 25, 10, 255, 1, 0x84, 9, 0, -23, 50, 37, 0, 255, 28, 2, 7, 8, -18]);
+
+  m.write(STATE + 0x9ba0, 0, 2);
+  const prev = game.read(m.api);
+  assert.equal(prev.pose.parts.length, 3, "the empty part is skipped");
+  assert.equal(game.place(prev, game.read(m.api), 0.5).length, 0, "the same frame again");
+  m.write(STATE + 0x9ba0, 1, 2);
+  const cur = game.read(m.api);
+  const writes = Array.from(game.place(prev, cur, 0.5), w => [w.address - RECORDS - 0x40, w.width, w.value]);
+  assert.deepEqual(writes, [
+    [4, 1, (-10) & 0xff], // body y −12 → −8
+    [7, 1, 2], [8, 1, (-15) & 0xff], // dagger x −15 → 19, y −20 → −10
+    [9, 1, 30], // its x scale 25 → 35
+    [11, 1, 0], // its rotation 170 → 10 the short way, through 180 = 0
+  ]);
+  assert.deepEqual(Array.from(game.place(prev, cur, 0.25), w => w.value).slice(-1), [175]);
+
+  // Unreadable animation data: the pose is left alone.
+  m.write(STATE + 0x9b8c, 0, 1);
+  assert.equal(game.read(m.api).pose, undefined);
+});
+
 /** A page with a game canvas; `pictures` lists what was put on the screen: a held game frame or an in-between drawing. */
 function player(stored) {
   const pictures = [];
