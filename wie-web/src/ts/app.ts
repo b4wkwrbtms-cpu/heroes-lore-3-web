@@ -6,6 +6,7 @@ import { allowsCheats, clearRetiredCheats } from "./cheat_policy";
 import { getCheatPanel } from "./cheats";
 import { loadGamePreference } from "./game_preferences";
 import { isHeroesLore3 } from "./hl3";
+import { Hl3MagicCircles } from "./hl3_circles";
 import { Hl3ComboTiming } from "./hl3_combo";
 import { Hl3Feedback } from "./hl3_feedback";
 import { Hl3MotionGame } from "./hl3_motion";
@@ -120,6 +121,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   let motion: { dispose(): void } | undefined;
   let combo: Hl3ComboTiming | undefined;
   let numbers: Hl3DamageNumbers | undefined;
+  let circles: Hl3MagicCircles | undefined;
   let preparing = true;
   let suspended = false;
   let ending = false;
@@ -148,6 +150,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     motion?.dispose();
     combo = undefined;
     numbers = undefined;
+    circles = undefined;
     slotIcons?.dispose();
     questGuide?.dispose();
     hunt?.stop();
@@ -634,6 +637,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
           feedback?.sample(session?.cheats);
           combo?.sample(performance.now());
           numbers?.sample(session?.cheats, performance.now());
+          circles?.sample(session?.cheats);
           slotIcons?.update();
           openStyles?.();
           questGuide?.sample(session);
@@ -671,6 +675,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     if (started?.guest && isHeroesLore3(app.id)) motion = new InBetweenFrames(started, gameCanvas, new Hl3MotionGame(), app.id);
     if (started && isHeroesLore3(app.id)) combo = new Hl3ComboTiming(started);
     if (started && isHeroesLore3(app.id)) numbers = new Hl3DamageNumbers();
+    if (started && isHeroesLore3(app.id)) circles = new Hl3MagicCircles();
     questGuide?.attach(started);
     updateControls();
     if (!preparing) {
