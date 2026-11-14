@@ -52,6 +52,17 @@ pub trait Emulator {
     fn write_memory(&mut self, _address: u32, _data: &[u8]) -> Result<()> {
         Err(WieError::Unimplemented(String::from("write_memory")))
     }
+
+    /// Whether the guest is between its callbacks: every task is asleep. False when unsupported.
+    fn is_idle(&self) -> bool {
+        false
+    }
+
+    /// Runs the guest function at `address` to its end on a stack of its own, without running the
+    /// guest's tasks, and returns its result register.
+    fn call_function(&mut self, _address: u32, _params: &[u32]) -> Result<u32> {
+        Err(WieError::Unimplemented(String::from("call_function")))
+    }
 }
 
 pub struct ProfileSample {

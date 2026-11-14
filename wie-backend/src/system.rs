@@ -3,6 +3,7 @@ mod event_queue;
 mod file_system;
 
 use alloc::{borrow::ToOwned, boxed::Box, string::String, sync::Arc};
+use core::{future::Future, pin::Pin, task::Poll};
 
 use spin::{RwLock, RwLockWriteGuard};
 
@@ -76,6 +77,16 @@ impl System {
 
     pub fn current_task_id(&self) -> u64 {
         self.executor.current_task_id()
+    }
+
+    /// Whether every task is asleep, so the guest is between its callbacks.
+    pub fn is_idle(&self) -> bool {
+        self.executor.is_idle()
+    }
+
+    /// Polls `task` once outside the scheduled tasks, see `Executor::poll_alone`.
+    pub fn poll_alone(&self, task: Pin<&mut (dyn Future<Output = Result<()>> + Send)>) -> Poll<Result<()>> {
+        self.executor.poll_alone(task)
     }
 
     pub fn yield_now(&self) -> YieldFuture {

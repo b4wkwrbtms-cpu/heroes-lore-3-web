@@ -1,15 +1,14 @@
-name: Build & Deploy (GitHub Pages)
+name: Interp CI (temporary)
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches: [interp-ci]
 
 permissions:
   contents: write
 
 concurrency:
-  group: pages
+  group: interp-ci
   cancel-in-progress: true
 
 jobs:
@@ -53,5 +52,12 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: wie-web/dist
-          publish_branch: gh-pages
+          publish_branch: interp-dist
           force_orphan: true
+
+      - name: Format check
+        run: cargo fmt --check
+      - name: Tests (wie-backend)
+        run: cargo test -p wie-backend
+      - name: Clippy (changed crates)
+        run: cargo clippy -p wie-backend -p wie-lgt --all-targets

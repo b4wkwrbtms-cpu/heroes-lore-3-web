@@ -6,6 +6,7 @@ use alloc::{
     collections::BTreeMap,
     format,
     string::{String, ToString},
+    sync::Arc,
     vec::Vec,
 };
 
@@ -15,8 +16,9 @@ use jvm::{
     JavaError,
     runtime::{JavaIoInputStream, JavaLangClassLoader},
 };
+use spin::Mutex;
 
-use wie_backend::{Emulator, Event, Options, Platform, System, TaskRunner, extract_zip};
+use wie_backend::{Emulator, Event, Options, Platform, System, TaskRunner, YieldFuture, extract_zip};
 use wie_core_arm::{Allocator, ArmCore};
 use wie_jvm_support::JvmSupport;
 use wie_util::{ByteRead, ByteWrite, Result, WieError, write_generic};
@@ -49,9 +51,46 @@ impl TaskRunner for LgtTaskRunner {
     }
 }
 
+/// Polls a host call may take before it is given up: far more than a frame's drawing needs.
+const HOST_CALL_POLLS: usize = 100_000;
+
+type HostCallRequest = Arc<Mutex<Option<(u32, Vec<u32>)>>>;
+type HostCallResponse = Arc<Mutex<Option<u32>>>;
+
+/// A guest thread outside the scheduled tasks that runs one guest function per request.
+struct HostCallThread {
+    request: HostCallRequest,
+    response: HostCallResponse,
+    thread: Pin<Box<dyn Future<Output = Result<()>> + Send>>,
+}
+
+impl HostCallThread {
+    fn new(core: &ArmCore) -> Self {
+        let request = HostCallRequest::default();
+        let response = HostCallResponse::default();
+        let runner = LgtTaskRunner { core: core.clone() };
+        let serve = Self::serve(core.clone(), request.clone(), response.clone());
+        let thread = Box::pin(async move { runner.run(Box::pin(serve)).await });
+
+        Self { request, response, thread }
+    }
+
+    async fn serve(mut core: ArmCore, request: HostCallRequest, response: HostCallResponse) -> Result<()> {
+        loop {
+            let call = request.lock().take();
+            if let Some((address, params)) = call {
+                let result: u32 = core.run_function(address, &params).await?;
+                *response.lock() = Some(result);
+            }
+            YieldFuture::new().await;
+        }
+    }
+}
+
 pub struct LgtEmulator {
     core: ArmCore,
     system: System,
+    host_calls: Option<HostCallThread>,
 }
 
 impl LgtEmulator {
@@ -150,7 +189,11 @@ impl LgtEmulator {
 
         system.spawn(async move || Self::do_start(&mut core_clone, &mut system_clone, jar_filename, main_class_name_clone).await);
 
-        Ok(Self { core, system })
+        Ok(Self {
+            core,
+            system,
+            host_calls: None,
+        })
     }
 
     #[tracing::instrument(name = "start", skip_all)]
@@ -211,6 +254,30 @@ impl Emulator for LgtEmulator {
 
     fn write_memory(&mut self, address: u32, data: &[u8]) -> Result<()> {
         self.core.write_bytes(address, data)
+    }
+
+    fn is_idle(&self) -> bool {
+        self.system.is_idle()
+    }
+
+    fn call_function(&mut self, address: u32, params: &[u32]) -> Result<u32> {
+        let calls = self.host_calls.get_or_insert_with(|| HostCallThread::new(&self.core));
+        *calls.request.lock() = Some((address, params.to_vec()));
+
+        for _ in 0..HOST_CALL_POLLS {
+            let ended = self.system.poll_alone(calls.thread.as_mut());
+            if let Some(result) = calls.response.lock().take() {
+                return Ok(result);
+            }
+            if let Poll::Ready(result) = ended {
+                self.host_calls = None;
+                return Err(result.err().unwrap_or_else(|| WieError::FatalError("Host call thread ended".into())));
+            }
+        }
+
+        // The thread is dropped with the call still on its stack.
+        self.host_calls = None;
+        Err(WieError::FatalError(format!("Guest function {address:#x} did not finish")))
     }
 }
 
