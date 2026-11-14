@@ -50,8 +50,6 @@ const HERO_ANIMATION = STATE + 0x9b8d;
 const HERO_DIRECTION = STATE + 0x9b8c;
 const HERO_FRAME = STATE + 0x9ba0;
 const MAX_PARTS = 32;
-/** A full turn of a part's rotation byte. */
-const TURN = 180;
 
 const heap = (p: number): boolean => p >= 0x40000000 && p < 0x50000000;
 const signed16 = (n: number): number => (n << 16) >> 16;
@@ -143,22 +141,18 @@ export class Hl3MotionGame implements MotionGame<Hl3Motion> {
       put(sprite + 0x12, 2, before[1], y);
     }
     if (prev.pose && cur.pose && prev.pose.record !== cur.pose.record) {
-      // Each piece of this frame that the frame before also had (the nth of its kind) starts where it was there.
+      // Each piece of this frame that the frame before also had (the nth of its kind) moves from where it was there.
       const before = new Map<string, Part[]>();
       for (const part of prev.pose.parts) before.set(part.piece, [...(before.get(part.piece) ?? []), part]);
       for (const part of cur.pose.parts) {
         const from = before.get(part.piece)?.shift();
         if (!from) continue;
-        part.values.forEach((to, index) => {
-          let start = from.values[index];
-          // A piece not transformed in one of the frames is there at full size, unturned and opaque.
-          if (start === undefined) start = index === 4 ? to : index === 5 ? 255 : 25;
-          // The rotation goes the short way round.
-          if (index === 4 && Math.abs(to - start) > TURN / 2) start += to > start ? TURN : -TURN;
-          if (start === to) return;
-          const value = index === 4 ? (between(start, to, frac) + TURN) % TURN : between(start, to, frac);
-          writes.push({ address: part.at + index, width: 1, value: value & 0xff });
-        });
+        // Only the position: the game draws a turned or scaled piece from pictures made for its own steps (a
+        // dagger at 45° steps), and one between them comes out black or not at all.
+        for (let index = 0; index < 2; index++) {
+          const start = from.values[index], to = part.values[index];
+          if (start !== to) writes.push({ address: part.at + index, width: 1, value: between(start, to, frac) & 0xff });
+        }
       }
     }
     return writes;

@@ -141,10 +141,8 @@ test("영웅서기3: the hero's parts start each frame where the same piece was 
   assert.deepEqual(writes, [
     [4, 1, (-10) & 0xff], // body y −12 → −8
     [7, 1, 2], [8, 1, (-15) & 0xff], // dagger x −15 → 19, y −20 → −10
-    [9, 1, 30], // its x scale 25 → 35
-    [11, 1, 0], // its rotation 170 → 10 the short way, through 180 = 0
-  ]);
-  assert.deepEqual(Array.from(game.place(prev, cur, 0.25), w => w.value).slice(-1), [175]);
+  ], "only positions: the game draws a scaled, turned or faded piece only at its own steps");
+  assert.deepEqual(Array.from(game.place(prev, cur, 0.25), w => w.value | 0).map(v => (v << 24) >> 24), [-11, -6, -17]);
 
   // Unreadable animation data: the pose is left alone.
   m.write(STATE + 0x9b8c, 0, 1);
