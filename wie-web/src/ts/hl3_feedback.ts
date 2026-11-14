@@ -35,6 +35,8 @@ export class Hl3Feedback {
   constructor(private readonly game: HTMLCanvasElement, appId: string) {
     this.canvas.id = "hit-effects-canvas";
     this.canvas.hidden = true;
+    // Drawn on the game's own pixel grid, one canvas pixel to a game pixel, and enlarged like the game.
+    this.canvas.style.imageRendering = "pixelated";
     this.canvas.setAttribute("aria-hidden", "true");
     game.parentElement!.append(this.canvas);
     this.context = this.canvas.getContext("2d");
@@ -62,16 +64,17 @@ export class Hl3Feedback {
   }
 
   private fit(): void {
-    // Cap backing resolution on phones; this layer is mostly transparent and has no expensive filters.
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = Math.max(1, Math.round(this.cssWidth * dpr));
-    this.canvas.height = Math.max(1, Math.round(this.cssHeight * dpr));
-    const sx = this.canvas.width / this.game.width, sy = this.canvas.height / this.game.height;
+    // The effects are squares of whole game pixels, so a canvas with one pixel per game pixel draws them exactly;
+    // one at the phone's resolution was ten times the pixels to clear and blend on every frame of a hit.
+    const sx = this.cssWidth / this.game.width, sy = this.cssHeight / this.game.height;
     const contain = document.documentElement.dataset.screenFit !== "fill";
-    this.scaleX = contain ? Math.min(sx, sy) : sx;
-    this.scaleY = contain ? Math.min(sx, sy) : sy;
-    this.left = (this.canvas.width - this.game.width * this.scaleX) / 2;
-    this.top = (this.canvas.height - this.game.height * this.scaleY) / 2;
+    const unitX = Math.max(contain ? Math.min(sx, sy) : sx, 1e-3), unitY = Math.max(contain ? Math.min(sx, sy) : sy, 1e-3);
+    this.canvas.width = Math.max(1, Math.round(this.cssWidth / unitX));
+    this.canvas.height = Math.max(1, Math.round(this.cssHeight / unitY));
+    this.scaleX = 1;
+    this.scaleY = 1;
+    this.left = Math.round((this.canvas.width - this.game.width) / 2);
+    this.top = Math.round((this.canvas.height - this.game.height) / 2);
   }
 
   sample(api: CheatApi | undefined): void {
@@ -140,8 +143,8 @@ export class Hl3Feedback {
       }
     }
     ctx.restore();
+    // The layer stays on, cleared: showing and hiding a screen-sized layer on every hit costs the phone a new layer.
     if (active) this.frame = requestAnimationFrame(this.draw);
-    else this.canvas.hidden = true;
   };
 
   private clearEffects(): void {

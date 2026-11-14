@@ -108,6 +108,7 @@ function presentation(count = 1) {
   const pixelFx = { pixelPen: () => ({ dot() {}, line() {}, star() {}, ring: (...args) => rings.push(args) }) };
   const canvas = new Element();
   canvas.setAttribute = () => {};
+  canvas.style = {};
   canvas.getContext = () => ctx;
   canvas.remove = () => { canvas.removed = true; };
   const setting = new Element(), select = new Element(), fitSelect = new Element(), reduced = new Element();
@@ -141,18 +142,20 @@ function presentation(count = 1) {
   return { ...m, feedback, canvas, select, setting, fitSelect, reduced, document, callbacks, step, rings, disconnects: () => disconnects };
 }
 
-test("presentation uses a bounded pool, DPR cap and animation time; idle has no animation loop", () => {
+test("presentation uses a bounded pool, the game's own pixels and animation time; idle has no animation loop", () => {
   const h = presentation(30);
   h.feedback.sample(h.api);
   for (let i = 0; i < 30; i++) h.apply(native.hits[0], i);
   h.feedback.sample(h.api);
   assert.equal(h.callbacks.size, 1);
-  assert.equal(h.canvas.width, 1200, "DPR capped at two");
+  // A 600×640 frame shows the 240×320 game twice its size, centred: one canvas pixel per game pixel, enlarged sharp.
+  assert.deepEqual([h.canvas.width, h.canvas.height], [300, 320], "not the phone's resolution");
+  assert.equal(h.canvas.style.imageRendering, "pixelated");
   h.step(16);
   assert.equal(h.rings.length, 12, "crowded hits cannot exceed the pool");
   h.step(240);
   assert.equal(h.callbacks.size, 0);
-  assert.equal(h.canvas.hidden, true);
+  assert.equal(h.canvas.hidden, false, "the layer stays, cleared, instead of being made again on the next hit");
   const reads = h.reads();
   h.step(1000);
   assert.equal(h.reads(), reads, "animation never scans guest memory");
