@@ -56,6 +56,11 @@ test("영웅서기3 damage numbers step in real time and a new hit starts over",
   assert.deepEqual(shown.slice(0, 16), [1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, -1, -1]);
   assert.equal(age(HERO_AGE), -1); // nothing up stays untouched
 
+  write(HERO_AGE, 0); // the hero is hit: that number keeps the game's own pace
+  numbers.sample(cheats, now); frame();
+  numbers.sample(cheats, now + 33); frame();
+  assert.equal(age(HERO_AGE), 2);
+
   write(MONSTER_AGE - 2, 31); write(MONSTER_AGE, 0);
   numbers.sample(cheats, now); frame(); now += 33;
   numbers.sample(cheats, now); frame(); now += 33;

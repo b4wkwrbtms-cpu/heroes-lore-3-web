@@ -2,9 +2,10 @@ import type { CheatApi } from "./backend";
 import { HL3, isHeroesLore3Binary } from "./hl3";
 
 /**
- * 영웅서기3's damage numbers. Every fighter keeps one: the damage (s16), its age (s16, -1 when nothing is shown)
- * and its kind (0 damage, 1 miss). A hit sets the age to 0, each game frame adds one, and after age 4 the number
- * is gone: five game frames, under a fifth of a second at speed 6 and less at the faster speeds.
+ * 영웅서기3's damage numbers over monsters. Every monster keeps one: the damage (s16), its age (s16, -1 when nothing
+ * is shown) and its kind (0 damage, 1 miss). A hit sets the age to 0, each game frame adds one, and after age 4 the
+ * number is gone: five game frames, under a fifth of a second at speed 6 and less at the faster speeds. The hero's
+ * own number (hits taken) works the same way and is left at the game's pace.
  *
  * This holds the age back so each of the rising steps is shown for STEP_MS of real time. Only the age is written,
  * only ever lowered, and only while the number is up; the damage itself, the hit and everything the game decides
@@ -15,7 +16,6 @@ const MONSTERS = STATE + 0x9c94; // u32 pointer to the monster records
 const MONSTER_COUNT = STATE + 0x9c98; // u16
 const MONSTER_SIZE = 344;
 const MONSTER_NUMBER = 0xaa; // damage, age, kind within a monster record
-const HERO_NUMBER = 0x01503cc0; // the hero's damage, age, kind
 const FIELD_MODE = 4;
 /** Real time each of the number's five steps stays on screen. */
 const STEP_MS = 140;
@@ -38,7 +38,6 @@ export class Hl3DamageNumbers {
       seen.add(age);
       this.hold(api, age, now);
     };
-    hold(HERO_NUMBER + 2);
     const monsters = api.read(MONSTERS, 4, false);
     const count = api.read(MONSTER_COUNT, 2, false);
     for (let index = 0; index < count; index++) hold(monsters + index * MONSTER_SIZE + MONSTER_NUMBER + 2);
