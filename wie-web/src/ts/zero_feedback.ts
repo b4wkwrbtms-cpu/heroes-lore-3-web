@@ -1,5 +1,6 @@
 import type { CheatApi } from "./backend";
 import { loadGamePreference, storeGamePreference } from "./game_preferences";
+import { pixelPen } from "./pixel_fx";
 import { ZERO_FIELD, type ZeroHit, ZeroHitTracker } from "./zero_hits";
 
 const HIT_MS = 260;
@@ -23,7 +24,8 @@ interface Burst {
 /**
  * 영웅서기 제로: short accents drawn over the game on hits the game already dealt — a flash, ring and sparks on a
  * monster that loses HP (bigger for heavy hits, a double ring when it falls) and a red edge when the hero is hurt.
- * The game's own image, animation frames, timing and damage are untouched; it can be turned off in the settings.
+ * Rings, sparks and the flash are squares on the game's pixel grid, like the 영웅서기5 player's. The game's own
+ * image, animation frames, timing and damage are untouched; it can be turned off in the settings.
  */
 export class ZeroFeedback {
   private readonly tracker = new ZeroHitTracker();
@@ -157,72 +159,55 @@ export class ZeroFeedback {
     }
 
     ctx.globalCompositeOperation = "lighter";
-    ctx.lineCap = "round";
+    const { dot, line, ring, star } = pixelPen(ctx, view.x, view.y);
     for (const burst of this.bursts) {
       const t = Math.max(0, (now - burst.born) / burst.life);
       if (t >= 1) continue;
       active = true;
-      const x = burst.x + view.x, y = burst.y + view.y;
-      const size = burst.size;
+      const { x, y, size } = burst;
       const ease = 1 - (1 - t) ** 3;
       const alpha = (1 - t) ** 2;
       // The game draws its own slash over the monster; a short glow on the body marks the moment HP is taken.
       if (t < 0.4) {
         const glow = 1 - t / 0.4;
-        const radius = 11 * size;
-        const light = ctx.createRadialGradient(x, y, 0, x, y, radius);
+        const radius = 11 * size, gx = x + view.x, gy = y + view.y;
+        const light = ctx.createRadialGradient(gx, gy, 0, gx, gy, radius);
         light.addColorStop(0, `rgba(255, 244, 214, ${(0.55 * glow).toFixed(3)})`);
         light.addColorStop(1, "rgba(255, 190, 90, 0)");
         ctx.globalAlpha = 1;
         ctx.fillStyle = light;
-        ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+        ctx.fillRect(gx - radius, gy - radius, radius * 2, radius * 2);
       }
       // Ring (two for a monster that falls).
       ctx.globalAlpha = alpha * 0.85;
-      ctx.strokeStyle = burst.killed ? "#ffb36b" : "#ffd58b";
-      ctx.lineWidth = burst.killed ? 1.6 : 1.2;
-      ctx.beginPath();
-      ctx.ellipse(x, y, (3 + ease * 15) * size, (2 + ease * 10) * size, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.fillStyle = burst.killed ? "#ffb36b" : "#ffd58b";
+      ring(x, y, (3 + ease * 15) * size, (2 + ease * 10) * size);
       if (burst.killed && t > 0.18) {
         const late = 1 - (1 - (t - 0.18) / 0.82) ** 3;
         ctx.globalAlpha = alpha * 0.6;
-        ctx.beginPath();
-        ctx.ellipse(x, y, (4 + late * 22) * size, (3 + late * 14) * size, 0, 0, Math.PI * 2);
-        ctx.stroke();
+        ring(x, y, (4 + late * 22) * size, (3 + late * 14) * size);
       }
-      // Sparks flying out and falling a little.
-      ctx.globalAlpha = alpha;
-      ctx.strokeStyle = "#fff1cf";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
+      // Sparks flying out and falling a little: a short tail and a bright head.
       const rays = burst.killed ? 10 : size > 1 ? 8 : 6;
       for (let i = 0; i < rays; i++) {
         const angle = burst.angle + (i * Math.PI * 2) / rays;
         const distance = (3 + ease * (14 + (i % 2) * 7)) * size;
         const tail = distance - 3 * (1 - t) * size;
         const drop = t * t * 4 * size;
-        ctx.moveTo(x + Math.cos(angle) * tail, y + Math.sin(angle) * tail * 0.75 + drop);
-        ctx.lineTo(x + Math.cos(angle) * distance, y + Math.sin(angle) * distance * 0.75 + drop);
+        const hx = x + Math.cos(angle) * distance, hy = y + Math.sin(angle) * distance * 0.75 + drop;
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.fillStyle = "#ffd58b";
+        line(x + Math.cos(angle) * tail, y + Math.sin(angle) * tail * 0.75 + drop, hx, hy, 1);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "#fff1cf";
+        dot(hx, hy, burst.killed && i % 2 === 0 ? 2 : 1);
       }
-      ctx.stroke();
-      // The impact flash: a four-pointed star for the first frames.
+      // The impact flash: a pixel star for the first frames.
       if (t < 0.32) {
         const flash = 1 - t / 0.32;
-        const star = 6 * size * flash;
         ctx.globalAlpha = flash * 0.9;
         ctx.fillStyle = "#fff9e9";
-        ctx.beginPath();
-        ctx.moveTo(x, y - star);
-        ctx.lineTo(x + star * 0.3, y - star * 0.3);
-        ctx.lineTo(x + star, y);
-        ctx.lineTo(x + star * 0.3, y + star * 0.3);
-        ctx.lineTo(x, y + star);
-        ctx.lineTo(x - star * 0.3, y + star * 0.3);
-        ctx.lineTo(x - star, y);
-        ctx.lineTo(x - star * 0.3, y - star * 0.3);
-        ctx.closePath();
-        ctx.fill();
+        star(x, y, (3 + 5 * flash) * size, 0);
       }
     }
     ctx.restore();

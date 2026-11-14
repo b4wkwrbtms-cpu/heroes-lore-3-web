@@ -3,7 +3,7 @@ import * as Sentry from "@sentry/browser";
 import { wasmIntegration } from "@sentry/wasm";
 
 import { recordPageView } from "./analytics";
-import { HqDisplay, setCurrentDisplay } from "./display";
+import { DEFAULT_DISPLAY_STYLE, HD_DISPLAY_STYLE, HqDisplay, setCurrentDisplay } from "./display";
 import { setBgmEngine } from "./midi";
 import { loadGamePreference, storeGamePreference } from "./game_preferences";
 import { isHeroesLore3 } from "./hl3";
@@ -11,6 +11,7 @@ import { runApp } from "./app";
 import { initializeWie, type LibraryApp } from "./backend";
 import { getLocale, initializeLocalization, t } from "./i18n";
 import { initializeLibrary } from "./library";
+import { isHeroesLore4, isZero } from "./pad_profile";
 import { rustPanic } from "./panic";
 import { initializeSettings } from "./settings";
 
@@ -62,6 +63,9 @@ const main = async () => {
   ];
   const activatePresentation = (app?: LibraryApp) => {
     presentationApp = app;
+    // 영웅서기3·제로·4 are drawn the way the 영웅서기5 player draws its game.
+    const hd = app && (isHeroesLore3(app.id) || isZero(app) || isHeroesLore4(app));
+    display?.setStyle(hd ? HD_DISPLAY_STYLE : DEFAULT_DISPLAY_STYLE);
     for (const option of presentationOptions) {
       const select = document.getElementById(option.id) as HTMLSelectElement | null;
       const legacy = app && isHeroesLore3(app.id) ? `wie_${option.key}` : undefined;

@@ -98,13 +98,14 @@ test("consecutive hits work; stale markers, offscreen enemies, menus, reload and
 });
 
 function presentation(count = 1) {
-  const m = memory(count), callbacks = new Map(), storage = new Map(), ellipses = [];
+  const m = memory(count), callbacks = new Map(), storage = new Map(), rings = [];
   let serial = 0, now = 0, resize, disconnects = 0;
   class Element extends EventTarget { hidden = false; value = ""; }
   const ctx = {
     setTransform() {}, clearRect() {}, save() {}, restore() {}, beginPath() {}, rect() {}, clip() {},
-    ellipse: (...args) => ellipses.push(args), stroke() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {},
   };
+  // One ring per hit drawn; the pixel pen itself only fills squares.
+  const pixelFx = { pixelPen: () => ({ dot() {}, line() {}, star() {}, ring: (...args) => rings.push(args) }) };
   const canvas = new Element();
   canvas.setAttribute = () => {};
   canvas.getContext = () => ctx;
@@ -120,7 +121,8 @@ function presentation(count = 1) {
   const localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) };
   const preferences = load("game_preferences", { window: { localStorage } });
   const { Hl3Feedback } = load("hl3_feedback", {
-    require: name => name === "./game_preferences" ? preferences : { Hl3HitTracker }, document, AbortController,
+    require: name => name === "./game_preferences" ? preferences : name === "./pixel_fx" ? pixelFx : { Hl3HitTracker },
+    document, AbortController,
     window: { devicePixelRatio: 3, matchMedia: () => reduced },
     ResizeObserver: class {
       constructor(cb) { resize = cb; }
@@ -136,7 +138,7 @@ function presentation(count = 1) {
     now = time;
     const pending = [...callbacks.values()]; callbacks.clear(); pending.forEach(cb => cb(now));
   };
-  return { ...m, feedback, canvas, select, setting, fitSelect, reduced, document, callbacks, step, ellipses, disconnects: () => disconnects };
+  return { ...m, feedback, canvas, select, setting, fitSelect, reduced, document, callbacks, step, rings, disconnects: () => disconnects };
 }
 
 test("presentation uses a bounded pool, DPR cap and animation time; idle has no animation loop", () => {
@@ -147,7 +149,7 @@ test("presentation uses a bounded pool, DPR cap and animation time; idle has no 
   assert.equal(h.callbacks.size, 1);
   assert.equal(h.canvas.width, 1200, "DPR capped at two");
   h.step(16);
-  assert.equal(h.ellipses.length, 12, "crowded hits cannot exceed the pool");
+  assert.equal(h.rings.length, 12, "crowded hits cannot exceed the pool");
   h.step(240);
   assert.equal(h.callbacks.size, 0);
   assert.equal(h.canvas.hidden, true);

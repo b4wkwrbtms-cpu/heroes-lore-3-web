@@ -1,12 +1,16 @@
 import type { CheatApi } from "./backend";
 import { Hl3HitTracker } from "./hl3_hits";
 import { loadGamePreference, storeGamePreference } from "./game_preferences";
+import { pixelPen } from "./pixel_fx";
 
 const PREF = "wie_hl3_hit_effects";
 const LIFETIME = 220;
 const MAX_HITS = 12;
 
-/** Local, short-lived accents on actual hits. The original game image and combat timing are untouched. */
+/**
+ * Local, short-lived accents on actual hits, in squares on the game's pixel grid like the 영웅서기5 player's. The
+ * original game image and combat timing are untouched.
+ */
 export class Hl3Feedback {
   private readonly tracker = new Hl3HitTracker();
   private readonly canvas = document.createElement("canvas");
@@ -108,47 +112,31 @@ export class Hl3Feedback {
     ctx.rect(0, 0, view.width, view.height - 28); // Keep the original quick slots and HP/SP bars clear.
     ctx.clip();
     ctx.globalCompositeOperation = "lighter";
-    ctx.lineCap = "round";
+    const { line, ring, star } = pixelPen(ctx, view.x, view.y);
     let active = false;
     for (const hit of this.hits) {
       const t = Math.max(0, (now - hit.born) / LIFETIME);
       if (t >= 1) continue;
       active = true;
-      const x = hit.x + view.x, y = hit.y + view.y;
+      const { x, y } = hit;
       const ease = 1 - (1 - t) ** 3;
       const alpha = (1 - t) ** 2;
       ctx.globalAlpha = alpha * 0.85;
-      ctx.strokeStyle = "#ffd58b";
-      ctx.lineWidth = 0.9;
-      ctx.beginPath();
-      ctx.ellipse(x, y, 3 + ease * 12, 2 + ease * 8, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = "#fff1cf";
-      ctx.lineWidth = 1.3;
-      ctx.beginPath();
+      ctx.fillStyle = "#ffd58b";
+      ring(x, y, 3 + ease * 12, 2 + ease * 8);
+      ctx.fillStyle = "#fff1cf";
       for (let i = 0; i < 6; i++) {
         const angle = hit.angle + i * Math.PI / 3;
         const distance = 3 + ease * (12 + (i % 2) * 6);
         const tail = distance - 3 * (1 - t);
-        ctx.moveTo(x + Math.cos(angle) * tail, y + Math.sin(angle) * tail * 0.75 + t * t * 4);
-        ctx.lineTo(x + Math.cos(angle) * distance, y + Math.sin(angle) * distance * 0.75 + t * t * 4);
+        line(x + Math.cos(angle) * tail, y + Math.sin(angle) * tail * 0.75 + t * t * 4,
+          x + Math.cos(angle) * distance, y + Math.sin(angle) * distance * 0.75 + t * t * 4, 1);
       }
-      ctx.stroke();
       if (t < 0.32) {
-        const size = 6 * (1 - t / 0.32);
-        ctx.globalAlpha = (1 - t / 0.32) * 0.9;
+        const flash = 1 - t / 0.32;
+        ctx.globalAlpha = flash * 0.9;
         ctx.fillStyle = "#fff9e9";
-        ctx.beginPath();
-        ctx.moveTo(x, y - size);
-        ctx.lineTo(x + size * 0.3, y - size * 0.3);
-        ctx.lineTo(x + size, y);
-        ctx.lineTo(x + size * 0.3, y + size * 0.3);
-        ctx.lineTo(x, y + size);
-        ctx.lineTo(x - size * 0.3, y + size * 0.3);
-        ctx.lineTo(x - size, y);
-        ctx.lineTo(x - size * 0.3, y - size * 0.3);
-        ctx.closePath();
-        ctx.fill();
+        star(x, y, 3 + 5 * flash, 0);
       }
     }
     ctx.restore();

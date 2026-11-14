@@ -152,6 +152,23 @@ test("pixel preference during GPU loss survives restoration; disposal releases r
   assert.equal(k.display.active, false);
 });
 
+test("a style with the edge upscaler and glow decides edges, blurs the bright parts and draws at the display size", () => {
+  const h = harness();
+  h.fit(786, 1048);
+  h.display.setStyle({ upscaler: "xbr", glow: 0.6, vivid: 1 });
+  h.display.setEnabled(true);
+  const frame = h.draws.length;
+  h.display.present();
+  const draws = h.draws.slice(frame);
+  // bright parts, four blurs, edge decisions, then the picture straight onto the screen
+  assert.deepEqual(draws.map(d => d.intermediate), [true, true, true, true, true, true, false]);
+  assert.deepEqual(draws.at(-1).view, [0, 0, 786, 1048]);
+  h.display.setStyle({ upscaler: "epx", glow: 0, vivid: 0 });
+  const epx = h.draws.length;
+  h.display.present();
+  assert.equal(h.draws.slice(epx).filter(d => d.intermediate).length, 2);
+});
+
 test("missing WebGL or shader errors leave the game visible", () => {
   for (const options of [{ available: false }, { compileOk: false }]) {
     const h = harness(options);

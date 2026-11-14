@@ -84,7 +84,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   const feedback = backend.rendering !== "canvas" ? undefined
     : isHeroesLore3(app.id) ? new Hl3Feedback(gameCanvas, app.id)
     : isZero(app) ? new ZeroFeedback(gameCanvas, app.id)
-    : isHeroesLore4(app) ? new Hl4Feedback(gameCanvas, app.id, ms => session?.hold?.(ms))
+    : isHeroesLore4(app) ? new Hl4Feedback(gameCanvas, app.id)
     : undefined;
   const slotIcons = backend.rendering === "canvas" && isHeroesLore4(app) ? new Hl4SlotIcons(gameCanvas, buttons) : undefined;
   // 영웅서기 제로: its new-game screen also offers the two hidden battle styles (checked twice a second), and a

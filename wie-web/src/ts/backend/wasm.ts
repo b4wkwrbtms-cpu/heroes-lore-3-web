@@ -35,8 +35,6 @@ export const startWasmSession = (
   let preparing = true;
   let frame: number;
   let presented = -1;
-  /** The guest is not run before this time (performance.now()). */
-  let holdUntil = 0;
 
   const session: WasmSession = {
     readResources(prefixes) {
@@ -50,9 +48,6 @@ export const startWasmSession = (
       } else if (!pressed && keys.delete(key)) {
         emulator.key_up(key);
       }
-    },
-    hold(ms) {
-      holdUntil = Math.max(holdUntil, performance.now() + ms);
     },
     async releaseKeys() {
       if (!running) return;
@@ -123,10 +118,6 @@ export const startWasmSession = (
 
   const update = () => {
     if (!running || suspended) return;
-    if (performance.now() < holdUntil) {
-      frame = requestAnimationFrame(update);
-      return;
-    }
     try {
       emulator.update();
       const painted = emulator.frame_count();
