@@ -61,3 +61,7 @@ jobs:
         run: cargo test -p wie-backend
       - name: Clippy (changed crates)
         run: cargo clippy -p wie-backend -p wie-lgt --all-targets
+      - name: Clippy (wie-web)
+        run: cargo clippy -p wie-web --target wasm32-unknown-unknown
+      - name: JS tests
+        run: node --test wie-web/tests/*.test.cjs

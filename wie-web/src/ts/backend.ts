@@ -55,10 +55,10 @@ export interface PlayerSession {
   guest?: GuestApi;
   /**
    * Set by the player to take over the picture: called on every display frame after the guest ran, with whether the
-   * guest painted a new frame. Returning true means the picture on screen has been dealt with (the frame is held back
-   * or another one was drawn in its place); otherwise a new frame is presented as usual.
+   * guest painted a new frame and the display frame's time. Returning true means the picture on screen has been dealt
+   * with (the frame is held back or another one was drawn in its place); otherwise a new frame is presented as usual.
    */
-  display?: (painted: boolean) => boolean;
+  display?: (painted: boolean, time: number) => boolean;
   /** Original imported resources; available on the browser/WASM backend. */
   readResources?(prefixes: string[]): Map<string, Uint8Array>;
 }

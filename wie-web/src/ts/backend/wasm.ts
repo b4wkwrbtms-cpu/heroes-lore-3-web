@@ -125,12 +125,12 @@ export const startWasmSession = (
     },
   };
 
-  const update = () => {
+  const update = (time: number) => {
     if (!running || suspended) return;
     try {
       emulator.update();
       const painted = emulator.frame_count() !== presented;
-      const handled = session.display?.(painted) ?? false;
+      const handled = session.display?.(painted, time) ?? false;
       // Frames the page had the guest draw are not the guest's own.
       presented = emulator.frame_count();
       if (painted) {

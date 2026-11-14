@@ -7,10 +7,12 @@ import { getCheatPanel } from "./cheats";
 import { loadGamePreference } from "./game_preferences";
 import { isHeroesLore3 } from "./hl3";
 import { Hl3Feedback } from "./hl3_feedback";
+import { Hl3MotionGame } from "./hl3_motion";
 import { Hl3QuestGuide } from "./hl3_quest_guide";
 import { Hl4Feedback } from "./hl4_feedback";
 import { Hl4SlotIcons } from "./hl4_slots";
 import { InotiaHunt } from "./inotia_hunt";
+import { InBetweenFrames } from "./motion";
 import { type Direction, HL4_DODGE_KEY, applyPadProfile, isHeroesLore4, isInotia, isZero, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
 import { OCTANT_DIRECTIONS, pickOctant, pickStraight } from "./stick";
@@ -113,6 +115,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   const abortController = new AbortController();
   const inputs = new Map<string, string>();
   let session: PlayerSession | undefined;
+  let motion: { dispose(): void } | undefined;
   let preparing = true;
   let suspended = false;
   let ending = false;
@@ -138,6 +141,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     abortController.abort();
     screenRatioObserver.disconnect();
     feedback?.dispose();
+    motion?.dispose();
     slotIcons?.dispose();
     questGuide?.dispose();
     hunt?.stop();
@@ -655,6 +659,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   });
   void start.then(started => {
     session = started;
+    if (started?.guest && isHeroesLore3(app.id)) motion = new InBetweenFrames(started, gameCanvas, new Hl3MotionGame(), app.id);
     questGuide?.attach(started);
     updateControls();
     if (!preparing) {
