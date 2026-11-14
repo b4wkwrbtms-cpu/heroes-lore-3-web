@@ -105,6 +105,15 @@ export const startWasmSession = (
         emulator.cheat_clear_freezes();
       },
     },
+    guest: {
+      idle() {
+        return running && emulator.guest_idle();
+      },
+      call(address, params) {
+        if (!running) return 0;
+        return emulator.guest_call(address >>> 0, Uint32Array.from(params, value => value >>> 0));
+      },
+    },
     async stop() {
       if (!running) return;
       running = false;
@@ -120,10 +129,12 @@ export const startWasmSession = (
     if (!running || suspended) return;
     try {
       emulator.update();
-      const painted = emulator.frame_count();
-      if (painted !== presented) {
-        presented = painted;
-        presentFrame();
+      const painted = emulator.frame_count() !== presented;
+      const handled = session.display?.(painted) ?? false;
+      // Frames the page had the guest draw are not the guest's own.
+      presented = emulator.frame_count();
+      if (painted) {
+        if (!handled) presentFrame();
         onEvent({ type: "frame" });
       }
       if (emulator.is_exited()) {

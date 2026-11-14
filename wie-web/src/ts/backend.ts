@@ -38,11 +38,27 @@ export interface CheatApi {
   clearFreezes(): void;
 }
 
+/** Running the guest's own functions from the page, on platforms whose emulator supports it. */
+export interface GuestApi {
+  /** Whether the guest is between its callbacks; only then may a function be called. */
+  idle(): boolean;
+  /** Runs the guest function at `address` to its end, without the guest's own tasks running, and returns its result. */
+  call(address: number, params: readonly number[]): number;
+}
+
 export interface PlayerSession {
   key(key: string, pressed: boolean): Promise<void>;
   releaseKeys(): Promise<void>;
   stop(): Promise<void>;
   cheats?: CheatApi;
+  /** Available on the browser/WASM backend. */
+  guest?: GuestApi;
+  /**
+   * Set by the player to take over the picture: called on every display frame after the guest ran, with whether the
+   * guest painted a new frame. Returning true means the picture on screen has been dealt with (the frame is held back
+   * or another one was drawn in its place); otherwise a new frame is presented as usual.
+   */
+  display?: (painted: boolean) => boolean;
   /** Original imported resources; available on the browser/WASM backend. */
   readResources?(prefixes: string[]): Map<string, Uint8Array>;
 }
