@@ -4,8 +4,11 @@ import { loadGamePreference, storeGamePreference } from "./game_preferences";
 import { pixelPen } from "./pixel_fx";
 
 const PREF = "wie_hl3_hit_effects";
-const LIFETIME = 220;
+const LIFETIME = 360;
 const MAX_HITS = 12;
+/** A hit nudges the picture: SHAKE game pixels at first, gone after SHAKE_MS. */
+const SHAKE = 1.5;
+const SHAKE_MS = 110;
 
 /**
  * Local, short-lived accents on actual hits, in squares on the game's pixel grid like the 영웅서기5 player's. The
@@ -22,6 +25,7 @@ export class Hl3Feedback {
   private readonly select = document.getElementById("hit-effects") as HTMLSelectElement | null;
   private readonly hits = Array.from({ length: MAX_HITS }, () => ({ x: 0, y: 0, born: -Infinity, angle: 0 }));
   private next = 0;
+  private shakeFrom = -Infinity;
   private enabled = true;
   private disposed = false;
   private frame: number | undefined;
@@ -98,6 +102,7 @@ export class Hl3Feedback {
     hit.born = performance.now();
     hit.angle = this.next * 2.399963;
     this.next = (this.next + 1) % MAX_HITS;
+    this.shakeFrom = hit.born;
     this.canvas.hidden = false;
     if (this.frame === undefined) this.frame = requestAnimationFrame(this.draw);
   };
@@ -143,14 +148,35 @@ export class Hl3Feedback {
       }
     }
     ctx.restore();
+    active = this.shake(now) || active;
     // The layer stays on, cleared: showing and hiding a screen-sized layer on every hit costs the phone a new layer.
     if (active) this.frame = requestAnimationFrame(this.draw);
   };
+
+  /**
+   * Moves the whole screen (game, upscaled picture and these effects) back and forth by a pixel or two right after a
+   * hit. Only the composited position changes, nothing is drawn again. True while it is still moving.
+   */
+  private shake(now: number): boolean {
+    const screen = this.game.parentElement!;
+    const t = (now - this.shakeFrom) / SHAKE_MS;
+    if (!(t < 1)) {
+      screen.style.translate = "";
+      return false;
+    }
+    const pixel = this.cssWidth / this.canvas.width;
+    const size = SHAKE * pixel * (1 - t) ** 2;
+    const side = Math.floor((now - this.shakeFrom) / 28) % 2 === 0 ? 1 : -1;
+    screen.style.translate = `${(side * size).toFixed(2)}px ${(-side * size * 0.5).toFixed(2)}px`;
+    return true;
+  }
 
   private clearEffects(): void {
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.frame = undefined;
     for (const hit of this.hits) hit.born = -Infinity;
+    this.shakeFrom = -Infinity;
+    this.game.parentElement!.style.translate = "";
     if (!this.canvas.hidden && this.context) {
       this.context.setTransform(1, 0, 0, 1, 0, 0);
       this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);

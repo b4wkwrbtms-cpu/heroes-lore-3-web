@@ -134,12 +134,13 @@ function presentation(count = 1) {
     requestAnimationFrame: cb => { const id = ++serial; callbacks.set(id, cb); return id; },
     cancelAnimationFrame: id => callbacks.delete(id),
   });
-  const feedback = new Hl3Feedback({ width: 240, height: 320, parentElement: { append() {} } }, "PD119037");
+  const screen = { append() {}, style: { translate: "" } };
+  const feedback = new Hl3Feedback({ width: 240, height: 320, parentElement: screen }, "PD119037");
   const step = time => {
     now = time;
     const pending = [...callbacks.values()]; callbacks.clear(); pending.forEach(cb => cb(now));
   };
-  return { ...m, feedback, canvas, select, setting, fitSelect, reduced, document, callbacks, step, rings, disconnects: () => disconnects };
+  return { ...m, feedback, screen, canvas, select, setting, fitSelect, reduced, document, callbacks, step, rings, disconnects: () => disconnects };
 }
 
 test("presentation uses a bounded pool, the game's own pixels and animation time; idle has no animation loop", () => {
@@ -153,8 +154,10 @@ test("presentation uses a bounded pool, the game's own pixels and animation time
   assert.equal(h.canvas.style.imageRendering, "pixelated");
   h.step(16);
   assert.equal(h.rings.length, 12, "crowded hits cannot exceed the pool");
-  h.step(240);
+  assert.notEqual(h.screen.style.translate, "", "a hit nudges the screen");
+  h.step(400);
   assert.equal(h.callbacks.size, 0);
+  assert.equal(h.screen.style.translate, "", "and puts it back");
   assert.equal(h.canvas.hidden, false, "the layer stays, cleared, instead of being made again on the next hit");
   const reads = h.reads();
   h.step(1000);
@@ -176,7 +179,7 @@ test("pause, disable, reduced motion and dispose clear effects and resume withou
   h.apply({ ...native.hits[0], afterHp: 40 }); h.feedback.sample(h.api);
   assert.equal(h.callbacks.size, 1);
   h.document.hidden = true; h.document.dispatchEvent(new Event("visibilitychange"));
-  assert.equal(h.callbacks.size, 0);
+  assert.equal(h.callbacks.size, 0); assert.equal(h.screen.style.translate, "");
   h.feedback.dispose();
   assert.equal(h.canvas.removed, true); assert.equal(h.setting.hidden, true); assert.equal(h.disconnects(), 1);
   h.feedback.sample(h.api); assert.equal(h.callbacks.size, 0);

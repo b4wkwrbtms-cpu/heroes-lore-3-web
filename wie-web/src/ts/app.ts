@@ -9,6 +9,7 @@ import { isHeroesLore3 } from "./hl3";
 import { Hl3ComboTiming } from "./hl3_combo";
 import { Hl3Feedback } from "./hl3_feedback";
 import { Hl3MotionGame } from "./hl3_motion";
+import { Hl3DamageNumbers } from "./hl3_numbers";
 import { Hl3QuestGuide } from "./hl3_quest_guide";
 import { Hl4Feedback } from "./hl4_feedback";
 import { Hl4SlotIcons } from "./hl4_slots";
@@ -118,6 +119,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   let session: PlayerSession | undefined;
   let motion: { dispose(): void } | undefined;
   let combo: Hl3ComboTiming | undefined;
+  let numbers: Hl3DamageNumbers | undefined;
   let preparing = true;
   let suspended = false;
   let ending = false;
@@ -145,6 +147,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     feedback?.dispose();
     motion?.dispose();
     combo = undefined;
+    numbers = undefined;
     slotIcons?.dispose();
     questGuide?.dispose();
     hunt?.stop();
@@ -630,6 +633,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         if (!preparing && !suspended) {
           feedback?.sample(session?.cheats);
           combo?.sample(performance.now());
+          numbers?.sample(session?.cheats, performance.now());
           slotIcons?.update();
           openStyles?.();
           questGuide?.sample(session);
@@ -666,6 +670,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
     session = started;
     if (started?.guest && isHeroesLore3(app.id)) motion = new InBetweenFrames(started, gameCanvas, new Hl3MotionGame(), app.id);
     if (started && isHeroesLore3(app.id)) combo = new Hl3ComboTiming(started);
+    if (started && isHeroesLore3(app.id)) numbers = new Hl3DamageNumbers();
     questGuide?.attach(started);
     updateControls();
     if (!preparing) {

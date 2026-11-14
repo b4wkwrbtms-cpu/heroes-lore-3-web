@@ -210,6 +210,8 @@ export interface DisplayStyle {
 export const DEFAULT_DISPLAY_STYLE: DisplayStyle = { upscaler: "epx", glow: 0, vivid: 0 };
 /** The look of the 영웅서기5 player: smooth edges, a soft glow around fire and magic, slightly richer colours. */
 export const HD_DISPLAY_STYLE: DisplayStyle = { upscaler: "xbr", glow: 0.6, vivid: 1 };
+/** 영웅서기3: the same, with a wider glow and gentler colours so skill light blends in instead of standing out hard. */
+export const HL3_DISPLAY_STYLE: DisplayStyle = { upscaler: "xbr", glow: 0.85, vivid: 0.6 };
 
 interface Pass {
   program: WebGLProgram;
