@@ -9,6 +9,9 @@ export interface MotionWrite {
   value: number;
 }
 
+/** A screen rectangle: x, y, width, height. */
+export type Box = readonly [number, number, number, number];
+
 /** What a game tells the in-between frames about itself; S is what moves in it, as of one game frame. */
 export interface MotionGame<S> {
   /** What moves, read after a game frame; undefined where in-between frames do not apply (menus, loading). */
@@ -22,7 +25,20 @@ export interface MotionGame<S> {
   draw(guest: GuestApi, api: CheatApi, cur: S): void;
   /** Guest memory the drawing changes (animation counters) as [address, size]; put back after each drawing. */
   scratch: ReadonlyArray<readonly [number, number]>;
+  /** Where the map's top-left corner is on the screen `frac` of the way from `prev` to `cur`, as `place` puts it. */
+  view(prev: S, cur: S, frac: number): readonly [number, number];
+  /** The part of the screen that shows the map; the rest (the HUD) does not move with it. */
+  readonly field: Box;
+  /** Screen boxes, `frac` of the way, around what moved from `prev` to `cur`: the picture is not blended there. */
+  movers(prev: S, cur: S, frac: number): Box[];
+  /** A game frame arrived and the guest is idle: the game may have the guest draw parts of it for `decorate`. */
+  arrived?(guest: GuestApi, api: CheatApi, cur: S): void;
+  /** Draws over a picture (RGBA pixels, `width` wide) shown `frac` of the way from `prev`'s frame to `cur`'s. */
+  decorate?(pixels: Uint32Array, width: number, prev: S, cur: S, frac: number): void;
 }
+
+/** More of the map than this changing at once is a new scene, a flash or a shake: it is not blended. */
+const MAX_BLEND_SHARE = 0.4;
 
 /** Display frames are drawn no closer together than this: a 120 Hz screen does not get twice the drawings. */
 const MIN_GAP_MS = 13;
@@ -35,8 +51,11 @@ const GIVE_UP_MS = 15;
  * times a second. Between two game frames the guest draws its screen again with what moves placed part of the way
  * between its last two positions, on every display frame; the guest's memory is put back after each drawing, so the
  * game never sees it. The picture runs one game frame behind so there is always a real position to move toward, and
- * each game frame's own picture is still shown, as the last of its in-between frames. While nothing moves the game's
- * frames are shown at once, as without this.
+ * each game frame's own picture is still shown, as the last of its in-between frames.
+ *
+ * What changes in place has no position to move: an attack's poses, a skill's flames, a monster flinching. Where the
+ * two game frames differ with the map lined up and nothing moved, the in-between frame fades from the older picture
+ * to the newer one. While nothing moves or changes the game's frames are shown at once, as without this.
  */
 export class InBetweenFrames<S> {
   private readonly setting = document.getElementById("motion-setting");
@@ -45,6 +64,10 @@ export class InBetweenFrames<S> {
   private readonly context: CanvasRenderingContext2D | null;
   /** The game's own pictures of the last two game frames: [the older one, the newer one]. */
   private held: [HTMLCanvasElement, HTMLCanvasElement] = [document.createElement("canvas"), document.createElement("canvas")];
+  /** Their pixels (RGBA, as the canvas has them). */
+  private pixels: [Uint32Array | undefined, Uint32Array | undefined] = [undefined, undefined];
+  /** Whether something changed in place between the two: in-between frames then fade between them. */
+  private fading = false;
   private prev: S | undefined;
   private cur: S | undefined;
   /** When `cur` arrived, and the running average of the time between game frames (0 until two have arrived). */
@@ -99,15 +122,20 @@ export class InBetweenFrames<S> {
     this.arrived = now;
     this.cost *= 0.995; // a device that was too slow for a while gets another try later
     this.held.reverse();
+    this.pixels.reverse();
     this.keep(this.held[1]);
+    this.pixels[1] = this.picture().pixels.slice();
     this.prev = this.cur;
     this.cur = guest.idle() ? this.game.read(api) : undefined;
+    if (this.cur !== undefined) this.game.arrived?.(guest, api, this.cur);
     this.lastDrawn = now;
     this.drawn = 0;
-    this.pending = this.prev !== undefined && this.cur !== undefined && interval < this.period * 3 && this.cost < GIVE_UP_MS
-      && this.held[0].width === this.canvas.width && this.game.place(this.prev, this.cur, 0.5).length > 0;
+    const ready = this.prev !== undefined && this.cur !== undefined && interval < this.period * 3 && this.cost < GIVE_UP_MS
+      && this.held[0].width === this.canvas.width && this.pixels[0]?.length === this.pixels[1].length;
+    this.fading = ready && this.fade(undefined, 0.5) > 0;
+    this.pending = ready && (this.fading || this.game.place(this.prev!, this.cur!, 0.5).length > 0);
     if (!this.pending) return false;
-    this.show(this.held[0]); // the frame before this one: the movement toward this one starts there
+    this.show(0, 0); // the frame before this one: the movement toward this one starts there
     return true;
   }
 
@@ -117,28 +145,89 @@ export class InBetweenFrames<S> {
     // The last stretch belongs to the game's own picture; so does all of it once the guest is busy with its next frame.
     if (frac >= 0.85) {
       this.pending = false;
-      this.show(this.held[1]);
+      this.show(1, 1);
       return true;
     }
-    if (now - this.lastDrawn < MIN_GAP_MS || (this.cost > SLOW_MS && (this.drawn > 0 || frac < 0.4)) || !guest.idle()) return true;
+    if (now - this.lastDrawn < MIN_GAP_MS || (this.cost > SLOW_MS && (this.drawn > 0 || frac < 0.4))) return true;
     const writes = this.game.place(this.prev!, this.cur!, frac);
-    if (!writes.length) return true;
+    if (writes.length ? !guest.idle() : !this.fading) return true;
 
     const started = performance.now();
-    const scratch = this.game.scratch.map(([address, size]) => api.dump(address, size));
-    const before = writes.map(({ address, width }) => api.read(address, width, false));
-    try {
-      for (const { address, width, value } of writes) api.write(address, width, false, value);
-      this.game.draw(guest, api, this.cur!);
-    } finally {
-      this.game.scratch.forEach(([address], index) => api.writeBytes(address, scratch[index]));
-      writes.forEach(({ address, width }, index) => api.write(address, width, false, before[index]));
+    if (writes.length) {
+      const scratch = this.game.scratch.map(([address, size]) => api.dump(address, size));
+      const before = writes.map(({ address, width }) => api.read(address, width, false));
+      try {
+        for (const { address, width, value } of writes) api.write(address, width, false, value);
+        this.game.draw(guest, api, this.cur!);
+      } finally {
+        this.game.scratch.forEach(([address], index) => api.writeBytes(address, scratch[index]));
+        writes.forEach(({ address, width }, index) => api.write(address, width, false, before[index]));
+      }
+    }
+    if (this.fading || this.game.decorate) {
+      // The guest's drawing at the in-between positions, or with nothing moved the newer picture, faded in place.
+      const picture = writes.length ? this.picture() : this.picture(this.pixels[1]!);
+      if (this.fading) this.fade(picture.pixels, frac);
+      this.game.decorate?.(picture.pixels, this.canvas.width, this.prev!, this.cur!, frac);
+      this.context!.putImageData(picture.image, 0, 0);
     }
     this.cost += (performance.now() - started - this.cost) * 0.1;
     this.lastDrawn = now;
     this.drawn++;
     presentFrame();
     return true;
+  }
+
+  /** The canvas's pixels, or a copy of `from` to work on, as an image to put back. */
+  private picture(from?: Uint32Array): { image: ImageData; pixels: Uint32Array } {
+    const { width, height } = this.canvas;
+    const image = from ? new ImageData(width, height) : this.context!.getImageData(0, 0, width, height);
+    const pixels = new Uint32Array(image.data.buffer);
+    if (from) pixels.set(from);
+    return { image, pixels };
+  }
+
+  /**
+   * Fades what changed in place between the two game frames into `base` (the picture at `frac`), `frac` of the way
+   * from the older picture; returns how many pixels that is. Without `base` it only counts. The pictures are lined
+   * up on the map; around what moved, and outside the map, `base` is kept as it is.
+   */
+  private fade(base: Uint32Array | undefined, frac: number): number {
+    const older = this.pixels[0]!, newer = this.pixels[1]!;
+    const width = this.canvas.width;
+    const [fx, fy, fw, fh] = this.game.field;
+    const [px, py] = this.game.view(this.prev!, this.cur!, 0);
+    const [cx, cy] = this.game.view(this.prev!, this.cur!, 1);
+    const [vx, vy] = this.game.view(this.prev!, this.cur!, frac);
+    const skip = new Uint8Array(fw * fh);
+    for (const [bx, by, bw, bh] of this.game.movers(this.prev!, this.cur!, frac)) {
+      for (let y = Math.max(by, fy); y < Math.min(by + bh, fy + fh); y++) {
+        skip.fill(1, (y - fy) * fw + Math.max(bx, fx) - fx, (y - fy) * fw + Math.min(bx + bw, fx + fw) - fx);
+      }
+    }
+    const weight = Math.round(frac * 256);
+    let changed = 0;
+    for (let y = fy; y < fy + fh; y++) {
+      // The same spot of the map in each picture.
+      const oy = y - vy + py, ny = y - vy + cy;
+      if (oy < fy || oy >= fy + fh || ny < fy || ny >= fy + fh) continue;
+      for (let x = fx; x < fx + fw; x++) {
+        const ox = x - vx + px, nx = x - vx + cx;
+        if (ox < fx || ox >= fx + fw || nx < fx || nx >= fx + fw || skip[(y - fy) * fw + x - fx]) continue;
+        const from = older[oy * width + ox];
+        if (from === newer[ny * width + nx]) continue;
+        changed++;
+        if (!base) continue;
+        const to = base[y * width + x];
+        let mixed = 0xff000000;
+        for (let shift = 0; shift < 24; shift += 8) {
+          const a = (from >>> shift) & 0xff, b = (to >>> shift) & 0xff;
+          mixed |= ((a * (256 - weight) + b * weight) >> 8) << shift;
+        }
+        base[y * width + x] = mixed >>> 0;
+      }
+    }
+    return changed > 0 && changed <= fw * fh * MAX_BLEND_SHARE ? changed : 0;
   }
 
   private keep(copy: HTMLCanvasElement): void {
@@ -151,13 +240,21 @@ export class InBetweenFrames<S> {
     context.drawImage(this.canvas, 0, 0);
   }
 
-  private show(picture: HTMLCanvasElement): void {
+  /** Shows the older (0) or newer (1) game frame's own picture, `frac` along the way for what is drawn over it. */
+  private show(which: 0 | 1, frac: number): void {
     const context = this.context!;
-    context.save();
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.globalCompositeOperation = "copy";
-    context.drawImage(picture, 0, 0);
-    context.restore();
+    const pixels = this.pixels[which];
+    if (this.game.decorate && pixels && this.prev !== undefined && this.cur !== undefined) {
+      const picture = this.picture(pixels);
+      this.game.decorate(picture.pixels, this.canvas.width, this.prev, this.cur, frac);
+      context.putImageData(picture.image, 0, 0);
+    } else {
+      context.save();
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.globalCompositeOperation = "copy";
+      context.drawImage(this.held[which], 0, 0);
+      context.restore();
+    }
     presentFrame();
   }
 
