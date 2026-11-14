@@ -52,8 +52,8 @@ test("영웅서기3 damage numbers step in real time and a new hit starts over",
     shown.push(age(MONSTER_AGE));
     now += 33;
   }
-  // The rising steps take 140 ms each instead of a frame, the fading step goes at the game's own pace.
-  assert.deepEqual(shown.slice(0, 16), [1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, -1, -1]);
+  // The rising steps take 80 ms each instead of a frame, the fading step goes at the game's own pace.
+  assert.deepEqual(shown.slice(0, 11), [1, 1, 1, 2, 2, 3, 3, 3, 4, -1, -1]);
   assert.equal(age(HERO_AGE), -1); // nothing up stays untouched
 
   write(HERO_AGE, 0); // the hero is hit: that number keeps the game's own pace

@@ -81,8 +81,9 @@ test("영웅서기 제로 and 영웅서기4 get their own pads by PID while the 
     assert.equal(pad.isZero({ id: other }), false);
     assert.equal(zero.isZero(other), false);
   }
-  // 영웅서기3 and 이노티아 keep exactly the pads they had.
-  assert.equal(hl3Pad.name, undefined);
+  // 영웅서기3 keeps its keys (its name only selects its own, larger pad sizes); 이노티아 keeps exactly the pad it had.
+  assert.equal(hl3Pad.name, "hl3");
+  assert.equal(pad.padProfileFor({ id: "PD000000" }).name, undefined);
   assert.equal(hl3Pad.diagonals, undefined);
   assert.equal(hl3Pad.windowed, undefined);
   assert.deepEqual({ ...hl3Pad.directions }, { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT" });

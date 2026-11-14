@@ -18,7 +18,7 @@ const MONSTER_SIZE = 344;
 const MONSTER_NUMBER = 0xaa; // damage, age, kind within a monster record
 const FIELD_MODE = 4;
 /** Real time each of the number's five steps stays on screen. */
-const STEP_MS = 140;
+const STEP_MS = 80;
 /** Highest age held: the last steps (the number fading) go at the game's pace, which may add two frames at once. */
 const LAST_HELD = 2;
 

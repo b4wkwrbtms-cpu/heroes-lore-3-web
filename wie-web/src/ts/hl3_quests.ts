@@ -125,6 +125,8 @@ export function resolveQuestTrigger(bytes: Uint8Array, state: QuestConditions, d
 export class Hl3QuestResources {
   readonly texts = new Map<string, QuestText[]>();
   readonly scenes = new Map<number, QuestScene>();
+  /** Per kill quest: scenes of its region that were seen to hold none of its monsters. Forgotten with the game. */
+  private readonly without = new Map<number, Set<number>>();
   constructor(resources: Map<string, Uint8Array>) {
     for (const [name, bytes] of resources) {
       const quest = /^res\/dat\/quest_([01][01])_dat$/.exec(name);
@@ -133,6 +135,26 @@ export class Hl3QuestResources {
       if (scene) this.scenes.set(Number(scene[1]), parseQuestScene(Number(scene[1]), bytes));
     }
     if (this.texts.size !== 4 || !this.scenes.size) throw new Error("Quest resources unavailable");
+  }
+  scenesWithout(quest: number): Set<number> {
+    let scenes = this.without.get(quest);
+    if (!scenes) this.without.set(quest, scenes = new Set());
+    return scenes;
+  }
+  /**
+   * Whether an action turns the quest in: by itself, or by warping into an unnamed scene (the game's cutscenes, all
+   * named ".") that does. A quest that ends in a cutscene has its turn-in there, not at the spot that starts it.
+   */
+  finishes(action: Action | undefined, quest: number, seen = new Set<number>()): boolean {
+    if (!action) return false;
+    return action.commands.some(c => {
+      if (c[0] === 34) return c[1] === quest && c[2] === 0;
+      if (c[0] !== 40 || seen.has(c[1])) return false;
+      const scene = this.scenes.get(c[1]);
+      if (scene?.name !== ".") return false;
+      seen.add(c[1]);
+      return scene.actions.some(next => this.finishes(next, quest, seen));
+    });
   }
   text(character: number, id: number, threshold: number): QuestText | undefined {
     return this.texts.get(`${character}${id >= threshold ? 1 : 0}`)?.[(id >= threshold ? id - threshold : id) >> 1];
@@ -186,25 +208,36 @@ export function isCurrentQuestSnapshot(appId: string, api: CheatApi, snapshot: Q
 
 interface Route { scene: QuestScene; first?: QuestPoint; steps: number }
 
-function reachable(resources: Hl3QuestResources, start: number, state: QuestConditions): Route[] {
+/**
+ * Scenes that can be walked to from `start`, nearest first, each with the spot in `start` its way begins at.
+ * Strictly, a way is a door that only warps. `loose` also takes ways through a talk or a cutscene (an action that
+ * does more than warp, and the unnamed cutscene scenes with their automatic triggers): those may change the story's
+ * flags on the way, so they are for when the strict ways do not reach the quest.
+ */
+function reachable(resources: Hl3QuestResources, start: number, state: QuestConditions, loose = false): Route[] {
   const scene = resources.scenes.get(start);
   if (!scene) return [];
   const routes: Route[] = [{ scene, steps: 0 }], visited = new Set([start]);
   for (let i = 0; i < routes.length; i++) {
     const route = routes[i];
+    const cutscene = route.scene.name === ".";
     for (const trigger of route.scene.triggers) {
-      if (trigger.length < 7 || ![3, 5, 6].includes(trigger[5])) continue;
+      if (trigger.length < 7 || !([3, 5, 6].includes(trigger[5]) || (loose && cutscene))) continue;
       const selected = resolveQuestTrigger(trigger.subarray(6), state);
-      // Dialog choices/cutscenes may change flags, so only a pure native warp is an edge.
-      if (selected?.length !== 1) continue;
-      const action = route.scene.actions[selected[0]];
-      if (!action || action.choice || action.commands.length !== 1 || action.commands[0][0] !== 40) continue;
-      const next = resources.scenes.get(action.commands[0][1]);
-      if (!next || visited.has(next.id)) continue;
-      visited.add(next.id);
-      routes.push({ scene: next, steps: route.steps + 1, first: route.first ?? {
-        x: trigger[0] * 16 + 8, y: trigger[1] * 16 + 16, kind: "exit", label: next.name,
-      } });
+      // Dialog choices/cutscenes may change flags, so only a pure native warp is a strict edge.
+      if (!selected?.length || (!loose && selected.length !== 1)) continue;
+      for (const index of selected) {
+        const action = route.scene.actions[index];
+        if (!action || action.choice) continue;
+        if (!loose && (action.commands.length !== 1 || action.commands[0][0] !== 40)) continue;
+        const warp = [...action.commands].reverse().find(c => c[0] === 40);
+        const next = warp && resources.scenes.get(warp[1]);
+        if (!next || visited.has(next.id)) continue;
+        visited.add(next.id);
+        routes.push({ scene: next, steps: route.steps + 1, first: route.first ?? (cutscene ? undefined : {
+          x: trigger[0] * 16 + 8, y: trigger[1] * 16 + 16, kind: "exit", label: next.name,
+        }) });
+      }
     }
   }
   return routes;
@@ -266,33 +299,52 @@ export function readHl3Quests(appId: string, api: CheatApi, resources: Hl3QuestR
   const done = selected.progress.length > 0 && selected.progress.every(p => p.current >= p.required);
   const liveTargets = selected.progress.filter(p => p.monster !== undefined && p.current < p.required);
   const table = read(G + 0x9c94), monsters = s16(read(G + 0x9c98, 2));
-  let closest = Infinity;
+  let closest = Infinity, here = false;
   if (liveTargets.length && heap(table) && monsters >= 0 && monsters <= 512 && table + monsters * 0x158 < 0x50000000) {
     for (let i = 0; i < monsters; i++) {
       const record = table + i * 0x158, entity = read(record);
-      if (!heap(entity) || read(record + 0x7e, 2) === 0) continue;
+      if (!heap(entity)) continue;
       const p = read(entity + 0x18);
-      if (!heap(p) || read(p + 4, 1) !== 5 || read(p + 0x0d, 1) === 255 || !liveTargets.some(t => t.monster === read(p + 0x0e, 1))) continue;
+      if (!heap(p) || read(p + 4, 1) !== 5 || !liveTargets.some(t => t.monster === read(p + 0x0e, 1))) continue;
+      here = true; // this map has the quest's monster, alive or about to come back
+      if (read(record + 0x7e, 2) === 0 || read(p + 0x0d, 1) === 255) continue;
       const x = s16(read(p + 0x10, 2)), y = s16(read(p + 0x12, 2)), distance = (x - player.x) ** 2 + (y - player.y) ** 2;
       if (distance < closest) { closest = distance; snapshot.point = { x, y, kind: "target", label: "퀘스트 대상" }; }
     }
   }
   if (snapshot.point) { snapshot.guidance = "이 지역의 퀘스트 대상"; return snapshot; }
-  // A finish action is only a destination when its native trigger is currently eligible.
-  for (const route of routes) {
+  let looseRoutes: Route[] | undefined;
+  const loose = () => looseRoutes ??= reachable(resources, scene, state, true);
+  // A finish action is only a destination when its native trigger is currently eligible. The spot that turns the
+  // quest in (or starts the cutscene that does) comes before anything read from the quest's description.
+  if (done || !selected.progress.length) for (const candidates of [() => routes, loose]) for (const route of candidates()) {
+    if (route.scene.name === ".") continue;
     const trigger = route.scene.triggers.find(t => t[5] !== 0 && t.length > 6 &&
-      resolveQuestTrigger(t.subarray(6), state)?.some(index => route.scene.actions[index]?.commands.some(c => c[0] === 34 && c[1] === selected.id && c[2] === 0)));
-    if (trigger && (done || !selected.progress.length)) {
+      resolveQuestTrigger(t.subarray(6), state)?.some(index => resources.finishes(route.scene.actions[index], selected.id)));
+    if (trigger) {
       snapshot.point = route.first ?? { x: trigger[0] * 16 + 8, y: trigger[1] * 16 + 16, kind: "target", label: "퀘스트 진행 위치" };
       snapshot.guidance = route.first ? `${route.first.label} 방면 출구` : "표시된 위치에서 퀘스트 진행";
       return snapshot;
     }
   }
+  // Otherwise the region the description names. For a hunt, a map of that region seen without the monster is passed
+  // over for the next nearest one, so the guide does not stop at the region's first map.
   const region = selected.location.split(";")[0].trim();
-  const destination = region && routes.find(r => normalize(r.scene.name).startsWith(normalize(region)));
+  const inRegion = (route: Route) => route.scene.name !== "." && normalize(route.scene.name).startsWith(normalize(region));
+  const without = resources.scenesWithout(selected.id);
+  if (region && liveTargets.length && inRegion(routes[0])) {
+    if (here) without.delete(scene);
+    else without.add(scene);
+  }
+  const hunting = liveTargets.length > 0;
+  const find = (candidates: Route[]) => candidates.find(r => inRegion(r) && !(hunting && without.has(r.scene.id)));
+  const destination = region ? find(routes) ?? find(loose()) ?? routes.find(inRegion) ?? loose().find(inRegion) : undefined;
   if (destination) {
     snapshot.point = destination.first;
-    snapshot.guidance = destination.first ? `${destination.first.label} 방면 출구` : done ? "목표 수량 달성 · 다음 진행 확인" : "목표 지역 도착 · 퀘스트를 진행하세요";
+    snapshot.guidance = destination.first ? `${destination.first.label} 방면 출구`
+      : done ? "목표 수량 달성 · 다음 진행 확인"
+      : hunting && here ? "이 지역의 대상이 다시 나타나길 기다리세요"
+      : hunting ? "이 지역의 다른 맵에서 대상을 찾아보세요" : "목표 지역 도착 · 퀘스트를 진행하세요";
   } else snapshot.guidance = done ? "목표 수량 달성 · 퀘스트 설명 확인" : `${region || selected.location} · 연결 경로 확인 필요`;
   return snapshot;
 }

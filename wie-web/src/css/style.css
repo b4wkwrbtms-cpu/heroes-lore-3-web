@@ -581,13 +581,15 @@ html[data-screen-fit="contain"] #canvas {
   color: #f7e9ce;
   box-shadow: 0 3px 12px #0005;
   font: 11px/1.4 system-ui, sans-serif;
-  touch-action: manipulation;
+  /* The stick zone runs underneath: only the fold button and the opened details take a touch. */
+  pointer-events: none;
   user-select: none;
 }
+.hl3-quest-toggle, .hl3-quest-details { pointer-events: auto; touch-action: manipulation; }
 .hl3-quest-guide[hidden], .hl3-quest-marker[hidden], .hl3-quest-details[hidden] { display: none; }
 .hl3-quest-toggle {
   display: block;
-  width: 100%;
+  width: fit-content;
   min-height: 24px;
   padding: 0;
   border: 0;
@@ -943,8 +945,30 @@ html[data-screen-fit="contain"] #canvas {
 .ring-o2 { --x: 149; --y: 181; --d: 52; }
 .ring-o3 { --x: 38; --y: 211; --d: 52; }
 
-.player-view:not([data-pad-profile]) .ring-i1.key-sub b {
+.player-view:not([data-pad-profile]) .ring-i1.key-sub b,
+.player-view[data-pad-profile="hl3"] .ring-i1.key-sub b {
   font-size: calc(var(--d) * var(--u) * 0.27);
+}
+
+/* 영웅서기3 (portrait): larger quick slots, attack and stick. The pad is a little taller and the keys sit on a
+   240 × 270 grid, so the slots are 72 units across instead of 52–56 without touching each other. */
+@media (orientation: portrait) {
+  .player-view[data-pad-profile="hl3"] .pad {
+    height: calc(clamp(280px, 37dvh, 340px) + var(--safe-bottom));
+  }
+  .player-view[data-pad-profile="hl3"] .action-cluster > .key-ring {
+    --u: min(100cqw / 240, 100cqh / 270);
+  }
+  .player-view[data-pad-profile="hl3"] .key-attack { --x: 56; --y: 60; --d: 96; }
+  .player-view[data-pad-profile="hl3"] .ring-i1 { --x: 148; --y: 40; --d: 72; }
+  .player-view[data-pad-profile="hl3"] .ring-i2 { --x: 138; --y: 116; --d: 72; }
+  .player-view[data-pad-profile="hl3"] .ring-i3 { --x: 62; --y: 150; --d: 72; }
+  .player-view[data-pad-profile="hl3"] .ring-o1 { --x: 204; --y: 160; --d: 72; }
+  .player-view[data-pad-profile="hl3"] .ring-o2 { --x: 128; --y: 196; --d: 72; }
+  .player-view[data-pad-profile="hl3"] .ring-o3 { --x: 48; --y: 232; --d: 72; }
+  .player-view[data-pad-profile="hl3"] .joystick {
+    width: min(98cqw, 72cqh, 190px);
+  }
 }
 
 .key-macro {

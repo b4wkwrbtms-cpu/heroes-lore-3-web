@@ -1,4 +1,5 @@
 import type { CheatApi, LibraryApp } from "./backend";
+import { isHeroesLore3 } from "./hl3";
 import { ZERO_SAVE_KEY, inZeroWindow, isZero as isZeroPid } from "./zero";
 
 export type Direction = "UP" | "DOWN" | "LEFT" | "RIGHT";
@@ -42,6 +43,9 @@ const DEFAULT_PROFILE: PadProfile = {
   directions: { UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT" },
   buttons: {},
 };
+
+/** 영웅서기3: the default keys; the name only selects its own pad sizes (bigger quick slots and stick). */
+const HEROES_LORE_3_PROFILE: PadProfile = { ...DEFAULT_PROFILE, name: "hl3" };
 
 /**
  * 이노티아 연대기 (Com2uS, 2007): every screen (title menus, pop-ups, dialogs with 승낙/거절, the field and its menus)
@@ -119,7 +123,8 @@ export const isZero = (app: Pick<LibraryApp, "id">): boolean => isZeroPid(app.id
 export const isHeroesLore4 = (app: Pick<LibraryApp, "id">): boolean => app.id === "PD140249";
 
 export const padProfileFor = (app: Pick<LibraryApp, "id">): PadProfile =>
-  isInotia(app) ? INOTIA_PROFILE : isZero(app) ? ZERO_PROFILE : isHeroesLore4(app) ? HEROES_LORE_4_PROFILE : DEFAULT_PROFILE;
+  isInotia(app) ? INOTIA_PROFILE : isZero(app) ? ZERO_PROFILE : isHeroesLore4(app) ? HEROES_LORE_4_PROFILE
+    : isHeroesLore3(app.id) ? HEROES_LORE_3_PROFILE : DEFAULT_PROFILE;
 
 /**
  * Points the pad buttons at the profile's keys and labels. The markup's own key and labels are kept in data

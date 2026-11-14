@@ -354,3 +354,25 @@ test("a newly accepted main quest clears the old arrow during an incomplete read
   m.write(G + 0x9c68, MAP); guide.sample(session, 51);
   assert.equal(marker.hidden, false); assert.equal(title.textContent, "Quest C");
 });
+
+test("a quest that is turned in by a cutscene points at the spot that starts it, not at the region in its description", () => {
+  const files = new Map();
+  for (const character of [0, 1]) {
+    files.set(`res/dat/quest_${character}0_dat`, bytes(textRecord("Quest A", "Test forest;Target") + textRecord("Cave quest", "Test forest;Cave")));
+    files.set(`res/dat/quest_${character}1_dat`, bytes(textRecord("Side quest", "Test forest;Target")));
+  }
+  // The cave: a door back to the forest, and a spot that (with the quest accepted) plays a cutscene.
+  files.set("res/event/e0021_scn", bytes(sceneBytes(13, "Test cave", [[3, 34, 0, 255, 0, 5, 0], [30, 17, 0, 255, 0, 6, 251, 2, 1, 1]],
+    [[40, 7, 1, 1, 1], [25, 0, 40, 50, 30, 17, 3]])));
+  files.set("res/event/e0007_scn", bytes(sceneBytes(5, "Test forest 1", [], [])));
+  files.set("res/event/e0050_scn", bytes(sceneBytes(13, ".", [], [[34, 2, 0, 40, 21, 35, 6, 2]]))); // the cutscene turns it in
+  const r = new Hl3QuestResources(files), m = memory();
+  const list = new Uint8Array(21), quest = new Uint8Array(256);
+  list[0] = 2; list[20] = 1; quest[2] = quest[3] = 1;
+  const hex = value => Buffer.from(value).toString("hex");
+  m.apply({ list: hex(list), quest: hex(quest), local: hex(new Uint8Array(256)), counters: hex(new Uint8Array(76)) });
+  m.write(G + 0x9e08, 21, 2); m.write(G + 0x9e1c, 13);
+  const state = readHl3Quests("PD119037", m.api, r);
+  assert.equal(state.selected.title, "Cave quest");
+  assert.deepEqual([state.point.kind, state.point.x, state.point.y], ["target", 488, 288]);
+});
