@@ -6,17 +6,19 @@ use alloc::{
     collections::BTreeMap,
     format,
     string::{String, ToString},
+    sync::Arc,
     vec::Vec,
 };
 
 use encoding_rs::EUC_KR;
 use futures::future::poll_fn;
 use jvm::{
-    JavaError,
+    JavaError, Jvm,
     runtime::{JavaIoInputStream, JavaLangClassLoader},
 };
+use spin::Mutex;
 
-use wie_backend::{Emulator, Event, Options, Platform, System, TaskRunner, extract_zip};
+use wie_backend::{Emulator, Event, Options, Platform, System, TaskRunner, YieldFuture, extract_zip};
 use wie_core_arm::{Allocator, ArmCore};
 use wie_jvm_support::JvmSupport;
 use wie_util::{ByteRead, ByteWrite, Result, WieError, write_generic};
@@ -49,9 +51,53 @@ impl TaskRunner for LgtTaskRunner {
     }
 }
 
+/// Polls a host call may take before it is given up: far more than a frame's drawing needs.
+const HOST_CALL_POLLS: usize = 100_000;
+
+type HostCallRequest = Arc<Mutex<Option<(u32, Vec<u32>)>>>;
+type HostCallResponse = Arc<Mutex<Option<u32>>>;
+
+/// A guest thread outside the scheduled tasks that runs one guest function per request.
+struct HostCallThread {
+    request: HostCallRequest,
+    response: HostCallResponse,
+    thread: Pin<Box<dyn Future<Output = Result<()>> + Send>>,
+}
+
+impl HostCallThread {
+    fn new(core: &ArmCore, jvm: Jvm) -> Self {
+        let request = HostCallRequest::default();
+        let response = HostCallResponse::default();
+        let runner = LgtTaskRunner { core: core.clone() };
+        let serve = Self::serve(core.clone(), jvm, request.clone(), response.clone());
+        let thread = Box::pin(async move { runner.run(Box::pin(serve)).await });
+
+        Self { request, response, thread }
+    }
+
+    async fn serve(mut core: ArmCore, jvm: Jvm, request: HostCallRequest, response: HostCallResponse) -> Result<()> {
+        // WIPI calls made by the guest function push native frames on this thread.
+        if let Err(error) = jvm.attach_thread(None).await {
+            return Err(JvmSupport::to_wie_err(&jvm, error).await);
+        }
+
+        loop {
+            let call = request.lock().take();
+            if let Some((address, params)) = call {
+                let result: u32 = core.run_function(address, &params).await?;
+                *response.lock() = Some(result);
+            }
+            YieldFuture::new().await;
+        }
+    }
+}
+
 pub struct LgtEmulator {
     core: ArmCore,
     system: System,
+    /// Set once the application has started.
+    jvm: Arc<Mutex<Option<Jvm>>>,
+    host_calls: Option<HostCallThread>,
 }
 
 impl LgtEmulator {
@@ -148,14 +194,28 @@ impl LgtEmulator {
         // the same way, or an entrypoint stored as `P/<name>.jar` names an entry that does not exist.
         let jar_filename = jar_filename.trim_start_matches("P/").to_owned();
 
-        system.spawn(async move || Self::do_start(&mut core_clone, &mut system_clone, jar_filename, main_class_name_clone).await);
+        let jvm = Arc::new(Mutex::new(None));
+        let started_jvm = jvm.clone();
+        system.spawn(async move || Self::do_start(&mut core_clone, &mut system_clone, jar_filename, main_class_name_clone, started_jvm).await);
 
-        Ok(Self { core, system })
+        Ok(Self {
+            core,
+            system,
+            jvm,
+            host_calls: None,
+        })
     }
 
     #[tracing::instrument(name = "start", skip_all)]
-    async fn do_start(core: &mut ArmCore, system: &mut System, jar_filename: String, _main_class_name: Option<String>) -> Result<()> {
+    async fn do_start(
+        core: &mut ArmCore,
+        system: &mut System,
+        jar_filename: String,
+        _main_class_name: Option<String>,
+        started_jvm: Arc<Mutex<Option<Jvm>>>,
+    ) -> Result<()> {
         let jvm = LgtJvmSupport::init(core, system, Some(&jar_filename)).await?;
+        *started_jvm.lock() = Some(jvm.clone());
 
         let class_loader = match JavaLangClassLoader::get_system_class_loader(&jvm).await {
             Ok(class_loader) => class_loader,
@@ -211,6 +271,37 @@ impl Emulator for LgtEmulator {
 
     fn write_memory(&mut self, address: u32, data: &[u8]) -> Result<()> {
         self.core.write_bytes(address, data)
+    }
+
+    fn is_idle(&self) -> bool {
+        self.system.is_idle()
+    }
+
+    fn call_function(&mut self, address: u32, params: &[u32]) -> Result<u32> {
+        let calls = match &mut self.host_calls {
+            Some(calls) => calls,
+            None => {
+                let jvm = self.jvm.lock().clone();
+                let jvm = jvm.ok_or_else(|| WieError::FatalError("The application has not started".into()))?;
+                self.host_calls.insert(HostCallThread::new(&self.core, jvm))
+            }
+        };
+        *calls.request.lock() = Some((address, params.to_vec()));
+
+        for _ in 0..HOST_CALL_POLLS {
+            let ended = self.system.poll_alone(calls.thread.as_mut());
+            if let Some(result) = calls.response.lock().take() {
+                return Ok(result);
+            }
+            if let Poll::Ready(result) = ended {
+                self.host_calls = None;
+                return Err(result.err().unwrap_or_else(|| WieError::FatalError("Host call thread ended".into())));
+            }
+        }
+
+        // The thread is dropped with the call still on its stack.
+        self.host_calls = None;
+        Err(WieError::FatalError(format!("Guest function {address:#x} did not finish")))
     }
 }
 

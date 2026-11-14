@@ -157,6 +157,30 @@ impl Executor {
         self.inner.lock().current_task_id.unwrap() as _
     }
 
+    /// Whether every task is asleep, so none is in the middle of its work.
+    pub fn is_idle(&self) -> bool {
+        let inner = self.inner.lock();
+
+        inner.tasks.len() == inner.sleeping_tasks.len()
+    }
+
+    /// Polls `task` once as a task of its own, outside the scheduled ones and without running them.
+    /// A sleep inside it does not wait: the caller polls again right away.
+    pub fn poll_alone(&self, task: Pin<&mut (dyn Future<Output = Result<()>> + Send)>) -> Poll<Result<()>> {
+        const TASK_ID: usize = 0; // scheduled tasks are numbered from 1
+
+        let waker = Waker::from(self.wake.clone());
+        let mut context = Context::from_waker(&waker);
+        let previous = self.inner.lock().current_task_id.replace(TASK_ID);
+        let result = task.poll(&mut context);
+
+        let mut inner = self.inner.lock();
+        inner.current_task_id = previous;
+        inner.sleeping_tasks.remove(&TASK_ID);
+
+        result
+    }
+
     fn step(&mut self, now: Instant) -> Result<()> {
         let mut next_tasks = HashMap::new();
         let tasks = self.inner.lock().tasks.drain().collect::<HashMap<_, _>>();
@@ -210,7 +234,7 @@ impl Executor {
 
 #[cfg(test)]
 mod tests {
-    use alloc::sync::Arc;
+    use alloc::{boxed::Box, sync::Arc};
     use core::{
         cell::Cell,
         future::{Future, poll_fn},
@@ -219,7 +243,7 @@ mod tests {
         task::{Context, Poll},
     };
 
-    use wie_util::WieError;
+    use wie_util::{Result, WieError};
 
     use super::Executor;
     use crate::{task::SleepFuture, time::Instant};
@@ -285,6 +309,29 @@ mod tests {
         });
         executor.tick(advancing_clock(0)).unwrap();
         assert!(completed.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn a_task_polled_alone_sleeps_without_waiting_and_leaves_the_scheduled_tasks_asleep() {
+        let mut executor = Executor::new();
+        let task_executor = executor.clone();
+        executor.spawn(move || async move {
+            SleepFuture::new(Instant::from_epoch_millis(1000), &task_executor).await;
+        });
+        assert!(!executor.is_idle());
+        executor.tick(advancing_clock(0)).unwrap();
+        assert!(executor.is_idle());
+
+        let alone_executor = executor.clone();
+        let mut alone: Pin<Box<dyn Future<Output = Result<()>> + Send>> = Box::pin(async move {
+            SleepFuture::new(Instant::from_epoch_millis(5000), &alone_executor).await;
+            assert_eq!(alone_executor.current_task_id(), 0);
+            Ok(())
+        });
+        assert!(executor.poll_alone(alone.as_mut()).is_pending());
+        assert!(executor.is_idle());
+        assert!(matches!(executor.poll_alone(alone.as_mut()), Poll::Ready(Ok(()))));
+        assert!(executor.is_idle());
     }
 
     #[test]

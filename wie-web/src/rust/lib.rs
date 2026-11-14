@@ -470,6 +470,17 @@ impl WieWeb {
         self.frozen.clear();
     }
 
+    /// Whether the guest is between its callbacks (every guest task is asleep).
+    pub fn guest_idle(&self) -> bool {
+        self.emulator.is_idle()
+    }
+
+    /// Runs the guest function at `address` to its end, without running the guest's own tasks, and
+    /// returns its result register. Only between the guest's callbacks (`guest_idle`).
+    pub fn guest_call(&mut self, address: u32, params: &[u32]) -> Result<u32, JsError> {
+        self.emulator.call_function(address, params).map_err(|e| JsError::new(&e.to_string()))
+    }
+
     pub fn key_down(&mut self, key: String) -> Result<(), JsError> {
         let millis = self.host.as_ref().map_or_else(js_sys::Date::now, WasmHost::now);
         let key = KeyCode::parse(&key);
