@@ -1,14 +1,14 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "4";
+const VERSION = "5";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "z4.prefs";
 const prefs = Object.assign(
-  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", money: "max", refine: "easy", screen: "notch", sound: "on" },
+  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", money: "max", refine: "easy", perf: "off", screen: "notch", sound: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -1211,14 +1211,17 @@ let fx;
 // the last two game frames (core motion.c). Menus and anything that jumps show the game's own frames. A
 // device too slow for that gets one in-between frame per game frame, or none.
 const motion = { on: false, cost: 0, shown: -1, state: -1, off: 0 };
+const perf = { t0: 0, rafs: 0, frames: 0, game: 0, paints: 0, paint: 0, skipped: 0 };
 let acc = 0;
 let lastT = 0;
 let shownFrame = -1;
 function frameLoop(t) {
   requestAnimationFrame(frameLoop);
   if (!running) { lastT = t; return; }
+  const start = performance.now();
   const dt = lastT ? Math.min(t - lastT, 250) : 0;
   lastT = t;
+  perf.rafs++;
   if (hitstop > 0) { hitstop -= dt; fxFrame(motion.shown < 0 ? 1024 : motion.shown); return; } // a short freeze on a big blow
   acc += dt;
   let ran = 0;
@@ -1228,23 +1231,29 @@ function frameLoop(t) {
     acc -= frameInterval;
     ran++;
   }
+  if (ran) { perf.frames += ran; perf.game += performance.now() - start; }
   if (acc > frameInterval) acc = 0; // fell behind: drop the backlog instead of rushing
   if (ran) motion.state = motion.on ? core.motionState() : -1;
   let f = 1024;
   if (motion.on && motion.state > 0 && ran < 2) {
+    // where the picture should be now, as a share of the way from the frame before the last to the last
     f = Math.min(1024, Math.round((acc / frameInterval) * 1024));
-    if (motion.cost > 9) f = f < 512 ? 512 : 1024; // slow device: one in-between frame per game frame
     if (f > 980) f = 1024;
+    // no time left in this display frame (the game step took it): keep the picture for one more frame;
+    // the next one is drawn where it belongs by then, so the speed stays even
+    else if (motion.shown >= 0 && performance.now() - start + motion.cost > 14) { perf.skipped++; f = motion.shown; }
   }
-  if (!ran && f === motion.shown) { if (renderer.dirty) renderer.draw(); fxFrame(f); return; }
+  if (!ran && f === motion.shown) { if (renderer.dirty) renderer.draw(); fxFrame(f); showPerf(); return; }
   let frame = null;
   if (f < 1024) {
     const t0 = performance.now();
     frame = core.between(f);
     const ms = performance.now() - t0;
     motion.cost = motion.cost * 0.9 + ms * 0.1;
+    perf.paints++;
+    perf.paint += ms;
     if (!frame) f = 1024;
-    if (motion.cost > 18 && ++motion.off > 30) { // far too slow here: plain frames for a while
+    if (motion.cost > 25 && ++motion.off > 30) { // far too slow here: plain frames for a while
       motion.on = false;
       core.motionOn(false);
       setTimeout(() => { if (prefs.motion === "smooth") { motion.cost = 6; motion.off = 0; motion.on = core.motionOn(true); } }, 20000);
@@ -1260,6 +1269,22 @@ function frameLoop(t) {
   if (frame) renderer.upload(frame.px, frame.w, frame.h);
   if (renderer.dirty) renderer.draw();
   fxFrame(f);
+  showPerf();
+}
+
+// 성능 표시: display frames a second, the game's step, the in-between frames, which core runs
+function showPerf() {
+  const now = performance.now();
+  if (now - perf.t0 < 1000) return;
+  const el = $("perf"), secs = (now - perf.t0) / 1000;
+  if (prefs.perf === "on" && perf.t0) {
+    const g = perf.frames ? perf.game / perf.frames : 0, p = perf.paints ? perf.paint / perf.paints : 0;
+    el.textContent = `${Math.round(perf.rafs / secs)}fps · 게임 ${Math.round(perf.frames / secs)}회 ${g.toFixed(1)}ms · ` +
+      `중간 ${Math.round(perf.paints / secs)}장 ${p.toFixed(1)}ms` + (perf.skipped ? ` 건너뜀 ${perf.skipped}` : "") +
+      ` · ${core.fast ? "가속" : "기본"} · 움직임 ${motion.on ? (motion.state > 0 ? "보간" : "정지") : "꺼짐"} · v${VERSION}`;
+    el.style.display = "block";
+  } else el.style.display = "none";
+  Object.assign(perf, { t0: now, rafs: 0, frames: 0, game: 0, paints: 0, paint: 0, skipped: 0 });
 }
 
 // the effects follow the camera of the picture on screen; the shake moves the game and the effects together
@@ -1302,6 +1327,7 @@ document.addEventListener("visibilitychange", () => {
     if (running) { releaseAll(); deliverInput(); running = false; core.pause(true); audio.suspend(); }
     saves.flush();
   } else if (!running && !$("settings").classList.contains("show") && !$("tap").classList.contains("show")) {
+    noticeUpdate();
     core.pause(false);
     audio.resume();
     running = true;
@@ -1478,6 +1504,17 @@ async function startGame() {
 
 // The home-screen app can keep an old index.html for a while; version.txt is always fetched fresh, and
 // when it names a newer version the page reloads once under a new address, which bypasses the cache.
+// A home-screen app coming back from the background keeps running the old page: say when a new one is out
+// (reloading by itself would lose the progress since the last save).
+async function noticeUpdate() {
+  try {
+    const r = await fetch(`version.txt?t=${Date.now()}`, { cache: "no-store" });
+    const v = r.ok ? (await r.text()).trim() : "";
+    if (!/^\d+$/.test(v) || Number(v) <= Number(VERSION)) return;
+    $("version").textContent = `버전 ${VERSION} · 새 버전 ${v} 있음 (다시 시작하면 바뀌어요)`;
+    toast(`새 버전(${v})이 나왔어요. 게임에서 저장한 뒤 설정 → 다시 시작을 누르세요`, 6000);
+  } catch {}
+}
 async function checkForUpdate() {
   try {
     const r = await fetch(`version.txt?t=${Date.now()}`, { cache: "no-store" });

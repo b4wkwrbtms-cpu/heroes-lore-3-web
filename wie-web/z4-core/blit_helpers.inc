@@ -11,6 +11,16 @@
 // Stores go straight to guest memory; a run's pages are handed to the copy-on-write log (cow.c) first.
 static inline void bh_mark(u32 a, u32 bytes) { if (__builtin_expect(cow_on, 0)) cow_range(a, bytes); }
 static inline void bh_st(u32 a, u32 v) { u16 h = (u16)v; __builtin_memcpy(G + (a & GUEST_MASK), &h, 2); }
+// n palette pixels from s to d, through host pointers (a run never leaves guest memory)
+static inline void bh_pal_run(u32 d, u32 s, u32 pal, u32 n) {
+  u8 *dp = G + (d & GUEST_MASK);
+  const u8 *sp = G + (s & GUEST_MASK), *pp = G + (pal & GUEST_MASK);
+  for (u32 i = 0; i < n; i++) {
+    u16 v;
+    __builtin_memcpy(&v, pp + 2u * sp[i], 2);
+    __builtin_memcpy(dp + 2 * i, &v, 2);
+  }
+}
 static inline u32 bh_arg(int i) { return rd32(R[13] + 4u * (u32)i); } // stack arguments, from the 5th on
 static inline u32 bh_le16(u32 a) { return (u32)rd8(a) | ((u32)rd8(a + 1) << 8); }
 
@@ -34,7 +44,9 @@ static void bh_copy_c16(void) {
     if (!(c & 0x8000)) { d += c * 2; continue; }
     u32 n = c & 0x7fff;
     bh_mark(d, n * 2);
-    for (; n; n--) { bh_st(d, rd16(pal + 2u * rd8(s))); d += 2; s++; }
+    bh_pal_run(d, s, pal, n);
+    d += n * 2;
+    s += n;
   }
   helper_return();
 }
@@ -58,13 +70,13 @@ static void bh_copy_cc16(void) {
     if (!(c & 0x8000)) { d += c * 2; x += (s32)c; continue; }
     u32 n = c & 0x7fff;
     if (y < y0) { d += n * 2; s += n; continue; } // (x is left as it is here)
-    bh_mark(d, n * 2);
-    while (n) {
-      if (x < x0 || x >= x1) { d += 2; s++; x++; n--; continue; }
-      bh_st(d, rd16(pal + 2u * rd8(s)));
-      d += 2; s++; x++; n--;
-      if (x >= x1) { d += n * 2; s += n; n = 0; }
+    // the pixels of the run inside [x0, x1)
+    s32 lo = x > x0 ? x : x0, hi = x + (s32)n < x1 ? x + (s32)n : x1;
+    if (lo < hi) {
+      bh_mark(d + 2 * (u32)(lo - x), 2 * (u32)(hi - lo));
+      bh_pal_run(d + 2 * (u32)(lo - x), s + (u32)(lo - x), pal, (u32)(hi - lo));
     }
+    d += n * 2; s += n; x += (s32)n;
   }
   helper_return();
 }
@@ -422,6 +434,52 @@ static void bh_flip_cc16a(void) {
   helper_return();
 }
 
+// DrawOP_BLEND16_ClippingCompress_16_Ex_Alpha(dst, src, palette, pitch, x0, w, y0, h, level): like the
+// clipping alpha blend above with 8-bit palette pixels; the header is 0xfffa, the alpha plane at its offset + 2,
+// and a one-colour run holds one byte.
+static void bh_blend_cc16ex(void) {
+  u32 d = R[0], s = R[1], pal = R[2], pitch = R[3] * 2;
+  s32 x0 = (s32)bh_arg(0), x1 = x0 + (s32)bh_arg(1), y0 = (s32)bh_arg(2), y1 = y0 + (s32)bh_arg(3);
+  s32 level = (s32)bh_arg(4);
+  if (level == 0 || level > 15 || (s16)bh_le16(s) != -6) { helper_return(); return; }
+  u32 lv = (u32)(level - 1) * 17;
+  u32 al = s + ((u32)rd8(s + 2) | ((u32)rd8(s + 3) << 8) | ((u32)rd8(s + 4) << 16) | ((u32)rd8(s + 5) << 24)) + 2;
+  u32 p = s + 10;
+  s32 x = 0, y = 0;
+  for (;;) {
+    u32 c = bh_le16(p);
+    if (c == 0xffff) break;
+    u32 next = p + 2;
+    if (c == 0xfffe) {
+      if (++y >= y1) break;
+      d += pitch;
+      x = 0;
+      p = next;
+      continue;
+    }
+    if (!(c & 0x8000)) { d += c * 2; x += (s32)c; p = next; continue; }
+    u32 one = c >= 0xc000, n = one ? c & 0x3fff : c & 0x7fff, step = one ? 0 : 1;
+    if (!n) { p = next; continue; }
+    if (y < y0) {
+      al += n; x += (s32)n; d += n * 2;
+      p = one ? p + 3 : next + n;
+      continue;
+    }
+    u32 px = p;
+    bh_mark(d, n * 2);
+    for (u32 i = 0; i < n; i++, px += step) {
+      s32 xi = x + (s32)i;
+      if (xi < x0 || xi >= x1) continue;
+      u32 t = (rd8(al + i) * lv) >> 8;
+      u32 dd = d + 2 * i;
+      bh_st(dd, bh_mix(rd16(dd), rd16(pal + 2u * rd8(px + 2)), t & 255, (~t) & 255));
+    }
+    x += (s32)n; al += n; d += n * 2;
+    p = next + n * step + (one ? 1 : 0);
+  }
+  helper_return();
+}
+
 typedef struct { const char *name; u32 size, sig; void (*fn)(void); u32 *addr; } BlitHelper;
 static const BlitHelper blit_helpers[] = {
     {"_Z23DrawOP_COPY_Compress_16PtPhS_i", 328, 0x591182a0u, bh_copy_c16, 0},
@@ -430,6 +488,7 @@ static const BlitHelper blit_helpers[] = {
     {"_Z40DrawOP_COPY_ClippingCompress_16_16_AlphaPtPhS_iiiii", 1358, 0x2a637275u, bh_copy_cc16a, 0},
     {"_Z35DrawOP_BLEND16_Compress_16_16_AlphaPtPhS_il", 316, 0x8f577294u, bh_blend_c16a, 0},
     {"_Z43DrawOP_BLEND16_ClippingCompress_16_16_AlphaPtPhS_iiiiil", 406, 0x17852c70u, bh_blend_cc16a, 0},
+    {"_Z43DrawOP_BLEND16_ClippingCompress_16_Ex_AlphaPtPhS_iiiiil", 418, 0x1b5d85a2u, bh_blend_cc16ex, 0},
     {"_Z17DrawOP_BLEND16_16PtS_iiiiii", 312, 0xf5ac1476u, bh_blend16_16, &bh_blend16_16_addr},
     {"_Z19Screen_FADEOUT16_16Ptiiii", 840, 0x669a5ce9u, bh_fade, &bh_fade_addr},
     {"_Z23DrawOP_GRAY_Compress_16PtPhS_il", 496, 0xc041517fu, bh_gray_c16, &bh_gray_c16_addr},
