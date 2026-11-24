@@ -1,14 +1,14 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "2";
+const VERSION = "4";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "z4.prefs";
 const prefs = Object.assign(
-  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", screen: "notch", sound: "on" },
+  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", money: "max", refine: "easy", screen: "notch", sound: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -109,23 +109,40 @@ const ENTRY = "Java_com_gamevil_nexus2_Natives_NativeRender";
 // The accelerated core (z4fast.wasm) is the same core with the game's busiest functions translated ahead
 // of time from the player's own copy of the library. It holds code made from the game, so it is not part of
 // this site: the player adds it next to the apk.
-async function checkFastCore(bytes) {
-  try {
-    const m = await WebAssembly.compile(bytes);
-    const names = WebAssembly.Module.exports(m).map(e => e.name);
-    // the interpreter-only core of this site has the same exports but is far smaller
-    return names.includes("aot_build") && names.includes("motion_enable") && bytes.length > 1000000;
-  } catch { return false; }
+// The names a WebAssembly file exports, read from its export section (no compiling: a phone compiles the
+// 4 MB core once, when the game starts).
+function wasmExports(b) {
+  if (b.length < 8 || b[0] !== 0 || b[1] !== 0x61 || b[2] !== 0x73 || b[3] !== 0x6d) return null;
+  let i = 8;
+  const leb = () => { let r = 0, sh = 0, x; do { x = b[i++]; r += (x & 0x7f) * 2 ** sh; sh += 7; } while (x & 0x80 && i < b.length); return r; };
+  const dec = new TextDecoder();
+  while (i < b.length) {
+    const id = b[i++], n = leb(), end = i + n;
+    if (id === 7) {
+      const names = [];
+      for (let k = leb(); k > 0 && i < end; k--) { const len = leb(); names.push(dec.decode(b.subarray(i, i + len))); i += len + 1; leb(); }
+      return names;
+    }
+    i = end;
+  }
+  return [];
 }
+const isWasm = b => b.length >= 4 && b[0] === 0 && b[1] === 0x61 && b[2] === 0x73 && b[3] === 0x6d;
 async function importFastCore(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (!(await checkFastCore(bytes))) throw new Error("가속 파일(z4fast.wasm)이 아니에요");
+  const names = wasmExports(bytes);
+  if (!names) throw new Error(`가속 파일(z4fast.wasm)이 아니에요 (${file.name || "이름 없음"}, ${bytes.length} 바이트)`);
+  // the site's own core has the same exports but is far smaller; an older fast core lacks the in-between frames
+  if (!names.includes("aot_build") || bytes.length < 1000000) throw new Error("이건 가속 파일이 아니라 기본 실행기예요");
+  if (!names.includes("money_unlimited")) throw new Error("예전 가속 파일이에요. 새로 받은 z4fast.wasm을 골라 주세요");
   await idbPut("game", "fast", bytes.buffer);
 }
 async function importFiles(files, progress) {
   const list = [...files];
-  const fast = list.filter(f => /\.wasm$/i.test(f.name));
-  const games = list.filter(f => !/\.wasm$/i.test(f.name));
+  // a wasm file is told apart by its first bytes: a download may lose the .wasm in its name
+  const heads = await Promise.all(list.map(async f => new Uint8Array(await f.slice(0, 4).arrayBuffer())));
+  const fast = list.filter((f, k) => isWasm(heads[k]));
+  const games = list.filter((f, k) => !isWasm(heads[k]));
   for (const f of fast) await importFastCore(f);
   if (games.length) await importGame(games[0], progress);
   else if (!(await idbGet("game", "so"))) throw new Error("게임 파일(apk)도 함께 골라 주세요");
@@ -831,9 +848,15 @@ class Core {
     };
     let instance;
     if (game.fast) {
-      ({ instance } = await WebAssembly.instantiate(game.fast, { env }));
-      // a fast core from before the in-between frames does not fit this page: the site's core runs instead
-      if (!instance.exports.motion_enable) { instance = null; this.staleFast = true; }
+      try {
+        ({ instance } = await WebAssembly.instantiate(game.fast, { env }));
+        // a fast core from before the in-between frames does not fit this page: the site's core runs instead
+        if (!instance.exports.money_unlimited) { instance = null; this.staleFast = true; }
+      } catch (e) {
+        instance = null; // the phone could not open it: the site's core runs instead
+        this.fastError = String(e?.message || e);
+        console.warn("fast core", e);
+      }
     }
     if (!instance) {
       const resp = fetch(`z4core.wasm?v=${VERSION}`);
@@ -1305,6 +1328,7 @@ function bindSettings() {
       syncSettings();
       if (key === "screen" && started) toast("화면 크기는 게임을 다시 시작하면 맞춰져요");
       if (key === "sound") audio?.applyVolumes();
+      if ((key === "money" || key === "refine") && started) applyRules();
       if (key === "motion" && started) { motion.on = prefs.motion === "smooth" && core.motionOn(true); if (prefs.motion !== "smooth") core.motionOn(false); motion.shown = -1; motion.cost = 0; motion.off = 0; }
       if (key === "screen" && !started) lcdW = chooseLcdWidth();
       if (key === "screen") applyLayout();
@@ -1334,11 +1358,17 @@ function bindSettings() {
     const f = e.target.files[0];
     e.target.value = "";
     if (!f) return;
+    const t = $("fast-state");
+    if (t) t.textContent = "넣는 중…";
     try {
       await importFastCore(f);
+      if (t) t.textContent = "넣었음 · 다시 시작하면 써요";
       if (confirm("가속 파일을 넣었어요. 게임을 다시 시작할까요?")) { await saves.flush(); location.reload(); }
       else toast("다음에 시작할 때부터 빨라져요");
-    } catch (err) { toast(String(err?.message || err)); }
+    } catch (err) {
+      if (t) t.textContent = "넣지 못함";
+      toast(String(err?.message || err), 5000);
+    }
   });
   $("btn-export").addEventListener("click", exportSaves);
   $("btn-import-save").addEventListener("click", () => $("save-file").click());
@@ -1357,9 +1387,16 @@ function bindSettings() {
   });
 }
 
-function syncFastRow(have, active) {
+// game rules the player chose (core tweaks.c): unlimited Zen and gold, easier refining
+function applyRules() {
+  if (!core?.ex?.money_unlimited) return;
+  core.ex.money_unlimited(prefs.money === "max" ? 1 : 0);
+  core.ex.refine_easy(prefs.refine === "easy" ? 1 : 0);
+}
+
+function syncFastRow(have, active, problem) {
   const t = $("fast-state");
-  if (t) t.textContent = active ? "쓰는 중" : have ? "맞지 않음" : "없음";
+  if (t) t.textContent = active ? "쓰는 중" : have ? (problem ? "못 씀" : "맞지 않음") : "없음";
 }
 
 async function exportSaves() {
@@ -1407,12 +1444,14 @@ async function prepareAndWait(game) {
     return;
   }
   $("tap-text").textContent = "화면을 터치하면 시작해요";
-  $("tap-err").textContent = core.fast ? "" : core.staleFast
+  $("tap-err").textContent = core.fast ? "" : core.fastError
+    ? `가속 파일을 이 기기에서 열지 못해서 기본 실행기로 돌아가요. (${core.fastError})`
+    : core.staleFast
     ? "가속 파일이 예전 버전이라 쓰지 않았어요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꾸면 더 빨라져요."
     : game.fast
     ? "가속 파일이 이 게임 파일과 맞지 않아요. 설정 → 가속 파일에서 맞는 파일로 바꾸면 더 빨라져요."
     : "";
-  syncFastRow(game.fast, core.fast);
+  syncFastRow(game.fast, core.fast, core.fastError || core.staleFast);
   window.__z4 = { core, audio: () => audio, lcd: () => lcdW, running: () => running, hold: v => { running = !v; }, fx: () => fx, ready: true };
   $("tap").onclick = () => {
     if (started) return;
@@ -1431,6 +1470,7 @@ async function startGame() {
   }
   showOverlay(null);
   try { core.ex.fx_enable(1); } catch {}
+  applyRules();
   motion.on = prefs.motion === "smooth" && core.motionOn(true);
   running = true;
   requestAnimationFrame(frameLoop);

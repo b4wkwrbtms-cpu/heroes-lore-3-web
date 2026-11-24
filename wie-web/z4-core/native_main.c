@@ -187,6 +187,8 @@ int main(int argc, char **argv) {
   }
   if (app_start(w, h)) { puts("start failed"); return 1; }
   if (getenv("FX")) { int fx_enable(int); printf("fx_enable %d\n", fx_enable(1)); }
+  if (getenv("MONEY")) { int money_unlimited(int); printf("money_unlimited %d\n", money_unlimited(1)); }
+  if (getenv("REFINE")) { int refine_easy(int); printf("refine_easy %d\n", refine_easy(1)); }
   // input script
   static int sc_frame[4096], sc_type[4096], sc_x[4096], sc_y[4096];
   int nsc = 0;
@@ -257,6 +259,26 @@ int main(int argc, char **argv) {
           fclose(f);
         }
       }
+    }
+    if (getenv("REFINETEST") && i == atoi(getenv("REFINETEST"))) {
+      // DoRefine on the first bag slot with no helper item, with and without the easier refining
+      int refine_easy(int);
+      u32 find_symbol(const char *);
+      u32 menu = gcalloc(0x400), dr = find_symbol("_ZN13CMvRefineMenu8DoRefineEv");
+      u32 gri = find_symbol("_ZN13CMvRefineMenu13GetRefineItemEi");
+      wr32(menu + 0x1dc, 0);
+      u32 a2[2] = {menu, 0};
+      u32 item = call_guest(gri, 2, a2);
+      u8 keep = rd8(item + 7);
+      for (u32 b = 0; b < 256; b += 15) {
+        int ok[2] = {0, 0};
+        for (int on = 0; on < 2; on++) {
+          refine_easy(on);
+          for (int k = 0; k < 300; k++) { wr8(item + 7, (u8)b); wr32(menu + 0x1dc, 0); wr32(menu + 0x1e0, 0xffffffffu); if (call_guest(dr, 1, &menu) == 0) ok[on]++; }
+        }
+        printf("refine test, level byte %02x: %d%% off, %d%% on\n", b, ok[0] / 3, ok[1] / 3);
+      }
+      wr8(item + 7, keep);
     }
     if (getenv("SUMS") && screen()) { u32 h = 2166136261u; u16 *sp = screen(); for (u32 k = 0; k < scr_w * scr_h; k++) h = (h ^ sp[k]) * 16777619u; printf("sum %d %08x\n", i, h); }
     if (shot_every && i % shot_every == 0) {

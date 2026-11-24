@@ -412,7 +412,7 @@ static const AotEntry aot_entries[] = {{0, 0}};
 #define AOT_SPAN 0x000f0000u
 static u16 aot_index[AOT_SPAN >> 1];
 typedef void (*AotFn)(void);
-static AotFn aot_fns[AOT_MAX + NATIVE_HELPERS + BLIT_HELPERS + 8];
+static AotFn aot_fns[AOT_MAX + NATIVE_HELPERS + BLIT_HELPERS + 16];
 static int aot_used; // slots in use, hooks go after them
 static int aot_ready;
 static int aot_text_matches(void) {

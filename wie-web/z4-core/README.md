@@ -34,6 +34,9 @@ library directly:
   picture and restores every page and the host-side tables, so the game never sees the extra frame (checked
   the same way: identical frame checksums with paints after every frame). `CMvCharacter::SetDamage` reports
   where a blow landed (host event 10) for the page's hit effects.
+- `tweaks.c` — rules the player can switch in the page: unlimited Zen and gold (each look at the money first
+  fills it to the game's own limit through the game's setter, which keeps its checksum right) and easier
+  refining (a success chance of at least 80, the helper item kept).
 
 Build (clang with the wasm32 target and wasm-ld): `./build.sh ../public/z4/z4core.wasm`
 
