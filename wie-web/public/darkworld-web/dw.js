@@ -135,6 +135,17 @@ async function boot() {
     await DB.open();
     const st = (await DB.all('settings')).main; if (st) Object.assign(settings, JSON.parse(st));
     const saves = await DB.all('saves');
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    // no progress here yet: offer the saves of /darkworld/ (copied; the originals stay as they are)
+    if (!saves['_characterInfo.sav'] && !settings.oldAsked) {
+      const old = await OldSaves.read();
+      if (old) {
+        settings.oldAsked = 1; saveSettings();
+        if (confirm('기존 다크월드(/darkworld/)에서 하던 저장을 찾았어요.\n이 버전으로 복사해 올까요? (원래 저장은 그대로 남아요)')) {
+          for (const [n, d] of Object.entries(old)) { await DB.put('saves', n, d); saves[n] = d; }
+        }
+      }
+    }
     await DWDATA.ready(msg, prog);
     msg.textContent = '게임 자료를 여는 중…';
     const [mod, pack] = await Promise.all([createDW(), DWDATA.bytes('dw.pack')]);

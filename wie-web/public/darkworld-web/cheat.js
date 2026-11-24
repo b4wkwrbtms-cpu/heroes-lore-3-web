@@ -241,6 +241,11 @@ async function exportSave() {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 async function decodeSave(f) {
+  if (f[0] === 0x7b) { // this site's /darkworld/ export (darkworld-save-….json)
+    const o = window.OldSaves.fromJson(new TextDecoder().decode(f));
+    if (!o) throw new Error('다크월드 저장 파일이 아닙니다');
+    return o;
+  }
   let payload;
   const tag = String.fromCharCode(...f.slice(0, 4));
   if (tag === 'DWEX') {
@@ -288,7 +293,7 @@ function openMenu() {
     header(b, '설정');
     const s = S();
     row(b, '저장 내보내기 (.dwsave)', '›', exportSave);
-    row(b, '저장 가져오기 (.dwsave)', '›', () => fileInput.click());
+    row(b, '저장 가져오기 (.dwsave, 기존 다크월드)', '›', () => fileInput.click());
     row(b, '화면 업스케일 (xBR)', s.xbr ? '적용' : '미적용', (r) => { s.xbr ^= 1; I().saveSettings(); I().Runner.queue.push(0x5a00 + s.xbr); r.querySelector('.v').textContent = s.xbr ? '적용' : '미적용'; });
     row(b, '소리', s.mute ? '끔' : '켬', (r) => { s.mute ^= 1; I().saveSettings(); I().Audio.applyMute(); r.querySelector('.v').textContent = s.mute ? '끔' : '켬'; });
     row(b, '화면 버튼 표시', s.buttons === 0 ? '숨김' : '표시', (r) => { toggleButtons(); r.querySelector('.v').textContent = s.buttons === 0 ? '숨김' : '표시'; });
@@ -461,7 +466,7 @@ function openSave() {
   show((b) => {
     header(b, '저장 관리');
     row(b, '저장 내보내기 (.dwsave)', '›', exportSave);
-    row(b, '저장 가져오기 (.dwsave)', '›', () => fileInput.click());
+    row(b, '저장 가져오기 (.dwsave, 기존 다크월드)', '›', () => fileInput.click());
     if (backupInfo) row(b, '가져오기 전 저장으로 되돌리기', new Date(backupInfo.time).toLocaleString(), restoreBackup);
   });
 }

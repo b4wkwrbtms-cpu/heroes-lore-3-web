@@ -185,3 +185,48 @@ window.coreEvent = function coreEvent(kind, a, b, c) {
   if ((a & 255) === 1) Fx.hit(x, feet > y ? Math.round((y + 10 + feet) / 2) : y + 14, b, (a >> 8) & 1);
   else if ((a & 255) === 2 && b > 0) Fx.hurtHero();
 };
+
+// ------------------------------------------------------------------ saves from /darkworld/
+// The site's other Dark World page keeps its saves in IndexedDB 'darkworld-player', store 'files', keyed by the
+// game's full file path. The same origin can read them (in the same browser or home screen app): they are
+// only read, never changed, and the database is never created here. Its export file (darkworld-save-….json,
+// 설정 → 내보내기) carries the same files, for a phone where the two pages keep separate storage.
+window.OldSaves = {
+  PREFIX: '/data/data/com.gamedoli.DarkWorldGoogle/',
+  pick(files) {
+    const out = {};
+    for (const [k, v] of Object.entries(files)) {
+      const n = k.startsWith(this.PREFIX) ? k.slice(this.PREFIX.length) : k;
+      if (n && !n.includes('/') && n.endsWith('.sav')) out[n] = v instanceof Uint8Array ? v : new Uint8Array(v);
+    }
+    return out['_characterInfo.sav'] ? out : null;
+  },
+  async read() {
+    try {
+      if (indexedDB.databases && !(await indexedDB.databases()).some((d) => d.name === 'darkworld-player')) return null;
+      const db = await new Promise((res) => {
+        const r = indexedDB.open('darkworld-player');
+        r.onupgradeneeded = () => r.transaction.abort(); // it was not there: leave it so
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => res(null);
+        r.onblocked = () => res(null);
+      });
+      if (!db) return null;
+      if (!db.objectStoreNames.contains('files')) { db.close(); return null; }
+      const files = await new Promise((res) => {
+        const out = {}, c = db.transaction('files', 'readonly').objectStore('files').openCursor();
+        c.onsuccess = () => { const cur = c.result; if (cur) { out[cur.key] = cur.value; cur.continue(); } else res(out); };
+        c.onerror = () => res({});
+      });
+      db.close();
+      return this.pick(files);
+    } catch (e) { return null; }
+  },
+  fromJson(text) {
+    const d = JSON.parse(text);
+    if (!d || d.game !== 'darkworld' || !d.files) return null;
+    const f = {};
+    for (const [k, b64] of Object.entries(d.files)) f[k] = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+    return this.pick(f);
+  },
+};
