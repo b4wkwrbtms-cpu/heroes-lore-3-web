@@ -3,7 +3,7 @@
 #include "base.h"
 
 IMPORT(host_asset) int host_asset(const char *name, int nlen, void *dst, int cap);
-IMPORT(host_sound) void host_sound(int op, const char *name, int nlen, int loop);
+IMPORT(host_sound) void host_sound(int op, const char *name, int nlen, int loop, int volume);
 
 void java_update_canvas(void);
 void java_update_screen_buffer(void);
@@ -167,7 +167,9 @@ static ArgReader varargs_from(int first) {
   X(GetKeyCode) X(GetTime_MilliSec) X(GetWidth) X(GoBannerSite) X(LGTBillGetChargeSlotID) X(LGT_BillConnect) \
   X(LGT_BillWrite) X(QtPlaySound) X(QtStopSound) X(QtVibrate) X(buyItem) X(charge) X(chargeLGT) X(getData) \
   X(getResource) X(getResourceSize) X(getTelephoneModel) X(getTelephoneNumber) X(handleCletEvent) \
-  X(setGameState) X(setTimer) X(startClet) X(timerCallback) X(updateCanvas) X(updateScreenBuffer)
+  X(setGameState) X(setTimer) X(startClet) X(timerCallback) X(updateCanvas) X(updateScreenBuffer) \
+  X(showEditbox) X(initEditbox) X(selectEditbox) X(hideEditbox) X(getEditboxText) X(initHelp) X(showHelp) \
+  X(drawHelp) X(hideHelp)
 
 #define ENUM_ITEM(n) M_##n,
 enum { M_NONE, METHODS(ENUM_ITEM) M_COUNT };
@@ -263,10 +265,10 @@ static u64 java_invoke(u32 mid, ArgReader *ar) {
   case M_QtPlaySound: {
     char name[64];
     int len = copy_str(obj_get((u32)a[0]), name, 64);
-    host_sound(1, name, len, (int)a[1] == 1);
+    host_sound(1, name, len, (int)a[1] == 1, (int)a[2]);
     return 0;
   }
-  case M_QtStopSound: host_sound(2, 0, 0, 0); return 0;
+  case M_QtStopSound: host_sound(2, 0, 0, 0, 0); return 0;
   case M_QtVibrate: host_event(1, 200, 0, 0); return 0;
   case M_getTelephoneModel: return new_bytes_host(phone_model, sizeof phone_model - 1);
   case M_getTelephoneNumber: return new_bytes_host(phone_number, sizeof phone_number - 1);
@@ -285,6 +287,17 @@ static u64 java_invoke(u32 mid, ArgReader *ar) {
     logf("%s %s", m->name, name);
     return 0;
   }
+  // some modified builds ask for a number (how many to buy or sell) with the edit box: the page asks the
+  // player and passes the answer to Native.charge (hle.c: app_charge)
+  case M_showEditbox: host_event(11, 0, 0, 0); return 0;
+  case M_initEditbox:
+  case M_selectEditbox:
+  case M_hideEditbox:
+  case M_getEditboxText:
+  case M_initHelp:
+  case M_showHelp:
+  case M_drawHelp:
+  case M_hideHelp:
   case M_GetWidth:
   case M_GetHeight:
   case M_GetImageBuffer:

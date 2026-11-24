@@ -2,9 +2,13 @@
 //
 // Each one replaces the first instruction of a routine (or of a loop) with a UDF instruction that
 // lands in cpu_hook_thumb/cpu_hook_arm, computes the same result in C and returns, so the screen is the
-// same pixel for pixel. They are installed only when the instruction words at those addresses match the
-// library build they were read from; otherwise the game runs as it is. A fast path that meets a case it
-// does not cover runs the displaced instruction and lets the original code carry on.
+// same pixel for pixel. Each is installed only when the whole routine it stands in is byte for byte the
+// one it was read from (modified builds rewrite some routines; those then run as they are). A fast path
+// that meets a case it does not cover runs the displaced instruction and lets the original code carry on.
+//
+// A few hooks only watch: they sit on a call (a 32-bit BL) the page wants to know about, report it, and
+// let the call run. Modified builds may send such a call through a wrapper of their own, so for these any
+// BL is accepted.
 #include "base.h"
 
 #define B LOAD_BASE
@@ -382,50 +386,50 @@ static int fast_draw_view(void) { return interp_on_draw_view(); }
 static int fast_check_view_fx(void) { return interp_on_check_view_fx(); }
 
 // EM_SetDamageEffect(kind, type, x, y, [sp] damage, [sp+4] critical, ...): a damage number appears above
-// (x, y) in map pixels. Calls from MOB_SetMonDamage (a monster is hit) and Hero_SetDamage (the hero is hit)
-// are reported to the page for its hit effects as event 10: who (1 monster, 2 hero) | critical << 8 |
-// the monster's feet y << 16, damage, x | y << 16. Then the original runs.
-#define RET_MON_DAMAGE 0x49fa6u
-#define RET_HERO_DAMAGE 0x3791au
+// (x, y) in map pixels. Its calls from MOB_SetMonDamage (a monster is hit) and Hero_SetDamage (the hero is
+// hit) are reported to the page for its hit effects as event 10: who (1 monster, 2 hero) | critical << 8 |
+// the monster's feet y << 16, damage, x | y << 16. Then the call runs.
 extern int interp_active;
-static int fast_damage_effect(void) {
-  u32 lr = (R[14] & ~1u) - B;
-  int who = lr == RET_MON_DAMAGE ? 1 : lr == RET_HERO_DAMAGE ? 2 : 0;
-  if (!who || interp_active) return 0;
+static int damage_effect(int who) {
+  if (interp_active) return 0;
   // for a monster, MOB_SetMonDamage keeps its index in r5: its feet are at Mon[r5] +4/+6
   u32 feet = who == 1 && R[5] < 50 ? rd16(B + 0xddd28u + R[5] * 552u + 6) : (R[3] & 0xffff);
   host_event(10, (int)(who | ((rd32(R[13] + 4) ? 1u : 0u) << 8) | (feet << 16)), (int)rd32(R[13]),
              (int)((R[2] & 0xffff) | (R[3] << 16)));
   return 0;
 }
+static int fast_mon_damage(void) { return damage_effect(1); }
+static int fast_hero_damage(void) { return damage_effect(2); }
 
 typedef int (*Fast)(void);
 typedef struct {
-  u32 off;   // file offset of the patched instruction
-  u32 word;  // the 32-bit word expected there in this library build
-  u8 arm;    // ARM code (else Thumb)
+  u32 off;          // file offset of the patched instruction
+  u32 start, len;   // the routine it belongs to, and the FNV-1a hash of its bytes in the build it was read
+  u32 hash;         // from; a watch on a call has len 0 and needs a 32-bit BL at off
+  u8 arm;           // ARM code (else Thumb)
   Fast fn;
 } FastPath;
 
 static const FastPath paths[] = {
-    {0x286b8, 0x465fb5f0, 0, fast_copy_buffer},
-    {0x26d90, 0x4b13b5f0, 0, fast_blend565},
-    {0x26de4, 0x465fb5f0, 0, fast_blend565_alpha},
-    {0x26bf8, 0x1053b510, 0, fast_palette4},
-    {0x26c14, 0x005b5c83, 0, fast_palette8},
-    {0x26bcc, 0x21644b09, 0, fast_clip_rect},
-    {0x9433c, 0xe3510000, 1, fast_divsi3},
-    {0x2ac8a, 0x46589b0d, 0, fast_gbm_row},
-    {0x2a05a, 0x68234649, 0, fast_gbm_row_plain},
-    {0x9406c, 0x3401697e, 0, fast_fill_row},
-    {0x27198, 0x9e05b5f0, 0, fast_set_pixel_alpha},
-    {0x2bed0, 0x18c017c3, 0, fast_abs},
-    {0x2ab1a, 0x3a02464a, 0, fast_gbm_row_scaled},
-    {0x28be8, 0x5951465d, 0, fast_fill_alpha_row},
-    {0x2c244, 0x4657b5f0, 0, fast_get_angle},
-    {0x54f34, 0x4647b5f0, 0, fast_draw_view},
-    {0x53fa0, 0x4c55b570, 0, fast_check_view_fx},
-    {0x3069c, 0x4647b5f0, 0, fast_damage_effect},
+    {0x286b8, 0x286b8, 132, 0xf035b84e, 0, fast_copy_buffer},
+    {0x26d90, 0x26d90, 84, 0xf909dbda, 0, fast_blend565},
+    {0x26de4, 0x26de4, 256, 0xe628c957, 0, fast_blend565_alpha},
+    {0x26bf8, 0x26bf8, 26, 0x347de864, 0, fast_palette4},
+    {0x26c14, 0x26c14, 8, 0xe4caab42, 0, fast_palette8},
+    {0x26bcc, 0x26bcc, 44, 0xbe01f1b2, 0, fast_clip_rect},
+    {0x9433c, 0x9433c, 220, 0x41801dd2, 1, fast_divsi3},
+    {0x2ac8a, 0x2ac6e, 154, 0x4d24fa28, 0, fast_gbm_row}, // the row loop, its set-up and its exit only
+    {0x2a05a, 0x29eec, 504, 0x97808fb6, 0, fast_gbm_row_plain},
+    {0x9406c, 0x94014, 146, 0xedd68666, 0, fast_fill_row},
+    {0x27198, 0x27198, 160, 0x5260ea3f, 0, fast_set_pixel_alpha},
+    {0x2bed0, 0x2bed0, 8, 0x497dc2de, 0, fast_abs},
+    {0x2ab1a, 0x2a638, 1744, 0x338a16c0, 0, fast_gbm_row_scaled},
+    {0x28be8, 0x28af8, 436, 0x4c631959, 0, fast_fill_alpha_row},
+    {0x2c244, 0x2c244, 298, 0xf697b9b8, 0, fast_get_angle},
+    {0x53fa0, 0x53fa0, 356, 0x3d2413dd, 0, fast_check_view_fx},
+    {0x9250e, 0, 0, 0, 0, fast_draw_view},   // PAINT_GAME_MAIN's call to DrawView
+    {0x49fa2, 0, 0, 0, 0, fast_mon_damage},  // MOB_SetMonDamage's call to EM_SetDamageEffect
+    {0x37916, 0, 0, 0, 0, fast_hero_damage}, // Hero_SetDamage's call to EM_SetDamageEffect
 };
 #define NPATHS (sizeof paths / sizeof paths[0])
 static u32 displaced[NPATHS];
@@ -443,16 +447,30 @@ void cpu_hook_arm(u32 n, u32 pc) {
   else exec_displaced_arm(displaced[n], pc);
 }
 
+static int path_fits(const FastPath *p) {
+  if (!p->len) { // a watched call: BL, either range
+    u32 h1 = rd16(B + p->off), h2 = rd16(B + p->off + 2);
+    return (h1 & 0xf800) == 0xf000 && (h2 & 0xd000) == 0xd000;
+  }
+  u32 h = 2166136261u;
+  for (u32 a = B + p->start; a < B + p->start + p->len; a++) h = (h ^ rd8(a)) * 16777619u;
+  return h == p->hash;
+}
+
 // a fast path returns 1 to return to the caller, 2 when it has set cpu_pc itself, 0 to run the original
 
 // patch the library after loading it; returns how many fast paths were installed
 EXPORT(install_fast_paths) int install_fast_paths(void) {
-  for (u32 n = 0; n < NPATHS; n++) if (rd32(B + paths[n].off) != paths[n].word) return 0;
+  u8 fits[NPATHS];
+  int count = 0;
+  for (u32 n = 0; n < NPATHS; n++) fits[n] = (u8)path_fits(&paths[n]); // all checked before any is patched
   for (u32 n = 0; n < NPATHS; n++) {
+    if (!fits[n]) continue;
     u32 a = B + paths[n].off;
     displaced[n] = rd32(a);
     if (paths[n].arm) wr32(a, 0xe7f000f0u | ((n & 0xfff0) << 4) | (n & 15));
     else wr16(a, (u16)(0xde00 | n));
+    count++;
   }
-  return (int)NPATHS;
+  return count;
 }

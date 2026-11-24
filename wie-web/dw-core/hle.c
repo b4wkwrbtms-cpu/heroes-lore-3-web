@@ -306,6 +306,7 @@ EXPORT(find_symbol) u32 find_symbol(const char *name) {
 }
 
 static u32 init_array, init_array_sz;
+u32 rw_start[4], rw_len[4], rw_count; // the library's writable segments
 
 EXPORT(load_library) int load_library(const u8 *elf, u32 len) {
   (void)len;
@@ -332,6 +333,9 @@ EXPORT(load_library) int load_library(const u8 *elf, u32 len) {
     if (type == 1) {
       memcpy(gptr(LOAD_BASE + vaddr), elf + off, filesz);
       memset(gptr(LOAD_BASE + vaddr + filesz), 0, memsz - filesz);
+      u32 flags;
+      __builtin_memcpy(&flags, ph + 24, 4);
+      if ((flags & 2) && rw_count < 4) { rw_start[rw_count] = LOAD_BASE + vaddr; rw_len[rw_count++] = memsz; }
     } else if (type == 2) {
       dyn = LOAD_BASE + vaddr;
     } else if (type == 0x70000001) {
@@ -479,10 +483,11 @@ EXPORT(app_touch) void app_touch(int type, int x, int y) {
   jni_end_frame();
 }
 
-// result of an in-app purchase (Native.charge): there is no store here, so the page reports failure
-EXPORT(app_charge) void app_charge(int ok) {
+// Native.charge: the result of an in-app purchase (1 bought, 0 not; there is no store here, so the page
+// reports failure), or in some modified builds the number the edit box asked for
+EXPORT(app_charge) void app_charge(int value) {
   if (cpu_halt || !n_charge) return;
-  u32 a[3] = {jni_env_addr, jni_this_object(), (u32)(ok ? 1 : 0)};
+  u32 a[3] = {jni_env_addr, jni_this_object(), (u32)value};
   call_guest(n_charge, 3, a);
   jni_end_frame();
 }

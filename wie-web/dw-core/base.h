@@ -26,7 +26,7 @@ typedef unsigned long size_t;
 #define DATA_BASE 0x00030000u       // small runtime data (JNI tables, errno, FILE structs, strings)
 #define DATA_END 0x00100000u
 #define LOAD_BASE 0x00100000u // where the .so is mapped
-#define HEAP_BASE 0x00400000u
+#define HEAP_BASE 0x00500000u // after the library, including the extra 2 MiB segment some modified builds add at 0x180000
 #define STACK_TOP 0x03FF0000u
 #define STACK_SIZE 0x00200000u
 #define HEAP_END (STACK_TOP - STACK_SIZE)

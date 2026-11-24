@@ -1,4 +1,8 @@
-// Thumb (ARMv5T) instruction set, included by cpu.c. R[15] reads as the instruction address + 4.
+// Thumb (ARMv5T) instruction set, included by cpu.c, plus the 16-bit forms Thumb-2 adds (CBZ, IT, extend,
+// byte reverse); 32-bit pairs go to thumb2.inc. R[15] reads as the instruction address + 4.
+
+static void exec_thumb32(u32 h1, u32 pc);
+extern u32 itstate;
 
 static inline void set_nz(u32 r) { fN = r >> 31; fZ = !r; }
 static inline u32 t_add(u32 a, u32 b) {
@@ -186,6 +190,30 @@ static void exec_thumb(u32 insn, u32 pc) {
       R[13] = addr;
       return;
     }
+    case 1: case 3: case 9: case 11: // CBZ, CBNZ
+      if (!R[insn & 7] == !(insn & 0x800)) cpu_pc = R[15] + (((insn >> 3) & 31) << 1) + ((insn >> 3) & 0x40);
+      return;
+    case 2: { // SXTH, SXTB, UXTH, UXTB
+      u32 v = R[(insn >> 3) & 7];
+      switch ((insn >> 6) & 3) {
+      case 0: R[insn & 7] = (u32)(s32)(s16)v; return;
+      case 1: R[insn & 7] = (u32)(s32)(s8)v; return;
+      case 2: R[insn & 7] = v & 0xffff; return;
+      default: R[insn & 7] = v & 0xff; return;
+      }
+    }
+    case 10: { // REV, REV16, REVSH
+      u32 v = R[(insn >> 3) & 7], op = (insn >> 6) & 3;
+      if (op == 0) R[insn & 7] = __builtin_bswap32(v);
+      else if (op == 1) R[insn & 7] = ((v & 0x00ff00ffu) << 8) | ((v >> 8) & 0x00ff00ffu);
+      else if (op == 3) R[insn & 7] = (u32)(s32)(s16)(((v & 0xff) << 8) | ((v >> 8) & 0xff));
+      else cpu_fail("undefined thumb", pc, insn);
+      return;
+    }
+    case 6: return; // CPS, SETEND: nothing to do here
+    case 15: // IT, or a hint (NOP, YIELD, WFE, WFI, SEV)
+      if (insn & 15) itstate = insn & 0xff;
+      return;
     case 14: cpu_fail("thumb bkpt", pc, insn); return;
     default: cpu_fail("undefined thumb", pc, insn); return;
     }
@@ -211,21 +239,6 @@ static void exec_thumb(u32 insn, u32 pc) {
     return;
   }
   case 28: cpu_pc = R[15] + ((s32)(insn << 21) >> 20); return; // B
-  case 29: { // BLX suffix: to ARM
-    u32 t = (R[14] + ((insn & 0x7ff) << 1)) & ~3u;
-    R[14] = (pc + 2) | 1;
-    if (trace_calls && ntrace < TRACE_MAX) trace_buf[ntrace++] = t;
-    fT = 0;
-    cpu_pc = t;
-    return;
-  }
-  case 30: R[14] = R[15] + ((s32)(insn << 21) >> 9); return; // BL/BLX prefix
-  default: { // BL suffix
-    u32 t = R[14] + ((insn & 0x7ff) << 1);
-    R[14] = (pc + 2) | 1;
-    if (trace_calls && ntrace < TRACE_MAX) trace_buf[ntrace++] = t;
-    cpu_pc = t & ~1u;
-    return;
-  }
+  default: exec_thumb32(insn, pc); return; // 32-bit: BL, BLX, and the rest of Thumb-2
   }
 }

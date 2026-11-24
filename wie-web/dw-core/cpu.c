@@ -1,4 +1,4 @@
-// ARMv5TE interpreter, ARM and Thumb states. The game library is mostly Thumb code that calls ARM
+// ARMv5TE interpreter, ARM and Thumb states (Thumb-2 too, for modified builds). The game library is mostly Thumb code that calls ARM
 // PLT stubs and runtime helpers, so both states and interworking branches are needed.
 #include "base.h"
 
@@ -18,7 +18,7 @@ EXPORT(trace_info) u32 *trace_info(void) { return &tr.on; }
 
 #define HALT_PC (TRAP_END - 8)
 #ifdef PROFILE
-static u32 prof[0x200000 >> 4];
+static u32 prof[0x400000 >> 4];
 EXPORT(prof_buf) u32 *prof_buf(void) { return prof; }
 #endif
 
@@ -301,11 +301,59 @@ static void exec_halfword(u32 insn) {
   }
 }
 
+// ARMv6/v7 media instructions some modified builds use: divide, bitfields, byte reverse, extend, saturate
+static void exec_media(u32 insn) {
+  u32 rd = (insn >> 12) & 15, rn = (insn >> 16) & 15, rm = insn & 15;
+  if ((insn & 0x0fd0f0f0) == 0x0710f010) { // SDIV, UDIV (rd in 19:16, rn in 3:0, rm in 11:8)
+    u32 a = R[rm], b = R[(insn >> 8) & 15];
+    if (insn & (1 << 21)) R[rn] = b ? a / b : 0;
+    else R[rn] = b ? (a == 0x80000000u && b == 0xffffffffu ? a : (u32)((s32)a / (s32)b)) : 0;
+    return;
+  }
+  u32 lsb = (insn >> 7) & 31, w = (insn >> 16) & 31;
+  if ((insn & 0x0fa00070) == 0x07a00050) { // SBFX, UBFX
+    if (insn & (1 << 22)) R[rd] = (R[rm] >> lsb) & (w == 31 ? 0xffffffffu : (2u << w) - 1);
+    else R[rd] = (u32)((s32)(R[rm] << (31 - lsb - w)) >> (31 - w));
+    return;
+  }
+  if ((insn & 0x0fe00070) == 0x07c00010 && w >= lsb) { // BFI, BFC
+    u32 mask = (w - lsb == 31 ? 0xffffffffu : (2u << (w - lsb)) - 1) << lsb;
+    R[rd] = (R[rd] & ~mask) | (rm == 15 ? 0 : (R[rm] << lsb) & mask);
+    return;
+  }
+  if ((insn & 0x0f8003f0) == 0x06800070) { // SXTAB16 ... UXTAH, and the forms without add (rn = 15)
+    u32 r = (insn >> 10) & 3, v = R[rm], a = rn == 15 ? 0 : R[rn];
+    v = r ? (v >> (r * 8)) | (v << (32 - r * 8)) : v;
+    switch ((insn >> 20) & 7) {
+    case 2: R[rd] = a + (u32)(s32)(s8)v; return;
+    case 3: R[rd] = a + (u32)(s32)(s16)v; return;
+    case 6: R[rd] = a + (v & 0xff); return;
+    case 7: R[rd] = a + (v & 0xffff); return;
+    }
+  }
+  if ((insn & 0x0fff0ff0) == 0x06bf0f30) { R[rd] = __builtin_bswap32(R[rm]); return; }
+  if ((insn & 0x0fff0ff0) == 0x06bf0fb0) { u32 v = R[rm]; R[rd] = ((v & 0x00ff00ffu) << 8) | ((v >> 8) & 0x00ff00ffu); return; }
+  if ((insn & 0x0fff0ff0) == 0x06ff0fb0) { u32 v = R[rm]; R[rd] = (u32)(s32)(s16)(((v & 0xff) << 8) | ((v >> 8) & 0xff)); return; }
+  if ((insn & 0x0fff0ff0) == 0x06ff0f30) { R[rd] = __builtin_bitreverse32(R[rm]); return; }
+  if ((insn & 0x0fa00030) == 0x06a00010) { // SSAT, USAT
+    u32 n = (insn >> 7) & 31;
+    s64 v = (insn & 0x40) ? (s64)((s32)R[rm] >> (n ? n : 31)) : (s64)(s32)(R[rm] << n);
+    u32 bits = (insn >> 16) & 31;
+    int sg = !(insn & (1 << 22));
+    if (sg) bits++;
+    s64 hi = sg ? ((s64)1 << (bits - 1)) - 1 : ((s64)1 << bits) - 1, lo = sg ? -((s64)1 << (bits - 1)) : 0;
+    if (v > hi) { v = hi; fQ = 1; } else if (v < lo) { v = lo; fQ = 1; }
+    R[rd] = (u32)v;
+    return;
+  }
+  cpu_fail("media instruction", R[15] - 8, insn);
+}
+
 static void exec_single(u32 insn) {
   u32 rn = (insn >> 16) & 15, rd = (insn >> 12) & 15;
   u32 off;
   if (insn & (1 << 25)) {
-    if (insn & 0x10) { cpu_fail("media instruction", R[15] - 8, insn); return; }
+    if (insn & 0x10) { exec_media(insn); return; }
     u32 c;
     off = op2_imm_shift(insn, &c);
   } else {
@@ -378,6 +426,11 @@ static void exec_arm(u32 insn) {
         }
         return;
       }
+      if ((insn & 0x0fb00000) == 0x03000000) { // MOVW, MOVT
+        u32 v = ((insn >> 4) & 0xf000) | (insn & 0xfff), rd = (insn >> 12) & 15;
+        R[rd] = (insn & (1 << 22)) ? (R[rd] & 0xffff) | (v << 16) : v;
+        return;
+      }
       cpu_fail("undefined", R[15] - 8, insn);
       return;
     } else {
@@ -412,6 +465,7 @@ static void exec_arm(u32 insn) {
 }
 
 #include "thumb.inc"
+#include "thumb2.inc"
 
 // run an instruction a fast path displaced, as if it still stood at pc
 void exec_displaced_thumb(u32 insn, u32 pc) {
@@ -440,13 +494,14 @@ void cpu_run_until_return(void) {
     cpu_insns++;
 #endif
 #ifdef PROFILE
-    if (pc - LOAD_BASE < 0x200000) prof[(pc - LOAD_BASE) >> 4]++;
+    if (pc - LOAD_BASE < 0x400000) prof[(pc - LOAD_BASE) >> 4]++;
 #endif
     if (fT) {
       u32 insn = rd16(pc);
       R[15] = pc + 4;
       cpu_pc = pc + 2;
-      exec_thumb(insn, pc);
+      if (__builtin_expect(itstate != 0, 0)) exec_thumb_it(insn, pc);
+      else exec_thumb(insn, pc);
       continue;
     }
     u32 insn = rd32(pc);
@@ -473,7 +528,8 @@ void cpu_run_until_return(void) {
 u32 call_guest(u32 addr, int nargs, const u32 *args) {
   u32 saved[16];
   memcpy(saved, R, sizeof saved);
-  u32 sf[6] = {fN, fZ, fC, fV, fQ, fT};
+  u32 sf[7] = {fN, fZ, fC, fV, fQ, fT, itstate};
+  itstate = 0;
   u32 spc = cpu_pc;
   u32 sp = R[13];
   int nstack = nargs > 4 ? nargs - 4 : 0;
@@ -490,7 +546,7 @@ u32 call_guest(u32 addr, int nargs, const u32 *args) {
   u32 ret = R[0];
   call_ret_hi = R[1];
   memcpy(R, saved, sizeof saved);
-  fN = sf[0]; fZ = sf[1]; fC = sf[2]; fV = sf[3]; fQ = sf[4]; fT = sf[5];
+  fN = sf[0]; fZ = sf[1]; fC = sf[2]; fV = sf[3]; fQ = sf[4]; fT = sf[5]; itstate = sf[6];
   cpu_pc = cpu_halt ? HALT_PC : spc;
   return ret;
 }

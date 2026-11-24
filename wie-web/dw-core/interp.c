@@ -16,8 +16,7 @@ void jni_state(u8 *buf, int save);
 u32 guest_heap_top(void);
 
 #define B LOAD_BASE
-#define RW_START (B + 0xbb078u) // the library's writable segment (.data, .bss)
-#define RW_END (B + 0x139528u)
+extern u32 rw_start[4], rw_len[4], rw_count; // the library's writable segments (hle.c)
 #define HERO (B + 0xd4dc4u)     // Hero (position at +4/+6)
 #define MON (B + 0xddd28u)      // Mon[50], 552 bytes each (position at +4/+6)
 #define MON_COUNT 50
@@ -25,7 +24,6 @@ u32 guest_heap_top(void);
 #define VIEW (B + 0xe6510u)     // View: camera in 16-pixel tiles + phase, and in pixels
 #define PAINT_MAIN_DRAW 0x9250eu // PAINT_GAME_MAIN: the call to DrawView, where the drawing starts
 #define PAINT_MAIN_LIT 0x925a8u  // its r4 at that point: the literal it adds pc to later
-#define DRAW_VIEW_RET 0x92512u   // DrawView's return address when PAINT_GAME_MAIN calls it
 #define FAR 32                   // a step longer than this (teleport, knockback) is not smoothed
 
 typedef struct { s16 x[MON_COUNT + 1], y[MON_COUNT + 1]; s32 cx, cy; } Pose;
@@ -60,7 +58,9 @@ static u8 *grow(u32 bytes) {
 static int save(int s) {
   if (heap_state_size() > sizeof slot[s].heap) return 0;
   u32 top = guest_heap_top();
-  u32 need = jni_state_size() + (RW_END - RW_START) + (DATA_END - DATA_BASE) + (top - HEAP_BASE);
+  u32 rw = 0;
+  for (u32 i = 0; i < rw_count; i++) rw += rw_len[i];
+  u32 need = jni_state_size() + rw + (DATA_END - DATA_BASE) + (top - HEAP_BASE);
   if (need > slot[s].cap) {
     u32 cap = need + (1u << 20);
     u8 *b = grow(cap);
@@ -70,7 +70,7 @@ static int save(int s) {
   }
   u8 *p = slot[s].buf;
   jni_state(p, 1); p += jni_state_size();
-  memcpy(p, gptr(RW_START), RW_END - RW_START); p += RW_END - RW_START;
+  for (u32 i = 0; i < rw_count; i++) { memcpy(p, gptr(rw_start[i]), rw_len[i]); p += rw_len[i]; }
   memcpy(p, gptr(DATA_BASE), DATA_END - DATA_BASE); p += DATA_END - DATA_BASE;
   memcpy(p, gptr(HEAP_BASE), top - HEAP_BASE);
   slot[s].heap_top = top;
@@ -82,7 +82,7 @@ static int save(int s) {
 static void restore(int s) {
   u8 *p = slot[s].buf;
   jni_state(p, 0); p += jni_state_size();
-  memcpy(gptr(RW_START), p, RW_END - RW_START); p += RW_END - RW_START;
+  for (u32 i = 0; i < rw_count; i++) { memcpy(gptr(rw_start[i]), p, rw_len[i]); p += rw_len[i]; }
   memcpy(gptr(DATA_BASE), p, DATA_END - DATA_BASE); p += DATA_END - DATA_BASE;
   memcpy(gptr(HEAP_BASE), p, slot[s].heap_top - HEAP_BASE);
   heap_state(slot[s].heap, 0);
@@ -99,11 +99,10 @@ static void read_pose(Pose *p) {
   p->cy = cam_drawn(1);
 }
 
-// called from the fast path on DrawView's first instruction (fast.c); returns 0 so DrawView then runs
+// called from the watch on PAINT_GAME_MAIN's call to DrawView (fast.c); returns 0 so the call then runs
 static int seen;
 int interp_on_draw_view(void) {
   if (interp_active) return 0;
-  if ((R[14] & ~1u) != B + DRAW_VIEW_RET) { frames = 0; return 0; }
   seen = 1;
   prev = cur;
   read_pose(&cur);

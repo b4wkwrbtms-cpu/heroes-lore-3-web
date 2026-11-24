@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="다크월드 1.57">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>다크월드 1.57</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  body { font-family: "NeoDunggeunmo", system-ui, sans-serif; color: #eee7d1; }
+  /* the frame: the whole screen, turned 90° in portrait (plus.js Layout); the game keeps clear of --ml / --mr */
+  #frame { position: fixed; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  #probe { position: fixed; visibility: hidden; pointer-events: none;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+  #screen { position: absolute; top: 0; left: var(--ml, 0px); width: calc(100% - var(--ml, 0px) - var(--mr, 0px)); height: 100%; display: block; }
+  #boot { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; background: #000; z-index: 10; text-align: center; padding: 16px; }
+  #boot h1 { margin: 0; font-size: 34px; color: #ffdf72; letter-spacing: 2px; font-weight: normal; }
+  #boot .bar { width: min(320px, 80vw); height: 10px; border: 2px solid #d4b66b; background: #101d16; }
+  #boot .bar i { display: block; height: 100%; width: 0; background: #ffdf72; }
+  #boot button { font: inherit; font-size: 22px; color: #ffe064; background: #304333; border: 2px solid #d4b66b;
+    padding: 10px 28px; display: none; }
+  #boot .msg { font-size: 15px; color: #9ca994; min-height: 1.2em; max-width: 90vw; white-space: pre-wrap; }
+  #gear { position: absolute; right: calc(var(--mr, 0px) + 6px); top: 6px; z-index: 5;
+    width: 34px; height: 34px; border-radius: 17px; border: 1px solid rgba(212,182,107,.5); background: rgba(16,29,22,.55);
+    color: #d4b66b; font-size: 18px; line-height: 32px; text-align: center; padding: 0; }
+  #dwchatbtn { position: absolute !important; right: calc(var(--mr, 0px) + 46px) !important; top: 6px !important; }
+  #boot .pick { display: block; }
+  #boot .hint, #boot .credit { font-size: 13px; color: #768366; max-width: 90vw; font-family: system-ui, sans-serif; }
+  #boot .credit a { color: inherit; }
+  .panel { position: absolute; inset: 0; z-index: 8; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
+  .panel.open { display: flex; }
+  .box { width: min(560px, 94vw); max-height: 92vh; overflow: auto; background: #1f2c23; border: 3px solid #d4b66b;
+    outline: 2px solid #768366; outline-offset: -9px; padding: 18px; box-sizing: border-box; }
+  .box h2 { margin: 0 0 12px; font-weight: normal; color: #ffdf72; font-size: 22px; background: #304333; border: 2px solid #d4b66b; padding: 8px 12px; display: flex; justify-content: space-between; }
+  .box h2 small { font-size: 15px; color: #9ca994; align-self: center; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: #25392e; border: 2px solid #73816b;
+    padding: 9px 12px; margin: 6px 0; font-size: 17px; cursor: pointer; }
+  .navsel { outline: 3px solid #ffdf72 !important; outline-offset: -3px; }
+  .row.sel, .row:active { background: #40523a; border-color: #ffdf72; color: #ffe064; }
+  .row .v { color: #ffe064; white-space: nowrap; }
+  .note { background: #101d16; border: 2px solid #768366; padding: 10px 12px; margin-top: 10px; font-size: 15px; white-space: pre-wrap; min-height: 2.6em; }
+  .btns { display: flex; gap: 8px; margin-top: 12px; }
+  .btns button { flex: 1; font: inherit; font-size: 17px; color: #eee7d1; background: #304333; border: 2px solid #d4b66b; padding: 8px; }
+  .status { color: #9ca994; font-size: 14px; margin-top: 8px; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<div id="probe"></div>
+<div id="frame">
+<canvas id="screen"></canvas>
+<button id="gear" aria-label="설정" style="display:none">⚙</button>
+<div id="boot">
+  <h1>다크월드</h1>
+  <div class="bar"><i id="prog"></i></div>
+  <div class="msg" id="bootmsg">불러오는 중…</div>
+  <button id="start">시작하기</button>
+  <p class="hint" id="turn-hint" hidden>아이폰 제어 센터에서 화면 방향 잠금을 끄고 폰을 가로로 들면, 시계·배터리가 사라지고 홈 바도 화면 아래로 가요.</p>
+  <p class="credit">This project is based on <a href="https://github.com/dlunch/wie">wie</a>, created by Inseok Lee.</p>
+</div>
+<div class="panel" id="menu"><div class="box" id="menubox"></div></div>
+</div>
+<input type="file" id="file" style="display:none">
+<script src="data.js?v=2"></script>
+<script src="core.js?v=2"></script>
+<script src="plus.js?v=2"></script>
+<script src="input.js?v=2"></script>
+<script src="cheat.js?v=2"></script>
+<script src="dw.js?v=2"></script>
+</body>
+</html>
