@@ -39,7 +39,10 @@ library directly:
   where a blow landed (host event 10) for the page's hit effects.
 - `tweaks.c` — rules the player can switch in the page: unlimited Zen and gold (each look at the money first
   fills it to the game's own limit through the game's setter, which keeps its checksum right) and easier
-  refining (a success chance of at least 80, the helper item kept).
+  refining (a success chance of at least 80, the helper item kept), stat points that do not run out and a
+  chosen number of points per press of + in the status window, `GetPercentValue` in 64 bits (the game's
+  32-bit product wraps for large attacks, so blows did nothing; results that did not wrap are the same) and
+  every skill at its highest level (`skills_max`).
 - `input.c` — where the touch d-pad's dial is and whether it is on screen (`dpad_geom`), read from the
   game's own keypad (`CZnTouchKeypad::GetTouchKeyPadRect`, and the checks `DrawTouchKeypadPattern` makes
   before it draws the dial), so the page can steer a finger that starts on the dial into the ring the game

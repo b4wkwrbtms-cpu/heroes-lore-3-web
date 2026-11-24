@@ -191,6 +191,8 @@ int main(int argc, char **argv) {
   if (getenv("MONEY")) { int money_unlimited(int); printf("money_unlimited %d\n", money_unlimited(1)); }
   if (getenv("DPAD")) { int dpad_enable(void); printf("dpad_enable %d\n", dpad_enable()); }
   if (getenv("REFINE")) { int refine_easy(int); printf("refine_easy %d\n", refine_easy(1)); }
+  if (getenv("DAMAGE")) { int damage_uncapped(int); printf("damage_uncapped %d\n", damage_uncapped(1)); }
+  if (getenv("STATS")) { int stat_rules(int, int); printf("stat_rules %d\n", stat_rules(1, atoi(getenv("STATS")))); }
   // input script
   static int sc_frame[4096], sc_type[4096], sc_x[4096], sc_y[4096];
   int nsc = 0;
@@ -267,6 +269,36 @@ int main(int argc, char **argv) {
       s32 g[4];
       int r = dpad_geom(g);
       if (r) printf("dpad at %d: off\n", i); else printf("dpad at %d: (%d,%d) inner %d outer %d\n", i, g[0], g[1], g[2], g[3]);
+    }
+    if (getenv("DMGTEST") && i == atoi(getenv("DMGTEST"))) {
+      // test: the hero's attack damage on itself (CMvPlayer::CalcAttackDamage, vtable +0x1c4), a few rolls
+      u32 find_symbol(const char *), call_guest(u32, int, const u32 *), gmalloc(u32);
+      u32 as = find_symbol("_ZN12CMvStateMenu11OnApplyStatEb") & ~1u;
+      u32 g = rd32(rd32(as + 0xc + rd32(as + 0x184))), player = g ? rd32(g + 8) : 0;
+      u32 crit = gmalloc(4);
+      printf("damage at %d:", i);
+      for (int k = 0; k < 12 && player; k++) {
+        wr32(crit, 0);
+        u32 a[4] = {player, player, crit, 0xffffffffu};
+        printf(" %d%s", (int)call_guest(rd32(rd32(player) + 0x1c4), 4, a), rd8(crit) ? "!" : "");
+      }
+      printf("\n");
+    }
+    if (getenv("SKILLS") && i == atoi(getenv("SKILLS"))) { int skills_max(void); printf("skills_max at %d: %d\n", i, skills_max()); }
+    if (getenv("BOOST") && i == atoi(getenv("BOOST"))) {
+      // test: put BOOSTN * 60000 points into STR (stat 0) the way the status window does
+      u32 find_symbol(const char *), call_guest(u32, int, const u32 *);
+      u32 as = find_symbol("_ZN12CMvStateMenu11OnApplyStatEb") & ~1u;
+      u32 g = rd32(rd32(as + 0xc + rd32(as + 0x184))), player = g ? rd32(g + 8) : 0;
+      u32 set = find_symbol("_ZN9CMvPlayer16SetMainStatPointEi"), use = find_symbol("_ZN9CMvPlayer16UseMainStatPointE8EnumStati");
+      int n = getenv("BOOSTN") ? atoi(getenv("BOOSTN")) : 10;
+      for (int k = 0; k < n && player; k++) {
+        u32 a[3] = {player, 60000, 0};
+        call_guest(set, 2, a);
+        a[1] = 0; a[2] = (u32)-60000;
+        call_guest(use, 3, a);
+      }
+      printf("boost at %d: player %x, +%d STR\n", i, player, n * 60000);
     }
     if (getenv("REFINETEST") && i == atoi(getenv("REFINETEST"))) {
       // DoRefine on the first bag slot with no helper item, with and without the easier refining

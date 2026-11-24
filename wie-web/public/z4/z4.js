@@ -1,14 +1,14 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "7";
+const VERSION = "8";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "z4.prefs";
 const prefs = Object.assign(
-  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", money: "max", refine: "easy", perf: "off", dpad: "smooth", screen: "notch", sound: "on" },
+  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", money: "max", refine: "easy", statPoints: "max", statStep: "10000", damage: "uncapped", skills: "max", perf: "off", dpad: "smooth", screen: "notch", sound: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -1284,6 +1284,7 @@ function frameLoop(t) {
   while (acc >= frameInterval && ran < 2) {
     deliverInput();
     if (core.frame() !== 0) return crashed();
+    skillRule();
     acc -= frameInterval;
     ran++;
   }
@@ -1410,7 +1411,7 @@ function bindSettings() {
       syncSettings();
       if (key === "screen" && started) toast("화면 크기는 게임을 다시 시작하면 맞춰져요");
       if (key === "sound") audio?.applyVolumes();
-      if ((key === "money" || key === "refine") && started) applyRules();
+      if (["money", "refine", "statPoints", "statStep", "damage", "skills"].includes(key) && started) applyRules();
       if (key === "motion" && started) { motion.on = prefs.motion === "smooth" && core.motionOn(true); if (prefs.motion !== "smooth") core.motionOn(false); motion.shown = -1; motion.cost = 0; motion.off = 0; }
       if (key === "screen" && !started) lcdW = chooseLcdWidth();
       if (key === "screen") applyLayout();
@@ -1479,11 +1480,24 @@ function bindSettings() {
   });
 }
 
-// game rules the player chose (core tweaks.c): unlimited Zen and gold, easier refining
+// game rules the player chose (core tweaks.c): unlimited Zen and gold, easier refining, stat points and
+// how many one press of + puts in, damage that does not overflow, every skill at its highest level
 function applyRules() {
   if (!core?.ex?.money_unlimited) return;
   core.ex.money_unlimited(prefs.money === "max" ? 1 : 0);
   core.ex.refine_easy(prefs.refine === "easy" ? 1 : 0);
+  if (!core.ex.stat_rules) return; // an accelerated core from before these
+  core.ex.stat_rules(prefs.statPoints === "max" ? 1 : 0, +prefs.statStep || 1);
+  core.ex.damage_uncapped(prefs.damage === "uncapped" ? 1 : 0);
+  skillsTick = 0;
+}
+// the skills are raised on the field (the keypad's dial on screen), checked about every two seconds
+let skillsTick = 0;
+function skillRule() {
+  if (prefs.skills !== "max" || !core.ex.skills_max || --skillsTick > 0) return;
+  skillsTick = 46;
+  if (!dpad.buf) dpad.buf = core.ex.host_alloc(16);
+  if (core.ex.dpad_geom(dpad.buf) === 0) core.ex.skills_max();
 }
 
 function syncFastRow(have, active, problem) {
@@ -1538,7 +1552,7 @@ async function prepareAndWait(game) {
     return;
   }
   $("tap-text").textContent = "화면을 터치하면 시작해요";
-  $("tap-err").textContent = core.fast ? "" : core.fastError
+  $("tap-err").textContent = core.fast ? (core.ex.stat_rules ? "" : "가속 파일이 이전 버전이라 스탯·데미지·스킬 설정은 꺼져 있어요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꿔 주세요.") : core.fastError
     ? `가속 파일을 이 기기에서 열지 못해서 기본 실행기로 돌아가요. (${core.fastError})`
     : core.staleFast
     ? "가속 파일이 예전 버전이라 쓰지 않았어요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꾸면 더 빨라져요."
