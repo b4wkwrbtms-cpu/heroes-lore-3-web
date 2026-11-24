@@ -1,12 +1,12 @@
 // 다크월드 player: runs the game's ARM library in dwcore.wasm and presents it on an iPhone in landscape.
-const VERSION = "7";
+const VERSION = "8";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "dw.prefs";
 const prefs = Object.assign(
-  { quality: "pixel", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on", motion: "smooth", impact: "normal" },
+  { quality: "pixel", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on", motion: "smooth", impact: "normal", combo: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -700,6 +700,8 @@ function modAsset(name, bytes) {
 class Core {
   async init(game, files, onEvent) {
     this.game = game;
+    this.combo = []; // game frames of attack presses the game would drop
+    this.ticks = 0;
     this.modded = new Map(); // fixed for this run, so a table always reads the same
     this.useMods = prefs.mod === "on";
     this.onEvent = onEvent;
@@ -796,9 +798,12 @@ class Core {
     }
   }
   tick() {
+    this.ticks = (this.ticks || 0) + 1;
+    this.comboBeforeTick();
     this.ex.interp_tick(0);
     const r = this.ex.app_tick();
     this.ex.interp_tick(1);
+    this.comboAfterTick();
     return r;
   }
   // the field at fraction f (0..256) of the way from the previous game frame to the last one, or null
@@ -810,8 +815,49 @@ class Core {
     if (this.ex.interp_draw(f, this.mid, w, h) !== 0) return null;
     return { w, h, px: new Uint16Array(this.mem.buffer, this.mid, n) };
   }
-  touch(type, x, y) { this.ex.app_touch(type, x, y); }
-  key(type, code) { this.ex.app_touch(type, code, 0); }
+  touch(type, x, y) {
+    if (type === 23 && this.pressWouldBeLost(x, y)) {
+      if (this.combo.length < 2) this.combo.push(this.ticks);
+      else this.combo[1] = this.ticks;
+    }
+    this.ex.app_touch(type, x, y);
+  }
+  // Attack combo buffer, so every tap on the attack button becomes a swing however fast it comes. The
+  // game takes a press only while the hero stands: one during a swing, or in the first frame after it,
+  // is dropped, and the combo (left slash, right slash, thrust) goes back to the start unless the next
+  // press comes within a few frames. Fast tapping therefore loses presses and keeps restarting the combo.
+  // Such a press is kept (two at most, for 12 game frames) and given to the game again each frame the
+  // hero stands, until the game starts the swing. Read from the game's memory: the hero's state (Hero
+  // +0x104, 3 = attacking), the state before it (+0x108), frames since it changed (+0x110), and the
+  // attack button (Touch_Area[0]: on, x0, y0, x1, y1, cx, cy).
+  hero(off) { return new Uint8Array(this.mem.buffer, this.ex.guest_base() + 0x100000 + 0xd4dc4 + off, 1)[0]; }
+  mem32(off) { return new DataView(this.mem.buffer, this.ex.guest_base()).getInt32(0x100000 + off, true); }
+  onAttackButton(x, y) {
+    const a = 0xbf1a8;
+    return this.mem32(a) === 1 && x >= this.mem32(a + 4) && y >= this.mem32(a + 8) && x < this.mem32(a + 12) && y < this.mem32(a + 16);
+  }
+  pressWouldBeLost(x, y) {
+    if (prefs.combo !== "on" || !this.onAttackButton(x, y)) return false;
+    const st = this.hero(0x104);
+    return st === 3 || (st === 0 && this.hero(0x108) === 3 && this.hero(0x110) < 1);
+  }
+  comboBeforeTick() {
+    this.comboSent = false;
+    this.combo = this.combo.filter(t => this.ticks - t <= 12);
+    if (!this.combo.length || this.hero(0x104) !== 0) return;
+    const x = this.mem32(0xbf1a8 + 20), y = this.mem32(0xbf1a8 + 24);
+    if (!fingers.length) {
+      this.ex.app_touch(23, x, y);
+      this.ex.app_touch(24, x, y);
+    } else if (fingers.length === 1 && this.onAttackButton(fingers[0].p[0], fingers[0].p[1])) {
+      this.ex.app_touch(24, x, y); // the finger still on the button: press it again, its lift ends it
+      this.ex.app_touch(23, x, y);
+    } else return; // the touch is held elsewhere (the pad): the game follows one touch at a time
+    this.comboSent = true;
+  }
+  comboAfterTick() {
+    if (this.comboSent && this.hero(0x104) === 3) this.combo.shift();
+  }
   frame() {
     const w = this.ex.screen_w(), h = this.ex.screen_h();
     return { w, h, px: new Uint16Array(this.mem.buffer, this.ex.screen(), w * h) };
