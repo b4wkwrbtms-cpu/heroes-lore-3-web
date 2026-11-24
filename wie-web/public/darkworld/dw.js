@@ -1,5 +1,5 @@
 // 다크월드 player: runs the game's ARM library in dwcore.wasm and presents it on an iPhone in landscape.
-const VERSION = "8";
+const VERSION = "9";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -816,11 +816,20 @@ class Core {
     return { w, h, px: new Uint16Array(this.mem.buffer, this.mid, n) };
   }
   touch(type, x, y) {
-    if (type === 23 && this.pressWouldBeLost(x, y)) {
-      if (this.combo.length < 2) this.combo.push(this.ticks);
-      else this.combo[1] = this.ticks;
+    if (type === 23) {
+      // a touch anywhere else (dash, a skill, the pad) is a new action: kept attack presses must not
+      // come after it
+      if (!this.onAttackButton(x, y)) this.combo = [];
+      else if (this.pressWouldBeLost(x, y)) {
+        if (this.combo.length < 2) this.combo.push(this.ticks);
+        else this.combo[1] = this.ticks;
+      }
     }
     this.ex.app_touch(type, x, y);
+  }
+  key(type, code) {
+    if (type === 2 && code !== -5) this.combo = []; // any other key is a new action too
+    this.ex.app_touch(type, code, 0);
   }
   // Attack combo buffer, so every tap on the attack button becomes a swing however fast it comes. The
   // game takes a press only while the hero stands: one during a swing, or in the first frame after it,
