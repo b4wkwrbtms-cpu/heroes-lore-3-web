@@ -74,6 +74,7 @@
       .panel h3 { margin: 2px 0 10px; font-size: 17px; display: flex; justify-content: space-between; align-items: center; }
       .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.07); }
       .row label { font-size: 14px; color: #ddd; }
+      .row.muted { opacity: .4; pointer-events: none; }
       .row .hint { display: block; font-size: 11.5px; color: #8f8f96; margin-top: 2px; }
       .seg { display: flex; background: rgba(255,255,255,.07); border-radius: 10px; padding: 3px; flex-shrink: 0; }
       .seg button { border: 0; background: transparent; color: #bbb; font-size: 13px; padding: 7px 10px; border-radius: 8px; white-space: nowrap; }
@@ -123,6 +124,8 @@
           <h3>설정 <button class="btn ghost" id="btn-close" style="padding: 8px 14px; margin: 0">닫기</button></h3>
           <div class="row"><label>화질<span class="hint">원본 픽셀이 이 게임 그림에 가장 잘 맞아요 · HD는 테두리를 매끈하게 다듬어요</span></label>
             <div class="seg" data-pref="quality"><button data-v="pixel">원본 픽셀</button><button data-v="sharp">선명</button><button data-v="smooth">부드럽게</button><button data-v="hd">HD</button></div></div>
+          <div class="row"><label>조작<span class="hint">원본은 연타 보정도, 화면 지연도 없이 누르는 대로 게임에 그대로 들어가요(원래 게임과 같아요)</span></label>
+            <div class="seg" data-pref="controls"><button data-v="tuned">보정</button><button data-v="original">원본</button></div></div>
           <div class="row"><label>움직임<span class="hint">게임은 1초에 16번 그려요 · 부드럽게는 그 사이 장면을 더 그려 걷기·카메라가 매끄러워요</span></label>
           <div class="seg" data-pref="motion"><button data-v="smooth">부드럽게</button><button data-v="original">원래대로</button></div></div>
           <div class="row"><label>공격 연타 보정<span class="hint">빨리 연타해도 누른 만큼 좌베기→우베기→찌르기로 이어져요</span></label>
@@ -156,6 +159,6 @@
       <div id="toast"></div>
     </div>
 
-    <script type="module" src="dw.js?v=9"></script>
+    <script type="module" src="dw.js?v=10"></script>
   </body>
 </html>

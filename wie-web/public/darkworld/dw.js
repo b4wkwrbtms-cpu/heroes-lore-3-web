@@ -1,12 +1,12 @@
 // 다크월드 player: runs the game's ARM library in dwcore.wasm and presents it on an iPhone in landscape.
-const VERSION = "9";
+const VERSION = "10";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "dw.prefs";
 const prefs = Object.assign(
-  { quality: "pixel", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on", motion: "smooth", impact: "normal", combo: "on" },
+  { quality: "pixel", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on", motion: "smooth", impact: "normal", combo: "on", controls: "tuned" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -846,7 +846,7 @@ class Core {
     return this.mem32(a) === 1 && x >= this.mem32(a + 4) && y >= this.mem32(a + 8) && x < this.mem32(a + 12) && y < this.mem32(a + 16);
   }
   pressWouldBeLost(x, y) {
-    if (prefs.combo !== "on" || !this.onAttackButton(x, y)) return false;
+    if (prefs.controls === "original" || prefs.combo !== "on" || !this.onAttackButton(x, y)) return false;
     const st = this.hero(0x104);
     return st === 3 || (st === 0 && this.hero(0x108) === 3 && this.hero(0x110) < 1);
   }
@@ -1157,7 +1157,7 @@ function frameLoop(t) {
   }
   if (acc > interval) acc = 0; // fell behind: drop the backlog instead of rushing
   let f = 256;
-  if (prefs.motion === "smooth") {
+  if (prefs.motion === "smooth" && prefs.controls !== "original") { // "original" controls: no display delay
     f = Math.min(256, Math.round((acc / interval) * 256));
     if (motion.cost > 9) f = f < 128 ? 128 : 256; // slow device: one in-between frame per game frame
     if (f > 240) f = 256;
@@ -1225,6 +1225,8 @@ window.addEventListener("pagehide", () => saves.flush());
 // ---------------------------------------------------------------------------------------------
 // Settings
 function syncSettings() {
+  // controls "original" turns the attack combo buffer and the one-frame display delay off: dim their rows
+  for (const k of ["motion", "combo"]) document.querySelector(`.seg[data-pref="${k}"]`).closest(".row").classList.toggle("muted", prefs.controls === "original");
   for (const seg of document.querySelectorAll(".seg[data-pref]")) {
     for (const b of seg.querySelectorAll("button")) b.classList.toggle("on", prefs[seg.dataset.pref] === b.dataset.v);
   }
@@ -1241,7 +1243,7 @@ function bindSettings() {
       syncSettings();
       if (key === "screen" && started) toast("화면 크기는 게임을 다시 시작하면 맞춰져요");
       if (key === "mod" && started) toast("개조는 게임을 다시 시작하면 적용돼요");
-      if (key === "motion") motion.shown = -1;
+      if (key === "motion" || key === "controls") { motion.shown = -1; if (core) core.combo = []; }
       if (key === "sound") audio?.applyVolumes();
       if (key === "screen" && !started) lcdW = chooseLcdWidth();
       if (key === "screen") applyLayout();
