@@ -28,6 +28,13 @@ typedef struct {
 static Obj objs[MAX_OBJS];
 static int obj_hint = 1;
 
+// the object table is host state; in-between frames (interp.c) save and restore it with the guest
+u32 jni_state_size(void) { return sizeof objs + sizeof obj_hint; }
+void jni_state(u8 *buf, int save) {
+  if (save) { memcpy(buf, objs, sizeof objs); memcpy(buf + sizeof objs, &obj_hint, sizeof obj_hint); }
+  else { memcpy(objs, buf, sizeof objs); memcpy(&obj_hint, buf + sizeof objs, sizeof obj_hint); }
+}
+
 static u32 obj_new(int kind) {
   for (int n = 0; n < MAX_OBJS; n++) {
     int i = (obj_hint + n) % MAX_OBJS;
@@ -224,6 +231,9 @@ static u64 java_invoke(u32 mid, ArgReader *ar) {
     s++;
   }
   if (trace_java) logf("java %s%s (%x, %x, %x)", m->name, m->sig, (u32)a[0], (u32)a[1], (u32)a[2]);
+  extern int interp_active; // an in-between frame being drawn: nothing may reach the page
+  if (interp_active && (m->id == M_QtPlaySound || m->id == M_QtStopSound || m->id == M_QtVibrate ||
+                        m->id == M_setTimer || m->id == M_buyItem || m->id == M_ChangeTitleState)) return 0;
   switch (m->id) {
   case M_ChangeTitleState: title_state = (int)a[0]; return 0;
   case M_GetTime_MilliSec: return (u64)host_now();

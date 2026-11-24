@@ -17,6 +17,10 @@ touches and keys, calls it on a timer and plays the sounds it names. This core r
   alpha `DM_FillRect` rows, `DM_SetPixelAlpha`, `GetAngle`, `__divsi3`, `Abs`). Each replaces the first instruction of the routine or loop with a UDF instruction the
   interpreter hands to C, gives the same pixels, and is installed only when the instruction words match
   this library build. A case a fast path does not cover runs the original code.
+- `interp.c` — in-between frames: the state each field frame is drawn from is saved when `PAINT_GAME_MAIN`
+  reaches `DrawView`; the page can then have the field drawn again with the hero, the monsters and the
+  camera part of the way between the last two frames, after which every byte of guest state (and the
+  JNI object table) is put back. Drawn with nothing moved it is the game's own frame, pixel for pixel.
 - `fs.c` — the file system behind the guest's libc; every file the game writes is reported to the page, which
   keeps it in IndexedDB.
 

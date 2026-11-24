@@ -1,12 +1,12 @@
 // 다크월드 player: runs the game's ARM library in dwcore.wasm and presents it on an iPhone in landscape.
-const VERSION = "5";
+const VERSION = "6";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "dw.prefs";
 const prefs = Object.assign(
-  { quality: "pixel", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on" },
+  { quality: "pixel", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on", motion: "smooth" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -794,7 +794,21 @@ class Core {
       for (let k = 0, j = 0; k < dst.length; k++, j += 4) dst[k] = ((rgba[j] >> 3) << 11) | ((rgba[j + 1] >> 2) << 5) | (rgba[j + 2] >> 3);
     }
   }
-  tick() { return this.ex.app_tick(); }
+  tick() {
+    this.ex.interp_tick(0);
+    const r = this.ex.app_tick();
+    this.ex.interp_tick(1);
+    return r;
+  }
+  // the field at fraction f (0..256) of the way from the previous game frame to the last one, or null
+  between(f) {
+    const w = this.ex.screen_w(), h = this.ex.screen_h(), n = w * h;
+    if (!this.mid || this.midN !== n) { if (this.mid) this.ex.host_free(this.mid); this.mid = this.ex.host_alloc(n * 2); this.midN = n; }
+    const out = new Uint16Array(this.mem.buffer, this.mid, n);
+    out.set(new Uint16Array(this.mem.buffer, this.ex.screen(), n));
+    if (this.ex.interp_draw(f, this.mid, w, h) !== 0) return null;
+    return { w, h, px: new Uint16Array(this.mem.buffer, this.mid, n) };
+  }
   touch(type, x, y) { this.ex.app_touch(type, x, y); }
   key(type, code) { this.ex.app_touch(type, code, 0); }
   frame() {
@@ -918,6 +932,11 @@ function onCoreEvent(kind) {
 // Game loop: the Android timer (QtGameView) runs the game every `interval` ms (setTimer, 60 by default)
 let acc = 0;
 let lastT = 0;
+// The game updates about 16 times a second. With 부드럽게 on, the display runs one game frame behind and
+// shows the frames in between: the field drawn with the hero, the monsters and the camera part of the way
+// between their positions in the last two game frames (dwcore interp.c). Menus, scripts and screen shakes
+// show the game's own frames. A device too slow for that gets one in-between frame per game frame.
+const motion = { cost: 0, shown: -1 };
 function frameLoop(t) {
   requestAnimationFrame(frameLoop);
   if (!running) { lastT = t; return; }
@@ -933,11 +952,27 @@ function frameLoop(t) {
     ran++;
   }
   if (acc > interval) acc = 0; // fell behind: drop the backlog instead of rushing
-  if (ran) {
-    const f = core.frame();
-    renderer.upload(f.px, f.w, f.h);
+  let f = 256;
+  if (prefs.motion === "smooth") {
+    f = Math.min(256, Math.round((acc / interval) * 256));
+    if (motion.cost > 9) f = f < 128 ? 128 : 256; // slow device: one in-between frame per game frame
+    if (f > 240) f = 256;
   }
-  if (renderer.dirty) renderer.draw();
+  if (!ran && f === motion.shown) { if (renderer.dirty) renderer.draw(); return; }
+  let frame = null;
+  if (f < 256) {
+    const t0 = performance.now();
+    frame = core.between(f);
+    if (frame) motion.cost = motion.cost * 0.9 + (performance.now() - t0) * 0.1;
+  }
+  if (!frame) {
+    if (!ran && motion.shown === 256) { if (renderer.dirty) renderer.draw(); return; }
+    f = 256;
+    frame = core.frame();
+  }
+  motion.shown = f;
+  renderer.upload(frame.px, frame.w, frame.h);
+  renderer.draw();
 }
 
 function crashed() {
@@ -985,6 +1020,7 @@ function bindSettings() {
       syncSettings();
       if (key === "screen" && started) toast("화면 크기는 게임을 다시 시작하면 맞춰져요");
       if (key === "mod" && started) toast("개조는 게임을 다시 시작하면 적용돼요");
+      if (key === "motion") motion.shown = -1;
       if (key === "sound") audio?.applyVolumes();
       if (key === "screen" && !started) lcdW = chooseLcdWidth();
       if (key === "screen") applyLayout();

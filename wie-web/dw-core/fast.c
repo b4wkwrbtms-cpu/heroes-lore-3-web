@@ -376,6 +376,11 @@ static int fast_get_angle(void) {
   return 1;
 }
 
+int interp_on_draw_view(void); // interp.c: saves the state each field frame is drawn from
+int interp_on_check_view_fx(void);
+static int fast_draw_view(void) { return interp_on_draw_view(); }
+static int fast_check_view_fx(void) { return interp_on_check_view_fx(); }
+
 typedef int (*Fast)(void);
 typedef struct {
   u32 off;   // file offset of the patched instruction
@@ -400,6 +405,8 @@ static const FastPath paths[] = {
     {0x2ab1a, 0x3a02464a, 0, fast_gbm_row_scaled},
     {0x28be8, 0x5951465d, 0, fast_fill_alpha_row},
     {0x2c244, 0x4657b5f0, 0, fast_get_angle},
+    {0x54f34, 0x4647b5f0, 0, fast_draw_view},
+    {0x53fa0, 0x4c55b570, 0, fast_check_view_fx},
 };
 #define NPATHS (sizeof paths / sizeof paths[0])
 static u32 displaced[NPATHS];
