@@ -205,7 +205,8 @@ static void exec_thumb(u32 insn, u32 pc) {
   }
   case 26: case 27: { // conditional branch, SWI
     u32 c = (insn >> 8) & 15;
-    if (c >= 14) { cpu_fail(c == 15 ? "thumb swi" : "undefined thumb branch", pc, insn); return; }
+    if (c == 14) { cpu_hook_thumb(insn & 0xff, pc); return; } // UDF: a native fast path (fast.c)
+    if (c == 15) { cpu_fail("thumb swi", pc, insn); return; }
     if (cond_pass(c)) cpu_pc = R[15] + ((s32)(insn << 24) >> 23);
     return;
   }

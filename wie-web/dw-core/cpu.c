@@ -387,6 +387,10 @@ static void exec_arm(u32 insn) {
     return;
   case 2:
   case 3:
+    if ((insn & 0x0ff000f0) == 0x07f000f0) { // UDF: a native fast path (fast.c)
+      cpu_hook_arm(((insn >> 4) & 0xfff0) | (insn & 15), R[15] - 8);
+      return;
+    }
     exec_single(insn);
     return;
   case 4:
@@ -408,6 +412,19 @@ static void exec_arm(u32 insn) {
 }
 
 #include "thumb.inc"
+
+// run an instruction a fast path displaced, as if it still stood at pc
+void exec_displaced_thumb(u32 insn, u32 pc) {
+  R[15] = pc + 4;
+  cpu_pc = pc + 2;
+  exec_thumb(insn, pc);
+}
+void exec_displaced_arm(u32 insn, u32 pc) {
+  R[15] = pc + 8;
+  cpu_pc = pc + 4;
+  u32 c = insn >> 28;
+  if (c == 14 || cond_pass(c)) exec_arm(insn);
+}
 
 void cpu_run_until_return(void) {
   for (;;) {

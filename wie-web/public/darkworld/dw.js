@@ -1,15 +1,17 @@
 // 다크월드 player: runs the game's ARM library in dwcore.wasm and presents it on an iPhone in landscape.
-const VERSION = "3";
+const VERSION = "4";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "dw.prefs";
 const prefs = Object.assign(
-  { quality: "hd", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on" },
+  { quality: "pixel", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
+// players found this game's art looks best as original pixels, so that became the default, once for everyone
+if (!prefs.pixelDefault) { prefs.quality = "pixel"; prefs.pixelDefault = 1; savePrefs(); }
 
 function toast(msg, ms = 2200) {
   const t = $("toast");
@@ -738,6 +740,7 @@ class Core {
     new Uint8Array(this.mem.buffer, p, so.length).set(so);
     ex.set_logging(window.DW_DEBUG ? 1 : 0);
     if (ex.load_library(p, so.length) !== 0) throw new Error("게임 라이브러리를 불러오지 못했어요");
+    ex.install_fast_paths(); // native drawing routines, the same pixels; only for the known library build
     ex.host_free(p);
     for (const [path, data] of files) {
       const dp = ex.host_alloc(Math.max(1, data.length));

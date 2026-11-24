@@ -61,6 +61,12 @@ void cpu_run_until_return(void);
 
 // HLE
 void hle_dispatch(u32 index);
+// native fast paths (fast.c): guest code patched with UDF instructions lands here
+void cpu_hook_thumb(u32 n, u32 pc);
+void cpu_hook_arm(u32 n, u32 pc);
+void exec_displaced_thumb(u32 insn, u32 pc);
+void exec_displaced_arm(u32 insn, u32 pc);
+u32 find_symbol(const char *name);
 
 // host imports
 IMPORT(host_log) void host_log(const char *s, int len);
