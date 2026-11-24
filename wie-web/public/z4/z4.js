@@ -1,7 +1,7 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "8";
+const VERSION = "9";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -1100,7 +1100,7 @@ function bindInput() {
 // events from the core: 1 vibrate, 2 UI status, 3 Natives.OnEvent, 4 in-app purchase, 5 frame rate,
 // 10 a blow landed (motion.c: map position x | y << 16, damage, 1 critical | 2 the hero was hit)
 let frameInterval = 1000 / 23;
-let hitstop = 0;
+let hitstop = 0, lastStop = 0;
 function onCoreEvent(kind, a, b, c) {
   if (kind === 4) toast("결제는 이 플레이어에서 쓸 수 없어요");
   if (kind === 5 && a > 0) frameInterval = 1000 / Math.min(60, a); // Natives.SetSpeed: the GL thread's frame rate
@@ -1108,8 +1108,9 @@ function onCoreEvent(kind, a, b, c) {
     const x = (a << 16) >> 16, y = a >> 16;
     if (c & 2) fx.hurtHero();
     else {
-      const big = fx.hit(x, y - 36, b, c & 1);
-      if (big && prefs.impact === "strong") hitstop = Math.max(hitstop, 55);
+      // a big blow stops the picture for a moment (not again within a short while, so a flurry keeps going)
+      const big = fx.hit(x, y - 36, b, c & 1), now = performance.now();
+      if (big && now - lastStop > 160) { hitstop = Math.max(hitstop, prefs.impact === "strong" ? 60 : 35); lastStop = now; }
     }
   }
   return 0;
@@ -1552,7 +1553,7 @@ async function prepareAndWait(game) {
     return;
   }
   $("tap-text").textContent = "화면을 터치하면 시작해요";
-  $("tap-err").textContent = core.fast ? (core.ex.stat_rules ? "" : "가속 파일이 이전 버전이라 스탯·데미지·스킬 설정은 꺼져 있어요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꿔 주세요.") : core.fastError
+  $("tap-err").textContent = core.fast ? (core.ex.motion_rev ? "" : "가속 파일이 이전 버전이에요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꿔 주세요(공격·대시 모션 수정이 들어 있어요).") : core.fastError
     ? `가속 파일을 이 기기에서 열지 못해서 기본 실행기로 돌아가요. (${core.fastError})`
     : core.staleFast
     ? "가속 파일이 예전 버전이라 쓰지 않았어요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꾸면 더 빨라져요."

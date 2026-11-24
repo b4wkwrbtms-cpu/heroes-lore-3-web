@@ -239,6 +239,31 @@ int main(int argc, char **argv) {
     }
     if (getenv("PROGRESS") && i % 20 == 0) { printf("frame %d\n", i); fflush(stdout); }
     if (app_frame()) { printf("halted at frame %d\n", i); break; }
+    if (getenv("SEQ") && i >= atoi(getenv("SEQ")) && i < atoi(getenv("SEQ")) + (getenv("SEQN") ? atoi(getenv("SEQN")) : 30)) {
+      // test: what the page shows between this frame and the last, in thirds (in-between frames where it
+      // makes them, else the game's frame), as s<frame>_<k>.ppm
+      int motion_enable(int), motion_state(void), motion_paint(int, u16 *);
+      static int on;
+      static u16 *sbuf;
+      if (!sbuf) sbuf = malloc(2048 * 1024 * 2);
+      if (!on) { on = 1; motion_enable(1); }
+      for (int k = 1; k <= 3; k++) {
+        int st = motion_state(), r = -1;
+        if (k < 3 && st > 0) r = motion_paint(k * 341, sbuf);
+        u16 *src = r ? screen() : sbuf;
+        char p[512];
+        snprintf(p, sizeof p, "%s/s%05d_%d.ppm", out_dir, i, k);
+        FILE *f = fopen(p, "wb");
+        fprintf(f, "P6\n%u %u\n255\n", scr_w, scr_h);
+        for (u32 q = 0; q < scr_w * scr_h; q++) {
+          u16 v = src[q];
+          u8 rgb[3] = {(u8)(((v >> 11) & 31) * 255 / 31), (u8)(((v >> 5) & 63) * 255 / 63), (u8)((v & 31) * 255 / 31)};
+          fwrite(rgb, 1, 3, f);
+        }
+        fclose(f);
+        if (k < 3) printf("seq %d.%d state %d %s\n", i, k, st, r ? "game frame" : "between");
+      }
+    }
     if (getenv("MOTION")) {
       int motion_enable(int), motion_state(void), motion_paint(int, u16 *);
       static int on;
@@ -283,6 +308,14 @@ int main(int argc, char **argv) {
         printf(" %d%s", (int)call_guest(rd32(rd32(player) + 0x1c4), 4, a), rd8(crit) ? "!" : "");
       }
       printf("\n");
+    }
+    if (getenv("HEROLOG") && i >= atoi(getenv("HEROLOG"))) {
+      // test: the hero's map position each frame (the object manager's +8)
+      u32 find_symbol(const char *);
+      u32 md = find_symbol("_ZN6CMvMap4DrawEb") & ~1u;
+      u32 mgr = rd32(rd32(md + 0x14 + rd32(md + 0x288) + rd32(md + 0x28c)));
+      u32 h = mgr ? rd32(mgr + 8) : 0;
+      if (h) printf("hero %d: %d %d\n", i, (s16)rd16(h + 0x36), (s16)rd16(h + 0x38));
     }
     if (getenv("SKILLS") && i == atoi(getenv("SKILLS"))) { int skills_max(void); printf("skills_max at %d: %d\n", i, skills_max()); }
     if (getenv("BOOST") && i == atoi(getenv("BOOST"))) {

@@ -65,6 +65,21 @@ void cow_end(void) {
   cow_on = 0;
   active = 0;
 }
+// cow_suspend stops writing into the active log and keeps it (which pages it holds) so that cow_resume
+// can go on with it later; -1 if none was active
+static u32 kept_bits[2][GUEST_SIZE >> 17];
+int cow_suspend(void) {
+  if (!active) return -1;
+  int log = (int)(active - logs);
+  memcpy(kept_bits[log], cow_bits, sizeof cow_bits);
+  cow_end();
+  return log;
+}
+void cow_resume(int log) {
+  memcpy(cow_bits, kept_bits[log], sizeof cow_bits);
+  active = &logs[log];
+  cow_on = 1;
+}
 int cow_ok(int log) { return !logs[log].overflow; }
 u32 cow_pages(int log) { return logs[log].n; }
 

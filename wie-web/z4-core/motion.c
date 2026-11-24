@@ -1,9 +1,11 @@
 // In-between frames. The game moves the camera, the hero and everything on the field in whole steps about
-// 23 times a second. To show frames between two of them, every real CMvApp::Draw runs with a copy-on-write
-// log (cow.c) holding the pages as they were before drawing, and the camera and object positions are noted.
-// motion_paint then winds memory back to that point, moves the camera and the objects part of the way from
-// where they were the frame before, lets the game draw once more into a separate picture and puts every
-// byte back, so the game itself never sees the extra frame.
+// 23 times a second. To show frames between two of them, a copy-on-write log (cow.c) runs from the start of
+// every real CMvApp::Draw until the next one, holding the pages as they were before drawing, and the camera
+// and object positions are noted there. The game draws first and then moves everything for the next frame,
+// so the log has to cover that move too: motion_paint winds all of memory back to the start of the drawing
+// (the hero in the pose this frame shows, not the next one), moves the camera and the objects part of the
+// way from where they were the frame before, lets the game draw once more into a separate picture and puts
+// every byte back, so the game itself never sees the extra frame.
 #include "base.h"
 
 u32 find_symbol(const char *name);
@@ -15,6 +17,8 @@ int cow_ok(int log);
 u32 cow_pages(int log);
 void cow_restore(int log);
 void cow_rewind(int log);
+int cow_suspend(void);
+void cow_resume(int log);
 void heap_state(void *buf, int save);
 u32 heap_state_size(void);
 u32 jni_state_size(void);
@@ -112,13 +116,13 @@ static void helper_ret(void) {
 }
 static void m_app_draw(void) {
   u32 app = R[0];
+  cow_end(); // the last frame's log
   m_capture();
   host_state(pre_state, 1);
-  cow_begin(0);
+  cow_begin(0); // kept on after drawing, until the next frame draws
   call_guest_unhooked(app_draw | 1, 1, &app);
-  cow_end();
   app_obj = app;
-  drawn_ok = cow_ok(0) && !cpu_halt;
+  drawn_ok = !cpu_halt;
   helper_ret();
 }
 
@@ -135,11 +139,13 @@ EXPORT(motion_enable) int motion_enable(int on) {
   drawn_ok = 0;
   frames[0].n = frames[1].n = 0;
   frames[0].map = frames[1].map = 0;
+  cow_end();
   return aot_hook(app_draw, on ? m_app_draw : 0);
 }
 
 static s16 lerp16(s16 a, s16 b, int f) { return (s16)(a + (((s32)(b - a) * f + (f >= 0 ? 512 : -512)) >> 10)); }
-static int near16(s16 a, s16 b) { s32 d = (s32)a - b; return d > -64 && d < 64; }
+// a step this short is a move (a dash or a charging skill goes up to about 50 a frame); longer is a jump
+static int near16(s16 a, s16 b) { s32 d = (s32)a - b; return d > -128 && d < 128; }
 
 static const Pos *m_find(const Frame *a, u32 i, u32 obj) {
   // the lists usually keep their order, so look at the same index first
@@ -153,7 +159,7 @@ static const Pos *m_find(const Frame *a, u32 i, u32 obj) {
 // 1 something, -1 nothing usable (different map, a jump, or no field on screen).
 EXPORT(motion_state) int motion_state(void) {
   Frame *a = &frames[cur ^ 1], *b = &frames[cur];
-  if (!drawn_ok || !b->map || !b->mgr || a->map != b->map || a->mgr != b->mgr) return -1;
+  if (!drawn_ok || !cow_ok(0) || !b->map || !b->mgr || a->map != b->map || a->mgr != b->mgr) return -1;
   if (!near16(a->cx, b->cx) || !near16(a->cy, b->cy)) return -1;
   if (a->cx != b->cx || a->cy != b->cy) return 1;
   for (u32 i = 0; i < b->n; i++) {
@@ -187,6 +193,7 @@ static void m_apply(int f) {
 EXPORT(motion_paint) int motion_paint(int f, u16 *out) {
   if (motion_state() < 0 || !app_obj || cpu_halt) return -1;
   host_state(live_state, 1);
+  int kept = cow_suspend();
   cow_begin(1);
   cow_rewind(0);
   host_state(pre_state, 0);
@@ -200,10 +207,12 @@ EXPORT(motion_paint) int motion_paint(int f, u16 *out) {
   int ok = cow_ok(1) && !cpu_halt;
   cow_restore(1);
   host_state(live_state, 0);
+  if (kept >= 0) cow_resume(kept);
   if (cpu_halt) { // the extra drawing went wrong: everything is back as it was, stop making them
     logf("motion: in-between frame failed, turned off");
     cpu_halt = 0;
     aot_hook(app_draw, 0);
+    cow_end();
     drawn_ok = 0;
   }
   return ok ? 0 : -1;
@@ -242,3 +251,7 @@ EXPORT(live_cam) u32 live_cam(void) {
   u32 map = m_map();
   return map ? ((u32)rd16(map + 0x166) << 16) | rd16(map + 0x168) : 0;
 }
+
+// Which in-between frames this core makes, for the page: 2 = from memory as it was when the frame was drawn
+// (the log covers the whole frame; before, a dash could stop them and effects showed the next frame early).
+EXPORT(motion_rev) int motion_rev(void) { return 2; }
