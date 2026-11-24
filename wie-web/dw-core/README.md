@@ -13,8 +13,8 @@ touches and keys, calls it on a timer and plays the sounds it names. This core r
 - `jni.c` — a minimal JNIEnv/JavaVM and the Java methods the library calls (assets, sound, timer, purchases).
   Purchases are always reported as failed.
 - `fast.c` — native versions of the hottest drawing routines (copying the frame buffer, the blend tables,
-  palette reads, the inner pixel loops of `DrawGBM`/`DrawGBMEx`, `MC_grpFillRect` rows, `DM_SetPixelAlpha`,
-  `__divsi3`, `Abs`). Each replaces the first instruction of the routine or loop with a UDF instruction the
+  palette reads, the inner pixel loops of `DrawGBM`/`DrawGBMEx` (also scaled and rotated), `MC_grpFillRect` and
+  alpha `DM_FillRect` rows, `DM_SetPixelAlpha`, `GetAngle`, `__divsi3`, `Abs`). Each replaces the first instruction of the routine or loop with a UDF instruction the
   interpreter hands to C, gives the same pixels, and is installed only when the instruction words match
   this library build. A case a fast path does not cover runs the original code.
 - `fs.c` — the file system behind the guest's libc; every file the game writes is reported to the page, which

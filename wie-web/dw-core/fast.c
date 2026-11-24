@@ -231,6 +231,151 @@ static int fast_abs(void) {
   return 1;
 }
 
+static inline s32 div_trunc(s32 a, s32 b) { // C and __divsi3 agree for b != 0 and a != INT_MIN
+  return a == (s32)0x80000000u && b == -1 ? a : a / b;
+}
+
+static inline int writer_known(u32 wk) { return wk == PIX_SRC || wk == PIX_565 || wk == PIX_565A; }
+static inline void write_pixel(u32 wk, u32 lvl, u32 c, u32 dst) {
+  if (wk == PIX_565) blend565(lvl, c, dst);
+  else if (wk == PIX_565A) blend565_alpha(lvl, c, dst);
+  else wr16(dst, (u16)c);
+}
+
+// DrawGBMEx, scaled or rotated: the inner loop over one destination row (Thumb, loop head at 0x2ab1a).
+// Per pixel it steps the source position (x100 fixed point) by the row's increments, keeps it inside the
+// source rectangle, scales it, mirrors it and draws the pixel as in fast_gbm_row. Live registers: r4 x,
+// r5 the clip rectangle, r6 the source rectangle, r7/r8 the source position, r9 the destination + 2; on
+// the stack: 0x1c the destination, 0x20/0x30 the source origin, 0x24/0x34 the steps, 0x28 the GOT, 0x2c
+// the palette, 0x38/0x48 mirrored in x/y, 0x3c/0x4c the GOT offsets of the reader/writer pointers, 0x40
+// the pixel data, 0x44 the source width, 0x50/0x58 height/width - 1, 0x68 the blend level, 0x304 the
+// scale (100 = 1:1). It leaves through 0x2abd6, which reloads what it uses.
+#define GBM_SCALED_EXIT 0x2abd6u
+static int fast_gbm_row_scaled(void) {
+  u32 sp = R[13], gotb = rd32(sp + 0x28);
+  u32 pk = (rd32(rd32(gotb + rd32(sp + 0x3c))) & ~1u) - B, wk = (rd32(rd32(gotb + rd32(sp + 0x4c))) & ~1u) - B;
+  s32 scale = (s32)rd32(sp + 0x304);
+  if (pk != PAL1 && pk != PAL2 && pk != PAL4 && pk != PAL8) return 0;
+  if (!writer_known(wk) || !scale) return 0;
+  s32 ox = (s32)rd32(sp + 0x20), oy = (s32)rd32(sp + 0x30), du = (s32)rd32(sp + 0x24), dv = (s32)rd32(sp + 0x34);
+  s32 rx0 = (s32)rd32(R[6]), ry0 = (s32)rd32(R[6] + 4), rx1 = (s32)rd32(R[6] + 8), ry1 = (s32)rd32(R[6] + 12);
+  u32 mx = rd32(sp + 0x38), my = rd32(sp + 0x48), data = rd32(sp + 0x40), pal = rd32(sp + 0x2c), lvl = rd32(sp + 0x68);
+  s32 sw = (s32)rd32(sp + 0x44), lasty = (s32)rd32(sp + 0x50), lastx = (s32)rd32(sp + 0x58);
+  s32 x = (s32)R[4], u = (s32)R[7], v = (s32)R[8], end = (s32)rd32(R[5] + 8), px = 0, py = 0;
+  u32 dst2 = R[9], dst = 0;
+  for (;;) {
+    dst = dst2 - 2;
+    px = (s32)((u32)ox + (u32)div_trunc(u, 100));
+    py = (s32)((u32)oy + (u32)div_trunc(v, 100));
+    if (rx0 <= px && px < rx1 && ry0 <= py && py < ry1) {
+      s32 sy = py - ry0, sx = px - rx0;
+      if (scale != 100) { sy = div_trunc((s32)((u32)sy * 100u), scale); sx = div_trunc((s32)((u32)sx * 100u), scale); }
+      if (mx) sx = lastx - sx;
+      if (my) sy = lasty - sy;
+      u32 c = palette_colour(pk, data, pal, (s32)((u32)sy * (u32)sw + (u32)sx));
+      if (c != TRANSPARENT) write_pixel(wk, lvl, c, dst);
+      px = sx;
+      py = sy;
+    }
+    u = (s32)((u32)u + (u32)du);
+    x++;
+    v = (s32)((u32)v + (u32)dv);
+    dst2 += 2;
+    if (end <= x) break;
+  }
+  wr32(sp + 0x1c, dst);
+  R[4] = (u32)x;
+  R[7] = (u32)u;
+  R[8] = (u32)v;
+  R[9] = dst2;
+  R[10] = (u32)py;
+  R[11] = (u32)px;
+  R[3] = (u32)end;
+  cpu_pc = B + GBM_SCALED_EXIT;
+  return 2;
+}
+
+// DM_FillRect with alpha: the inner loop over one row (Thumb, loop head at 0x28be8). Each pixel goes
+// through the alpha table with the fill colour's 5-bit channels in the drawing state (r2): blue +0xd9,
+// red +0xd7, green +0xd8, table offset +0xe4. Live registers: r2 the drawing state, r4 the alpha table,
+// r6 the row, r3/r10 the byte offset and its end. It leaves at 0x28c58 with r3 = r10.
+#define FILL_ALPHA_EXIT 0x28c58u
+static int fast_fill_alpha_row(void) {
+  u32 st = R[2], t = R[4], row = R[6], o = R[3], end = R[10];
+  if ((s32)o >= (s32)end || ((end - o) & 1)) return 0;
+  u32 off = rd32(st + 0xe4), cb = (u32)rd8(st + 0xd9) << 5, cr = (u32)rd8(st + 0xd7) << 5, cg = (u32)rd8(st + 0xd8) << 5;
+  u32 c = 0;
+  for (; o != end; o += 2) {
+    u32 d = rd16(row + o);
+    u32 b = rd8(t + ((cb + (d & 31)) << 3) + off) & 31;
+    u32 r = rd8(t + ((cr + (d >> 11)) << 3) + off);
+    u32 g = rd8(t + ((cg + ((d & 0x7e0) >> 6)) << 3) + off);
+    c = b | (r << 11) | ((g << 6) & 0x7e0);
+    wr16(row + o, (u16)c);
+  }
+  R[3] = end;
+  R[1] = c;
+  cpu_pc = B + FILL_ALPHA_EXIT;
+  return 2;
+}
+
+// int GetAngle(int x0, int y0, int x1, int y1): the direction from (x0, y0) to (x1, y1) in degrees, from the
+// game's arctangent table (ArcTan100: the angle for a slope x100), branch for branch as the original
+#define GOT_ATAN 0x77cu
+static inline s32 abs32(s32 v) { u32 m = (u32)(v >> 31); return (s32)(((u32)v + m) ^ m); }
+static inline s32 atan100(s32 v) { return (s32)rd32(got(GOT_ATAN) + (u32)abs32(v) * 4); }
+static inline s32 slope(s32 a, s32 b) { return div_trunc((s32)((u32)a * 100u), b); }
+static s32 get_angle(s32 x0, s32 y0, s32 x1, s32 y1) {
+  s32 dx = (s32)((u32)x1 - (u32)x0), dy = (s32)((u32)y1 - (u32)y0), r;
+  int state = y1 <= y0 ? 0 : 1; // 0: 0x2c27a, 1: 0x2c262, 2: 0x2c266, 3: 0x2c26a
+  for (;;) {
+    switch (state) {
+    case 0:
+      if (abs32(dx) > abs32(dy)) { state = 1; continue; }
+      if (!dx) return 90;
+      r = atan100(slope(dx, dy));
+      if (dx > 0) r = -r;
+      r += 90;
+      goto wrap;
+    case 1:
+      if (x1 < x0) {
+        if (abs32(dx) < abs32(dy)) { state = 2; continue; }
+        if (!dy) return 180;
+        r = atan100(slope(dy, dx));
+        if (dy < 0) r = -r;
+        r += 180;
+        goto wrap;
+      }
+      state = 2;
+      continue;
+    case 2:
+      if (y1 > y0) {
+        if (abs32(dx) > abs32(dy)) { state = 3; continue; }
+        if (!dx) return 270;
+        r = atan100(slope(dx, dy));
+        if (dx < 0) r = -r;
+        r += 270;
+        goto wrap;
+      }
+      state = 3;
+      continue;
+    default:
+      if (x1 < x0) return 0;
+      if (abs32(dx) < abs32(dy) || !dy) return 0;
+      r = atan100(slope(dy, dx));
+      if (dy > 0) r = -r;
+      r += 360;
+      goto wrap;
+    }
+  }
+wrap:
+  return r > 360 ? r % 360 : r;
+}
+static int fast_get_angle(void) {
+  R[0] = (u32)get_angle((s32)R[0], (s32)R[1], (s32)R[2], (s32)R[3]);
+  return 1;
+}
+
 typedef int (*Fast)(void);
 typedef struct {
   u32 off;   // file offset of the patched instruction
@@ -252,6 +397,9 @@ static const FastPath paths[] = {
     {0x9406c, 0x3401697e, 0, fast_fill_row},
     {0x27198, 0x9e05b5f0, 0, fast_set_pixel_alpha},
     {0x2bed0, 0x18c017c3, 0, fast_abs},
+    {0x2ab1a, 0x3a02464a, 0, fast_gbm_row_scaled},
+    {0x28be8, 0x5951465d, 0, fast_fill_alpha_row},
+    {0x2c244, 0x4657b5f0, 0, fast_get_angle},
 };
 #define NPATHS (sizeof paths / sizeof paths[0])
 static u32 displaced[NPATHS];

@@ -1,5 +1,5 @@
 // 다크월드 player: runs the game's ARM library in dwcore.wasm and presents it on an iPhone in landscape.
-const VERSION = "4";
+const VERSION = "5";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
