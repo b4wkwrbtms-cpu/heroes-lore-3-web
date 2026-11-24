@@ -381,6 +381,24 @@ int interp_on_check_view_fx(void);
 static int fast_draw_view(void) { return interp_on_draw_view(); }
 static int fast_check_view_fx(void) { return interp_on_check_view_fx(); }
 
+// EM_SetDamageEffect(kind, type, x, y, [sp] damage, [sp+4] critical, ...): a damage number appears above
+// (x, y) in map pixels. Calls from MOB_SetMonDamage (a monster is hit) and Hero_SetDamage (the hero is hit)
+// are reported to the page for its hit effects as event 10: who (1 monster, 2 hero) | critical << 8 |
+// the monster's feet y << 16, damage, x | y << 16. Then the original runs.
+#define RET_MON_DAMAGE 0x49fa6u
+#define RET_HERO_DAMAGE 0x3791au
+extern int interp_active;
+static int fast_damage_effect(void) {
+  u32 lr = (R[14] & ~1u) - B;
+  int who = lr == RET_MON_DAMAGE ? 1 : lr == RET_HERO_DAMAGE ? 2 : 0;
+  if (!who || interp_active) return 0;
+  // for a monster, MOB_SetMonDamage keeps its index in r5: its feet are at Mon[r5] +4/+6
+  u32 feet = who == 1 && R[5] < 50 ? rd16(B + 0xddd28u + R[5] * 552u + 6) : (R[3] & 0xffff);
+  host_event(10, (int)(who | ((rd32(R[13] + 4) ? 1u : 0u) << 8) | (feet << 16)), (int)rd32(R[13]),
+             (int)((R[2] & 0xffff) | (R[3] << 16)));
+  return 0;
+}
+
 typedef int (*Fast)(void);
 typedef struct {
   u32 off;   // file offset of the patched instruction
@@ -407,6 +425,7 @@ static const FastPath paths[] = {
     {0x2c244, 0x4657b5f0, 0, fast_get_angle},
     {0x54f34, 0x4647b5f0, 0, fast_draw_view},
     {0x53fa0, 0x4c55b570, 0, fast_check_view_fx},
+    {0x3069c, 0x4647b5f0, 0, fast_damage_effect},
 };
 #define NPATHS (sizeof paths / sizeof paths[0])
 static u32 displaced[NPATHS];

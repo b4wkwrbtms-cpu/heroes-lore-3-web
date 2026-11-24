@@ -18,10 +18,10 @@ u32 guest_heap_top(void);
 #define B LOAD_BASE
 #define RW_START (B + 0xbb078u) // the library's writable segment (.data, .bss)
 #define RW_END (B + 0x139528u)
-#define HERO (B + 0xd4dc4u)     // Hero: the same 460-byte character record as each monster
-#define MON (B + 0xddd28u)      // Mon[60]
-#define MON_COUNT 60
-#define CHAR_SIZE 460u
+#define HERO (B + 0xd4dc4u)     // Hero (position at +4/+6)
+#define MON (B + 0xddd28u)      // Mon[50], 552 bytes each (position at +4/+6)
+#define MON_COUNT 50
+#define MON_SIZE 552u
 #define VIEW (B + 0xe6510u)     // View: camera in 16-pixel tiles + phase, and in pixels
 #define PAINT_MAIN_DRAW 0x9250eu // PAINT_GAME_MAIN: the call to DrawView, where the drawing starts
 #define PAINT_MAIN_LIT 0x925a8u  // its r4 at that point: the literal it adds pc to later
@@ -92,8 +92,8 @@ static void read_pose(Pose *p) {
   p->x[0] = (s16)rd16(HERO + 4);
   p->y[0] = (s16)rd16(HERO + 6);
   for (u32 i = 0; i < MON_COUNT; i++) {
-    p->x[i + 1] = (s16)rd16(MON + i * CHAR_SIZE + 4);
-    p->y[i + 1] = (s16)rd16(MON + i * CHAR_SIZE + 6);
+    p->x[i + 1] = (s16)rd16(MON + i * MON_SIZE + 4);
+    p->y[i + 1] = (s16)rd16(MON + i * MON_SIZE + 6);
   }
   p->cx = cam_drawn(0);
   p->cy = cam_drawn(1);
@@ -183,7 +183,7 @@ EXPORT(interp_draw) int interp_draw(u32 f, u16 *out, u32 w, u32 h) {
   if (ok) {
     for (u32 i = 0; i <= MON_COUNT; i++) {
       if (far(prev.x[i], cur.x[i]) || far(prev.y[i], cur.y[i])) continue;
-      u32 a = i ? MON + (i - 1) * CHAR_SIZE : HERO;
+      u32 a = i ? MON + (i - 1) * MON_SIZE : HERO;
       wr16(a + 4, (u16)lerp(prev.x[i], cur.x[i], f));
       wr16(a + 6, (u16)lerp(prev.y[i], cur.y[i], f));
     }
@@ -216,4 +216,14 @@ EXPORT(interp_draw) int interp_draw(u32 f, u16 *out, u32 w, u32 h) {
   restore(1);
   interp_active = 0;
   return ok ? 0 : -1;
+}
+
+// the camera (map pixel at the top left) of the previous (0) and last (1) field frame, x then y
+EXPORT(interp_camera) s32 interp_camera(int k) {
+  switch (k) {
+  case 0: return prev.cx;
+  case 1: return prev.cy;
+  case 2: return cur.cx;
+  default: return cur.cy;
+  }
 }

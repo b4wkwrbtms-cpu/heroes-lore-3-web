@@ -1,12 +1,12 @@
 // 다크월드 player: runs the game's ARM library in dwcore.wasm and presents it on an iPhone in landscape.
-const VERSION = "6";
+const VERSION = "7";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "dw.prefs";
 const prefs = Object.assign(
-  { quality: "pixel", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on", motion: "smooth" },
+  { quality: "pixel", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on", motion: "smooth", impact: "normal" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -247,6 +247,7 @@ function applyLayout() {
     side.style.top = sy + 6 + "px";
   }
   renderer?.resize(sw, sh);
+  fx?.resize(sw, sh);
 }
 
 // client point -> LCD coordinates
@@ -919,7 +920,13 @@ function bindInput() {
 }
 
 // events from the core: 1 vibrate, 3 timer interval changed, 4 in-app purchase asked
-function onCoreEvent(kind) {
+function onCoreEvent(kind, a, b, c) {
+  if (kind === 10 && fx) {
+    // a damage number appears at (x, y) above the monster's head; the blow lands between head and feet
+    const x = (c << 16) >> 16, y = c >> 16, feet = a >> 16;
+    if ((a & 255) === 1) fx.hit(x, feet > y ? Math.round((y + 10 + feet) / 2) : y + 14, b, (a >> 8) & 1);
+    else if ((a & 255) === 2 && b > 0) fx.hurtHero();
+  }
   if (kind === 4) {
     // buying needed Google Play; the game hears the same as a cancelled purchase
     toast("결제는 이 플레이어에서 쓸 수 없어요");
@@ -927,6 +934,148 @@ function onCoreEvent(kind) {
   }
   return 0;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Hit feedback drawn over the game: sparks, a glow and a slash where a monster is struck, a pixel star,
+// a ring and a short shake on critical hits, red edges when the hero is hit. Driven by the game's own
+// damage numbers (dwcore event 10); the game's hits, damage and effects are unchanged. Positions are map
+// pixels, drawn relative to the camera of the picture on screen so they stay on the monster, as squares on
+// the game's pixel grid so they read as part of the pixel art.
+class Fx {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.parts = []; this.rings = []; this.glows = []; this.slashes = []; this.bursts = [];
+    this.hurt = 0; this.shake = 0; this.shakeT = 0; this.shakeAng = 0;
+    this.cam = [0, 0];
+    this.drawn = false;
+    this.avg = 0;
+    this.reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+  resize(w, h) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.scale = (w * dpr) / lcdW;
+    this.drawn = true;
+  }
+  level() { return prefs.impact === "strong" ? 1.4 : prefs.impact === "normal" ? 1 : 0; }
+  hit(x, y, dmg, crit) {
+    const k = this.level();
+    if (!k) return;
+    // a blow well above the recent average counts as big too (strong skills)
+    const big = crit || (this.avg > 0 && dmg > this.avg * 1.35);
+    this.avg = this.avg ? this.avg * 0.85 + dmg * 0.15 : dmg;
+    const n = Math.round((big ? 16 : 9) * k);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = (big ? 2.4 : 1.8) * (0.5 + Math.random()) * k;
+      this.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.6, life: 1, decay: 0.045 + Math.random() * 0.035, w: big && i % 3 === 0 ? 2 : 1, hue: big ? 45 : 25 + Math.random() * 20 });
+    }
+    this.glows.push({ x, y, r: (big ? 22 : 14) * k, life: 1, decay: big ? 0.08 : 0.12, hue: big ? 48 : 32 });
+    const ang = -0.6 + Math.random() * 1.2 + (Math.random() < 0.5 ? 0 : Math.PI / 2);
+    this.slashes.push({ x, y, ang, len: (big ? 28 : 20) * k, life: 1, decay: big ? 0.1 : 0.15, hue: big ? 45 : 28 });
+    if (big) {
+      this.bursts.push({ x, y, len: 12 * k, life: 1, decay: 0.09 });
+      this.rings.push({ x, y, r: 5, vr: 2.6 * k, life: 1, decay: 0.07, hue: 45 });
+      this.kick(2.2 * k);
+    } else this.kick(0.8 * k);
+  }
+  hurtHero() {
+    const k = this.level();
+    if (!k) return;
+    this.hurt = Math.min(1, 0.55 * k + this.hurt * 0.5);
+    this.kick(1.8 * k);
+  }
+  // a short damped sway in one direction instead of a random jitter every frame
+  kick(px) {
+    if (this.reduced) return;
+    if (px <= this.shake) return;
+    this.shake = px; this.shakeT = 0; this.shakeAng = Math.random() * Math.PI * 2;
+  }
+  shakeOffset() {
+    if (!this.shake) return [0, 0];
+    const v = Math.sin(this.shakeT * 0.09) * this.shake;
+    return [Math.cos(this.shakeAng) * v, Math.sin(this.shakeAng) * v * 0.7];
+  }
+  busy() { return this.parts.length || this.rings.length || this.glows.length || this.slashes.length || this.bursts.length || this.hurt > 0 || this.shake > 0; }
+  update(dt) {
+    const f = Math.min(dt / 16.7, 3);
+    for (const p of this.parts) { p.x += p.vx * f; p.y += p.vy * f; p.vy += 0.08 * f; p.vx *= 0.96; p.life -= p.decay * f; }
+    for (const r of this.rings) { r.r += r.vr * f; r.vr *= 0.93; r.life -= r.decay * f; }
+    for (const g of this.glows) g.life -= g.decay * f;
+    for (const sl of this.slashes) sl.life -= sl.decay * f;
+    for (const b of this.bursts) b.life -= b.decay * f;
+    this.parts = this.parts.filter(p => p.life > 0);
+    this.rings = this.rings.filter(r => r.life > 0);
+    this.glows = this.glows.filter(g => g.life > 0);
+    this.slashes = this.slashes.filter(sl => sl.life > 0);
+    this.bursts = this.bursts.filter(b => b.life > 0);
+    this.hurt = Math.max(0, this.hurt - 0.035 * f);
+    this.shakeT += dt;
+    this.shake = this.shake < 0.15 ? 0 : this.shake * Math.pow(0.84, f);
+  }
+  draw() {
+    const c = this.ctx, s = this.scale;
+    if (!this.busy() && !this.drawn) return;
+    c.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.drawn = !!this.busy();
+    const [cx, cy] = this.cam;
+    const dot = (x, y, size) => c.fillRect(Math.round(x - cx - size / 2) * s, Math.round(y - cy - size / 2) * s, size * s, size * s);
+    const line = (x0, y0, x1, y1, size) => {
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
+      for (let i = 0; i <= n; i++) dot(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, size);
+    };
+    if (this.hurt > 0) { // red edges
+      const W = this.canvas.width, H = this.canvas.height;
+      const g = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.62);
+      g.addColorStop(0, "rgba(200,0,0,0)");
+      g.addColorStop(1, `rgba(200,0,0,${0.45 * this.hurt})`);
+      c.fillStyle = g;
+      c.fillRect(0, 0, W, H);
+    }
+    c.globalCompositeOperation = "lighter";
+    for (const g of this.glows) {
+      const r = g.r * s * (1.2 - g.life * 0.4), gx = (g.x - cx) * s, gy = (g.y - cy) * s;
+      const grd = c.createRadialGradient(gx, gy, 0, gx, gy, r);
+      grd.addColorStop(0, `hsla(${g.hue},100%,85%,${0.75 * g.life})`);
+      grd.addColorStop(0.35, `hsla(${g.hue},100%,60%,${0.35 * g.life})`);
+      grd.addColorStop(1, `hsla(${g.hue},100%,50%,0)`);
+      c.fillStyle = grd;
+      c.fillRect(gx - r, gy - r, r * 2, r * 2);
+    }
+    for (const sl of this.slashes) {
+      const half = (sl.len * (1.25 - sl.life * 0.25)) / 2;
+      const dx = Math.cos(sl.ang) * half, dy = Math.sin(sl.ang) * half * 0.8;
+      c.fillStyle = `hsla(${sl.hue},100%,60%,${0.5 * sl.life})`;
+      line(sl.x - dx, sl.y - dy, sl.x + dx, sl.y + dy, sl.life > 0.5 ? 3 : 2);
+      c.fillStyle = `rgba(255,255,240,${sl.life})`;
+      line(sl.x - dx * 0.85, sl.y - dy * 0.85, sl.x + dx * 0.85, sl.y + dy * 0.85, 1);
+    }
+    for (const b of this.bursts) {
+      const len = b.len * (1.35 - b.life * 0.35);
+      c.fillStyle = `rgba(255,250,215,${b.life})`;
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4, l = i % 2 ? len * 0.55 : len, r0 = len * 0.18 * (1 - b.life);
+        line(b.x + Math.cos(a) * r0, b.y + Math.sin(a) * r0 * 0.8, b.x + Math.cos(a) * l, b.y + Math.sin(a) * l * 0.8, 1);
+      }
+      c.fillStyle = `rgba(255,220,120,${0.8 * b.life})`;
+      dot(b.x, b.y, 3);
+    }
+    for (const p of this.parts) {
+      c.fillStyle = `hsla(${p.hue},100%,${62 + 30 * p.life}%,${p.life})`;
+      dot(p.x, p.y, p.w);
+      c.fillStyle = `hsla(${p.hue},100%,55%,${0.45 * p.life})`;
+      dot(p.x - p.vx * 0.9, p.y - p.vy * 0.9, 1);
+    }
+    for (const r of this.rings) {
+      c.fillStyle = `hsla(${r.hue},100%,70%,${0.8 * r.life})`;
+      const n = Math.max(12, Math.ceil(r.r * 4.2));
+      for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; dot(r.x + Math.cos(a) * r.r, r.y + Math.sin(a) * r.r * 0.6, 1); }
+    }
+    c.globalCompositeOperation = "source-over";
+  }
+}
+let fx;
 
 // ---------------------------------------------------------------------------------------------
 // Game loop: the Android timer (QtGameView) runs the game every `interval` ms (setTimer, 60 by default)
@@ -958,7 +1107,7 @@ function frameLoop(t) {
     if (motion.cost > 9) f = f < 128 ? 128 : 256; // slow device: one in-between frame per game frame
     if (f > 240) f = 256;
   }
-  if (!ran && f === motion.shown) { if (renderer.dirty) renderer.draw(); return; }
+  if (!ran && f === motion.shown) { if (renderer.dirty) renderer.draw(); fxFrame(f); return; }
   let frame = null;
   if (f < 256) {
     const t0 = performance.now();
@@ -966,13 +1115,30 @@ function frameLoop(t) {
     if (frame) motion.cost = motion.cost * 0.9 + (performance.now() - t0) * 0.1;
   }
   if (!frame) {
-    if (!ran && motion.shown === 256) { if (renderer.dirty) renderer.draw(); return; }
+    if (!ran && motion.shown === 256) { if (renderer.dirty) renderer.draw(); fxFrame(256); return; }
     f = 256;
     frame = core.frame();
   }
   motion.shown = f;
   renderer.upload(frame.px, frame.w, frame.h);
   renderer.draw();
+  fxFrame(f);
+}
+
+// the effects follow the camera of the picture on screen; the shake moves the game and the effects together
+let fxT = 0;
+function fxFrame(f) {
+  if (!fx) return;
+  const now = performance.now(), dt = fxT ? Math.min(now - fxT, 100) : 16.7;
+  fxT = now;
+  if (!fx.busy() && !fx.drawn) return;
+  const ex = core.ex, k = Math.min(f, 256) / 256;
+  fx.cam = [ex.interp_camera(0) + (ex.interp_camera(2) - ex.interp_camera(0)) * k, ex.interp_camera(1) + (ex.interp_camera(3) - ex.interp_camera(1)) * k];
+  fx.update(dt);
+  fx.draw();
+  const [ox, oy] = fx.shakeOffset();
+  const px = layout.stage.w / lcdW;
+  $("stage").style.transform = ox || oy ? `translate(${(ox * px).toFixed(1)}px, ${(oy * px).toFixed(1)}px)` : "";
 }
 
 function crashed() {
@@ -1107,7 +1273,7 @@ async function prepareAndWait(game) {
     return;
   }
   $("tap-text").textContent = "화면을 터치하면 시작해요";
-  window.__dw = { core, audio: () => audio, lcd: () => lcdW, running: () => running, hold: v => { running = !v; }, ready: true };
+  window.__dw = { core, fx: () => fx, audio: () => audio, lcd: () => lcdW, running: () => running, hold: v => { running = !v; }, ready: true };
   $("tap").onclick = () => {
     if (started) return;
     started = true;
@@ -1150,6 +1316,7 @@ async function boot() {
   bindSettings();
   syncSettings();
   renderer = new Renderer($("screen"));
+  fx = new Fx($("fx"));
   // iOS may drop the GL context while the app is in the background
   $("screen").addEventListener("webglcontextlost", e => e.preventDefault());
   $("screen").addEventListener("webglcontextrestored", () => {

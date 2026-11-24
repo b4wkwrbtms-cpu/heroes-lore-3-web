@@ -16,7 +16,9 @@ touches and keys, calls it on a timer and plays the sounds it names. This core r
   palette reads, the inner pixel loops of `DrawGBM`/`DrawGBMEx` (also scaled and rotated), `MC_grpFillRect` and
   alpha `DM_FillRect` rows, `DM_SetPixelAlpha`, `GetAngle`, `__divsi3`, `Abs`). Each replaces the first instruction of the routine or loop with a UDF instruction the
   interpreter hands to C, gives the same pixels, and is installed only when the instruction words match
-  this library build. A case a fast path does not cover runs the original code.
+  this library build. A case a fast path does not cover runs the original code. Two entries only watch: `DrawView` and
+  `CheckViewFX` for the in-between frames, and `EM_SetDamageEffect` (a damage number appears), which is
+  reported to the page for its hit effects.
 - `interp.c` — in-between frames: the state each field frame is drawn from is saved when `PAINT_GAME_MAIN`
   reaches `DrawView`; the page can then have the field drawn again with the hero, the monsters and the
   camera part of the way between the last two frames, after which every byte of guest state (and the
