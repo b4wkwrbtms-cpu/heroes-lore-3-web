@@ -1,14 +1,14 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "5";
+const VERSION = "6";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "z4.prefs";
 const prefs = Object.assign(
-  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", money: "max", refine: "easy", perf: "off", screen: "notch", sound: "on" },
+  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", money: "max", refine: "easy", perf: "off", dpad: "smooth", screen: "notch", sound: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -134,7 +134,7 @@ async function importFastCore(file) {
   if (!names) throw new Error(`가속 파일(z4fast.wasm)이 아니에요 (${file.name || "이름 없음"}, ${bytes.length} 바이트)`);
   // the site's own core has the same exports but is far smaller; an older fast core lacks the in-between frames
   if (!names.includes("aot_build") || bytes.length < 1000000) throw new Error("이건 가속 파일이 아니라 기본 실행기예요");
-  if (!names.includes("money_unlimited")) throw new Error("예전 가속 파일이에요. 새로 받은 z4fast.wasm을 골라 주세요");
+  if (!names.includes("dpad_geom")) throw new Error("예전 가속 파일이에요. 새로 받은 z4fast.wasm을 골라 주세요");
   await idbPut("game", "fast", bytes.buffer);
 }
 async function importFiles(files, progress) {
@@ -851,7 +851,7 @@ class Core {
       try {
         ({ instance } = await WebAssembly.instantiate(game.fast, { env }));
         // a fast core from before the in-between frames does not fit this page: the site's core runs instead
-        if (!instance.exports.money_unlimited) { instance = null; this.staleFast = true; }
+        if (!instance.exports.dpad_geom) { instance = null; this.staleFast = true; }
       } catch (e) {
         instance = null; // the phone could not open it: the site's core runs instead
         this.fastError = String(e?.message || e);
@@ -969,17 +969,63 @@ function freePointerId() {
   while (used.has(i)) i++;
   return i;
 }
+// The game's d-pad reads a direction only while the finger is in a ring around the dial (between a small
+// inner circle and the outer edge) and only in four 90° sectors. A finger that starts on or near the dial
+// is steered: past a small dead centre it is placed in the middle of the ring at the nearest of the four
+// directions, which it keeps until the finger turns well past the halfway line. So a thumb that drifts off
+// the dial keeps walking, the direction does not flicker at the diagonals, and a quick second tap lands on
+// the same direction (the game's dash is two presses of one direction within half a second).
+const dpad = { buf: 0, axis: -1, upAt: 0 };
+function dpadGeometry() {
+  if (prefs.dpad === "original" || !core?.ex?.dpad_geom) return null;
+  if (!dpad.buf) dpad.buf = core.ex.host_alloc(16);
+  if (core.ex.dpad_geom(dpad.buf) !== 0) return null;
+  const g = new Int32Array(core.mem.buffer, dpad.buf, 4);
+  return { cx: g[0], cy: g[1], inner: g[2], outer: g[3] };
+}
+function steer(p, x, y, start) {
+  const d = p.dpad;
+  if (!d) return [x, y];
+  const dx = x - d.cx, dy = y - d.cy, r = Math.hypot(dx, dy);
+  const ring = (d.inner + d.outer) / 2;
+  if (r < Math.max(12, d.inner * 0.8)) {
+    // the dead centre stands still, except the second tap of a quick double tap, which repeats the direction
+    // for as long as the finger stays there
+    if (start && d.axis >= 0) d.hold = true;
+    if (!d.hold) { d.axis = -1; return [d.cx, d.cy]; }
+    const ang = d.axis * (Math.PI / 2);
+    return [Math.round(d.cx + Math.cos(ang) * ring), Math.round(d.cy + Math.sin(ang) * ring)];
+  }
+  d.hold = false;
+  const a = Math.atan2(dy, dx);
+  const nearest = ((Math.round(a / (Math.PI / 2)) % 4) + 4) % 4;
+  if (d.axis >= 0) {
+    let diff = Math.abs(a - d.axis * (Math.PI / 2)) % (2 * Math.PI);
+    if (diff > Math.PI) diff = 2 * Math.PI - diff;
+    if (diff > Math.PI / 4 + 0.2) d.axis = nearest; // about 11° past the halfway line before it turns
+  } else d.axis = nearest;
+  const ang = d.axis * (Math.PI / 2);
+  return [Math.round(d.cx + Math.cos(ang) * ring), Math.round(d.cy + Math.sin(ang) * ring)];
+}
 function touchStart(key, cx, cy) {
   if (pointers.has(key)) return;
-  const [x, y] = toLcd(cx, cy);
+  let [x, y] = toLcd(cx, cy);
   const p = { id: freePointerId(), x, y };
+  const g = dpadGeometry();
+  if (g && Math.hypot(x - g.cx, y - g.cy) < g.outer * 1.25) {
+    // a quick second tap keeps the direction it had unless it is clearly another one, so dash is easy to hit
+    p.dpad = { ...g, axis: performance.now() - dpad.upAt < 450 ? dpad.axis : -1 };
+    [x, y] = steer(p, x, y, true);
+    p.x = x;
+    p.y = y;
+  }
   pointers.set(key, p);
   queue.push({ type: 23, id: p.id, x, y });
 }
 function touchMove(key, cx, cy) {
   const p = pointers.get(key);
   if (!p) return;
-  const [x, y] = toLcd(cx, cy);
+  const [x, y] = steer(p, ...toLcd(cx, cy));
   if (x === p.x && y === p.y) return;
   p.x = x;
   p.y = y;
@@ -991,7 +1037,8 @@ function touchEnd(key, cx, cy) {
   const p = pointers.get(key);
   if (!p) return;
   pointers.delete(key);
-  const [x, y] = cx === undefined ? [p.x, p.y] : toLcd(cx, cy);
+  const [x, y] = cx === undefined || p.dpad ? [p.x, p.y] : toLcd(cx, cy);
+  if (p.dpad) { dpad.axis = p.dpad.axis; dpad.upAt = performance.now(); }
   queue.push({ type: 24, id: p.id, x, y });
 }
 function releaseAll() {
@@ -1495,7 +1542,7 @@ async function startGame() {
     return;
   }
   showOverlay(null);
-  try { core.ex.fx_enable(1); } catch {}
+  try { core.ex.fx_enable(1); core.ex.dpad_enable(); } catch {}
   applyRules();
   motion.on = prefs.motion === "smooth" && core.motionOn(true);
   running = true;

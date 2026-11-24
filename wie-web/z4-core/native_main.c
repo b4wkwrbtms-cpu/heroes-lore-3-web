@@ -188,6 +188,7 @@ int main(int argc, char **argv) {
   if (app_start(w, h)) { puts("start failed"); return 1; }
   if (getenv("FX")) { int fx_enable(int); printf("fx_enable %d\n", fx_enable(1)); }
   if (getenv("MONEY")) { int money_unlimited(int); printf("money_unlimited %d\n", money_unlimited(1)); }
+  if (getenv("DPAD")) { int dpad_enable(void); printf("dpad_enable %d\n", dpad_enable()); }
   if (getenv("REFINE")) { int refine_easy(int); printf("refine_easy %d\n", refine_easy(1)); }
   // input script
   static int sc_frame[4096], sc_type[4096], sc_x[4096], sc_y[4096];
@@ -259,6 +260,12 @@ int main(int argc, char **argv) {
           fclose(f);
         }
       }
+    }
+    if (getenv("DPAD") && i % atoi(getenv("DPAD")) == 0) {
+      int dpad_geom(s32 *);
+      s32 g[4];
+      int r = dpad_geom(g);
+      if (r) printf("dpad at %d: off\n", i); else printf("dpad at %d: (%d,%d) inner %d outer %d\n", i, g[0], g[1], g[2], g[3]);
     }
     if (getenv("REFINETEST") && i == atoi(getenv("REFINETEST"))) {
       // DoRefine on the first bag slot with no helper item, with and without the easier refining

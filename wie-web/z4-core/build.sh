@@ -12,7 +12,7 @@ if [ -n "$AOT" ]; then
   if [ ! -f aot_gen.wasm.o ] || [ aot_gen.c -nt aot_gen.wasm.o ] || [ cpu_core.h -nt aot_gen.wasm.o ] || [ thumb2.inc -nt aot_gen.wasm.o ] || [ vfp.inc -nt aot_gen.wasm.o ] || [ base.h -nt aot_gen.wasm.o ]; then
     clang $FLAGS -DAOT -w -c aot_gen.c -o aot_gen.wasm.o
   fi
-  clang $FLAGS -DAOT $LINK -o "${1:-z4fast.wasm}" cpu.c util.c fs.c jni.c hle.c cow.c motion.c tweaks.c aot_gen.wasm.o
+  clang $FLAGS -DAOT $LINK -o "${1:-z4fast.wasm}" cpu.c util.c fs.c jni.c hle.c cow.c motion.c tweaks.c input.c aot_gen.wasm.o
 else
-  clang $FLAGS $LINK -o "${1:-z4core.wasm}" cpu.c util.c fs.c jni.c hle.c cow.c motion.c tweaks.c
+  clang $FLAGS $LINK -o "${1:-z4core.wasm}" cpu.c util.c fs.c jni.c hle.c cow.c motion.c tweaks.c input.c
 fi
