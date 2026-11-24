@@ -1,0 +1,6 @@
+aot_gen.c
+*.o
+*.wasm
+z4native
+z4aot
+z4prof
