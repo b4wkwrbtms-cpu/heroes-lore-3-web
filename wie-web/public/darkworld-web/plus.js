@@ -6,6 +6,7 @@
 // iOS web apps cannot lock the screen to landscape. In portrait the whole frame is turned 90° clockwise,
 // so the phone can be held sideways with the rotation lock on: the frame's left edge is then the side of
 // the camera and the status bar, its right edge the side of the home bar, and the game stays clear of both.
+// In landscape it fills the screen.
 window.Layout = {
   rotated: false, cw: 0, ch: 0, ox: 0,
   insets() {
@@ -15,15 +16,10 @@ window.Layout = {
   apply() {
     const vw = window.innerWidth, vh = window.innerHeight, ins = this.insets();
     const rotated = vh > vw, fw = rotated ? vh : vw, fh = rotated ? vw : vh;
-    let l, r;
-    if (rotated) { l = ins.t; r = ins.b; }
-    else {
-      // the camera (Dynamic Island) side, from the screen angle: 90 = turned counter-clockwise, camera on the left
-      const a = typeof screen.orientation?.angle === 'number' ? screen.orientation.angle : window.orientation;
-      const inset = Math.max(ins.l, ins.r);
-      const camLeft = !(a === 270 || a === -90);
-      l = camLeft ? inset : 0; r = camLeft ? 0 : inset;
-    }
+    // held in landscape the game uses the whole screen, as the build itself does (only the picture passes under
+    // the camera; touches there still work); turned in portrait it keeps clear of the status bar, which takes
+    // touches, and of the home bar
+    const l = rotated ? ins.t : 0, r = rotated ? ins.b : 0;
     const key = [vw, vh, l, r].join();
     if (key === this.key) return;
     this.key = key;
