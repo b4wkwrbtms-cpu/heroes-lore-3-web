@@ -1,7 +1,7 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "6";
+const VERSION = "7";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -27,10 +27,10 @@ const DB_NAME = "zenonia4-player";
 let dbPromise;
 function db() {
   dbPromise ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore("game");
-      req.result.createObjectStore("files");
+      // "backup": the version of each of the game's save files from before it was last replaced or removed
+      for (const name of ["game", "files", "backup"]) if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -134,7 +134,7 @@ async function importFastCore(file) {
   if (!names) throw new Error(`가속 파일(z4fast.wasm)이 아니에요 (${file.name || "이름 없음"}, ${bytes.length} 바이트)`);
   // the site's own core has the same exports but is far smaller; an older fast core lacks the in-between frames
   if (!names.includes("aot_build") || bytes.length < 1000000) throw new Error("이건 가속 파일이 아니라 기본 실행기예요");
-  if (!names.includes("dpad_geom")) throw new Error("예전 가속 파일이에요. 새로 받은 z4fast.wasm을 골라 주세요");
+  if (!names.includes("save_store")) throw new Error("예전 가속 파일이에요. 새로 받은 z4fast.wasm을 골라 주세요");
   await idbPut("game", "fast", bytes.buffer);
 }
 async function importFiles(files, progress) {
@@ -851,7 +851,8 @@ class Core {
       try {
         ({ instance } = await WebAssembly.instantiate(game.fast, { env }));
         // a fast core from before the in-between frames does not fit this page: the site's core runs instead
-        if (!instance.exports.dpad_geom) { instance = null; this.staleFast = true; }
+        // (an older one also keeps saves where the game's start-up conversion removes them)
+        if (!instance.exports.save_store) { instance = null; this.staleFast = true; }
       } catch (e) {
         instance = null; // the phone could not open it: the site's core runs instead
         this.fastError = String(e?.message || e);
@@ -931,8 +932,10 @@ class Core {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Saves: every file the game writes is mirrored to IndexedDB
+// Saves: every file the game writes is mirrored to IndexedDB. Before one of the game's save files
+// (the core's save_store directory) is replaced or removed, the version it had is kept in "backup".
 const saves = {
+  dir: "/gameSave/", // the core's save_store()
   pending: new Map(),
   timer: 0,
   write(path, data) {
@@ -949,7 +952,13 @@ const saves = {
     const items = [...this.pending];
     this.pending.clear();
     for (const [path, data] of items) {
-      try { data ? await idbPut("files", path, data) : await idbDel("files", path); } catch (e) { console.warn("save failed", e); }
+      try {
+        if (path.startsWith(this.dir)) {
+          const old = await idbGet("files", path);
+          if (old) await idbPut("backup", path, old);
+        }
+        data ? await idbPut("files", path, data) : await idbDel("files", path);
+      } catch (e) { console.warn("save failed", e); }
     }
   },
 };
@@ -1444,6 +1453,16 @@ function bindSettings() {
     }
   });
   $("btn-export").addEventListener("click", exportSaves);
+  $("btn-undo-save").addEventListener("click", async () => {
+    await saves.flush();
+    const old = await idbEntries("backup");
+    if (!old.length) return toast("되돌릴 이전 세이브가 없어요");
+    if (!confirm("세이브를 마지막으로 바뀌거나 지워지기 바로 전으로 되돌리고 게임을 다시 시작할까요?")) return;
+    running = false; // nothing the game writes from here on reaches storage
+    saves.pending.clear();
+    for (const [path, data] of old) await idbPut("files", path, data);
+    location.reload();
+  });
   $("btn-import-save").addEventListener("click", () => $("save-file").click());
   $("save-file").addEventListener("change", async e => {
     const f = e.target.files[0];
@@ -1511,6 +1530,8 @@ async function prepareAndWait(game) {
   core = new Core();
   try {
     await core.init(game, game.files, onCoreEvent);
+    const dir = new Uint8Array(core.mem.buffer, core.ex.save_store(), 64);
+    saves.dir = new TextDecoder().decode(dir.subarray(0, dir.indexOf(0)));
   } catch (e) {
     $("tap-text").textContent = "게임을 불러오지 못했어요";
     $("tap-err").textContent = String(e?.message || e);

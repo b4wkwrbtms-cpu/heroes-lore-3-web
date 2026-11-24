@@ -179,7 +179,8 @@ int main(int argc, char **argv) {
       FILE *f = fopen(p, "rb");
       fseek(f, 0, 2); long n = ftell(f); fseek(f, 0, 0);
       u8 *buf = malloc(n + 1); fread(buf, 1, n, f); fclose(f);
-      char real[256]; snprintf(real, sizeof real, "/save/%s", e->d_name + 6);
+      char real[256]; snprintf(real, sizeof real, "%s", e->d_name);
+      for (char *c = real, k = 0; *c && k < 2; c++) if (*c == '_') { *c = '/'; k++; } // _dir_name -> /dir/name
       fs_put(real, buf, (u32)n);
       printf("[restore] %s (%ld)\n", real, n);
     }

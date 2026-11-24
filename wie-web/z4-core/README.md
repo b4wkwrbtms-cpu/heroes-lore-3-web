@@ -18,7 +18,10 @@ library directly:
   and as wide as the phone's shape.
 - `jni.c` — a JNIEnv/JavaVM and the Java side the library calls: assets (`readAssete`), saves (`loadFile`/
   `saveFile`), the async timer, sounds, device info (a Korean locale), the signature check (answered with
-  the value the library expects) and NexusFont, whose drawing is done by the page (`host_text`).
+  the value the library expects) and NexusFont, whose drawing is done by the page (`host_text`). Saves go to
+  `/gameSave/` (Android: SharedPreferences), apart from `getAbsolueFilePath`'s directory (`/save/`): at every
+  start `CMvApp::FileConvertToAndroidFile` copies any file of the old API found there into the save store and
+  removes it, so sharing one directory removed the saves.
 - `fs.c`, `util.c` — the file system behind the guest's libc (saves are reported to the page, which keeps
   them in IndexedDB), heaps and formatting.
 - `blit_helpers.inc` — native stand-ins for the drawing routines that take most of a frame (sprite

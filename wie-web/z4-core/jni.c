@@ -2,6 +2,9 @@
 // com.gamevil.nexus2.Natives, NexusFont (text drawn by the page) and the signature check in NexusGLActivity.
 #include "base.h"
 
+// where saveFile/loadFile keep the game's saves (Android: SharedPreferences "gameSave")
+static const char SAVE_DIR[] = "/gameSave/";
+
 IMPORT(host_asset) int host_asset(const char *name, int nlen, void *dst, int cap);
 IMPORT(host_sound) void host_sound(int op, int id, int vol, int loop);
 // text drawn by the page in place of Android's Paint/Canvas (NexusFont); the operations are listed where
@@ -279,7 +282,10 @@ static u64 java_invoke(u32 mid, ArgReader *ar, u32 self) {
   if (streq(nm, "isFileExist") || streq(nm, "loadFile") || streq(nm, "saveFile") || streq(nm, "deleteFile")) {
     char name[160], path[200];
     copy_str(obj_get((u32)a[0]), name, sizeof name);
-    hsnprintf(path, sizeof path, "/save/%s", name);
+    // Android keeps these in SharedPreferences ("gameSave"), apart from getAbsolueFilePath's directory where
+    // the old file API (MC_fs) lives: at every start CMvApp::FileConvertToAndroidFile moves any old-API save
+    // into this store and removes the old file, so the two must not be the same place (it removed the save)
+    hsnprintf(path, sizeof path, "%s%s", SAVE_DIR, name);
     u32 gp = gstrdup_host(path);
     extern int fs_open(u32, int); extern int fs_close(int); extern int fs_read(int, u32, u32);
     extern int fs_write(int, u32, u32); extern s64 fs_lseek(int, s64, int); extern int fs_unlink(u32, int);
@@ -648,3 +654,7 @@ void jni_state(u8 *buf, int save) {
   if (save) { memcpy(buf, objs, sizeof objs); memcpy(buf + sizeof objs, &obj_hint, sizeof obj_hint); }
   else { memcpy(objs, buf, sizeof objs); memcpy(&obj_hint, buf + sizeof objs, sizeof obj_hint); }
 }
+
+// The directory of the game's own save store (saveFile/loadFile), apart from the old file API's: the page
+// asks for it to know a core keeps saves where the game's start-up conversion leaves them alone.
+EXPORT(save_store) const char *save_store(void) { return SAVE_DIR; }
