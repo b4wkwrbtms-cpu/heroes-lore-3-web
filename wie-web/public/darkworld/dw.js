@@ -1,5 +1,5 @@
 // 다크월드 player: runs the game's ARM library in dwcore.wasm and presents it on an iPhone in landscape.
-const VERSION = "2";
+const VERSION = "3";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -194,9 +194,13 @@ function landscapeMetrics() {
   // "notch": keep clear only the camera side, "safe": both sides, "full": edge to edge
   const mode = prefs.screen;
   const camMargin = mode === "full" ? 0 : inset;
-  const otherMargin = mode === "safe" ? (rotated ? ins.b : inset) : 0;
+  // when the frame is turned (the phone stays in portrait), the far side is where iOS keeps the home bar and
+  // its swipe area, so the game stays clear of it unless the player asked for edge to edge
+  const otherMargin = rotated ? (mode === "full" ? 0 : ins.b) : mode === "safe" ? inset : 0;
   const l = camLeft ? camMargin : otherMargin, r = camLeft ? otherMargin : camMargin;
-  return { vw, vh, rotated, lw, lh, l, r, camLeft, bottom: rotated ? ins.r : ins.b };
+  // safe-area insets as seen from inside the frame, for the screens and notices drawn in it
+  const frameInsets = rotated ? [ins.r, ins.b, ins.l, ins.t] : [ins.t, ins.r, ins.b, ins.l];
+  return { vw, vh, rotated, lw, lh, l, r, camLeft, frameInsets, bottom: rotated ? ins.r : ins.b };
 }
 
 function chooseLcdWidth() {
@@ -211,6 +215,9 @@ function applyLayout() {
   frame.style.width = m.lw + "px";
   frame.style.height = m.lh + "px";
   frame.style.transform = m.rotated ? `translate(${m.vw}px, 0) rotate(90deg)` : "none";
+  ["--ft", "--fr", "--fb", "--fl"].forEach((k, i) => frame.style.setProperty(k, m.frameInsets[i] + "px"));
+  // iOS web apps cannot turn the screen themselves: only the phone's own rotation (orientation lock off) does
+  $("tap-hint").hidden = !m.rotated;
   const aw = m.lw - m.l - m.r, ah = m.lh;
   const scale = Math.min(aw / lcdW, ah / LCD_H);
   const sw = Math.round(lcdW * scale), sh = Math.round(LCD_H * scale);
@@ -223,10 +230,11 @@ function applyLayout() {
   st.style.width = sw + "px";
   st.style.height = sh + "px";
   // the settings button: centred in the margin beside the camera when it fits there; otherwise a small,
-  // faint one in the game's top-right corner, which the field HUD and menus leave empty
+  // faint one in the game's top-right corner, which the field HUD and menus leave empty. A turned frame puts
+  // that margin under the iOS status bar, which takes the touches there, so it never goes there then.
   const side = $("side");
   const margin = m.camLeft ? sx : m.lw - sx - sw;
-  const roomy = margin >= 44;
+  const roomy = margin >= 44 && !m.rotated;
   side.classList.toggle("mini", !roomy);
   if (roomy) {
     const cx = m.camLeft ? margin / 2 : m.lw - margin / 2;

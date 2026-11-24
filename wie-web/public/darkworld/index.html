@@ -19,6 +19,7 @@
         --sar: env(safe-area-inset-right, 0px);
         --sat: env(safe-area-inset-top, 0px);
         --sab: env(safe-area-inset-bottom, 0px);
+        --ft: var(--sat); --fr: var(--sar); --fb: var(--sab); --fl: var(--sal);
         --accent: #4f86d9;
       }
       * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -47,7 +48,7 @@
       .overlay {
         position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
         background: radial-gradient(ellipse at center, #121a2b 0%, #05070c 70%); z-index: 10;
-        padding: max(16px, var(--sat)) max(16px, var(--sar)) max(16px, var(--sab)) max(16px, var(--sal));
+        padding: max(16px, var(--ft)) max(16px, var(--fr)) max(16px, var(--fb)) max(16px, var(--fl));
       }
       .overlay.show { display: flex; }
       .card { max-width: 520px; width: 100%; text-align: center; }
@@ -67,7 +68,7 @@
       #settings { background: rgba(0,0,0,.72); z-index: 20; }
       #settings .panel {
         background: #1c1b1f; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 14px 16px 10px;
-        width: min(560px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch;
+        width: min(560px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch;
       }
       .panel h3 { margin: 2px 0 10px; font-size: 17px; display: flex; justify-content: space-between; align-items: center; }
       .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.07); }
@@ -78,7 +79,7 @@
       .seg button.on { background: var(--accent); color: #fff; font-weight: 700; }
       .credits { font-size: 11px; color: #7d7d84; line-height: 1.5; margin-top: 8px; }
       #toast {
-        position: fixed; left: 50%; top: calc(12px + var(--sat)); transform: translateX(-50%); z-index: 30;
+        position: fixed; left: 50%; top: calc(12px + var(--ft)); transform: translateX(-50%); z-index: 30; max-width: 90%; text-align: center;
         background: rgba(20,20,22,.9); color: #fff; padding: 9px 14px; border-radius: 12px; font-size: 13px;
         opacity: 0; transition: opacity .25s; pointer-events: none;
       }
@@ -96,57 +97,58 @@
         </button>
         </div>
       </div>
-    </div>
-
-    <div class="overlay" id="home">
-      <div class="card">
-        <h1>다크월드<small>안드로이드판 · 아이폰 플레이어</small></h1>
-        <p id="home-text">갖고 있는 다크월드 게임 파일(apk 또는 apk를 담은 zip)을 한 번만 넣어 주세요.<br />이 기기에 저장돼서 다음부터는 바로 시작돼요.</p>
-        <div id="progress"><div></div></div>
-        <button class="btn" id="btn-import">게임 파일 넣기</button>
-        <input type="file" id="file" hidden />
-        <p class="err" id="home-err"></p>
+      <div class="overlay" id="home">
+        <div class="card">
+          <h1>다크월드<small>안드로이드판 · 아이폰 플레이어</small></h1>
+          <p id="home-text">갖고 있는 다크월드 게임 파일(apk 또는 apk를 담은 zip)을 한 번만 넣어 주세요.<br />이 기기에 저장돼서 다음부터는 바로 시작돼요.</p>
+          <div id="progress"><div></div></div>
+          <button class="btn" id="btn-import">게임 파일 넣기</button>
+          <input type="file" id="file" hidden />
+          <p class="err" id="home-err"></p>
+        </div>
       </div>
-    </div>
 
-    <div class="overlay" id="tap">
-      <div class="card">
-        <h2>다크월드</h2>
-        <p id="tap-text">화면을 터치하면 시작해요</p>
-        <p class="err" id="tap-err"></p>
+      <div class="overlay" id="tap">
+        <div class="card">
+          <h2>다크월드</h2>
+          <p id="tap-text">화면을 터치하면 시작해요</p>
+          <p id="tap-hint" hidden>아이폰 제어 센터에서 <b>화면 방향 잠금</b>을 끄고 폰을 가로로 들면, 시계·배터리가 사라지고 홈 바도 화면 아래로 가요.</p>
+          <p class="err" id="tap-err"></p>
+        </div>
       </div>
-    </div>
 
-    <div class="overlay" id="settings">
-      <div class="panel">
-        <h3>설정 <button class="btn ghost" id="btn-close" style="padding: 8px 14px; margin: 0">닫기</button></h3>
-        <div class="row"><label>화질<span class="hint">HD는 비스듬한 테두리까지 매끈하게 다듬어요</span></label>
-          <div class="seg" data-pref="quality"><button data-v="hd">HD</button><button data-v="sharp">선명</button><button data-v="smooth">부드럽게</button><button data-v="pixel">원본 픽셀</button></div></div>
-        <div class="row"><label>색감<span class="hint">색을 조금 더 또렷하게</span></label>
-          <div class="seg" data-pref="color"><button data-v="vivid">또렷하게</button><button data-v="original">원본</button></div></div>
-        <div class="row"><label>빛 번짐<span class="hint">마법·불꽃처럼 밝은 부분이 은은하게 빛나요</span></label>
-          <div class="seg" data-pref="glow"><button data-v="strong">강하게</button><button data-v="soft">은은하게</button><button data-v="off">끄기</button></div></div>
-        <div class="row"><label>화면 크기<span class="hint">카메라에 가리지 않게 그쪽만 비워요 · 게임을 다시 시작하면 맞춰져요</span></label>
-          <div class="seg" data-pref="screen"><button data-v="notch">카메라 쪽만 비움</button><button data-v="full">가장자리까지</button><button data-v="safe">양쪽 비움</button></div></div>
-        <div class="row"><label>소리</label>
-          <div class="seg" data-pref="sound"><button data-v="on">켜기</button><button data-v="off">끄기</button></div></div>
-        <div class="row"><label>개조<span class="hint">연금장인 제작에 캐시 아이템 41종(각 100골드) · 워킹홀리데이 주문서 250%·240분 · 현자의 보주·행운의 장신구 250% · 게임을 다시 시작하면 적용돼요</span></label>
-          <div class="seg" data-pref="mod"><button data-v="on">켜기</button><button data-v="off">끄기</button></div></div>
-        <div class="row"><label>세이브 백업<span class="hint">홈 화면 앱을 지우기 전에 내보내 두세요</span></label>
-          <div class="seg"><button id="btn-export">내보내기</button><button id="btn-import-save">가져오기</button></div></div>
-        <div class="row"><label>게임 파일</label>
-          <div class="seg"><button id="btn-restart">다시 시작</button><button id="btn-replace">다시 넣기</button></div></div>
-        <input type="file" id="save-file" accept=".json,application/json" hidden />
-        <p class="credits">
-          다크월드 © 겜돌이소프트. 게임 파일은 이 기기에만 저장되고 어디로도 보내지 않아요.<br />
-          ARM·Thumb 실행기와 안드로이드 대체층은 이 페이지에 맞춰 새로 만들었어요.<br />
-          This project is based on <a href="https://github.com/dlunch/wie" style="color:#9aa">wie</a>, created by Inseok Lee.<br />
-          <span id="version"></span>
-        </p>
+      <div class="overlay" id="settings">
+        <div class="panel">
+          <h3>설정 <button class="btn ghost" id="btn-close" style="padding: 8px 14px; margin: 0">닫기</button></h3>
+          <div class="row"><label>화질<span class="hint">HD는 비스듬한 테두리까지 매끈하게 다듬어요</span></label>
+            <div class="seg" data-pref="quality"><button data-v="hd">HD</button><button data-v="sharp">선명</button><button data-v="smooth">부드럽게</button><button data-v="pixel">원본 픽셀</button></div></div>
+          <div class="row"><label>색감<span class="hint">색을 조금 더 또렷하게</span></label>
+            <div class="seg" data-pref="color"><button data-v="vivid">또렷하게</button><button data-v="original">원본</button></div></div>
+          <div class="row"><label>빛 번짐<span class="hint">마법·불꽃처럼 밝은 부분이 은은하게 빛나요</span></label>
+            <div class="seg" data-pref="glow"><button data-v="strong">강하게</button><button data-v="soft">은은하게</button><button data-v="off">끄기</button></div></div>
+          <div class="row"><label>화면 크기<span class="hint">카메라에 가리지 않게 그쪽만 비워요 · 게임을 다시 시작하면 맞춰져요</span></label>
+            <div class="seg" data-pref="screen"><button data-v="notch">카메라 쪽만 비움</button><button data-v="full">가장자리까지</button><button data-v="safe">양쪽 비움</button></div></div>
+          <div class="row"><label>소리</label>
+            <div class="seg" data-pref="sound"><button data-v="on">켜기</button><button data-v="off">끄기</button></div></div>
+          <div class="row"><label>개조<span class="hint">연금장인 제작에 캐시 아이템 41종(각 100골드) · 워킹홀리데이 주문서 250%·240분 · 현자의 보주·행운의 장신구 250% · 게임을 다시 시작하면 적용돼요</span></label>
+            <div class="seg" data-pref="mod"><button data-v="on">켜기</button><button data-v="off">끄기</button></div></div>
+          <div class="row"><label>세이브 백업<span class="hint">홈 화면 앱을 지우기 전에 내보내 두세요</span></label>
+            <div class="seg"><button id="btn-export">내보내기</button><button id="btn-import-save">가져오기</button></div></div>
+          <div class="row"><label>게임 파일</label>
+            <div class="seg"><button id="btn-restart">다시 시작</button><button id="btn-replace">다시 넣기</button></div></div>
+          <input type="file" id="save-file" accept=".json,application/json" hidden />
+          <p class="credits">
+            다크월드 © 겜돌이소프트. 게임 파일은 이 기기에만 저장되고 어디로도 보내지 않아요.<br />
+            ARM·Thumb 실행기와 안드로이드 대체층은 이 페이지에 맞춰 새로 만들었어요.<br />
+            This project is based on <a href="https://github.com/dlunch/wie" style="color:#9aa">wie</a>, created by Inseok Lee.<br />
+            <span id="version"></span>
+          </p>
+        </div>
       </div>
+
+      <div id="toast"></div>
     </div>
 
-    <div id="toast"></div>
-    <script type="module" src="dw.js?v=2"></script>
+    <script type="module" src="dw.js?v=3"></script>
   </body>
 </html>
