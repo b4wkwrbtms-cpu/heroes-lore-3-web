@@ -1,10 +1,10 @@
 // The 1.57 web build's page talks to its own runtime through a few functions (createDW's module: dw_tick,
 // dw_event, dw_read32 and so on). This gives the page the same functions on top of this site's runtime
 // (core.wasm, built from wie-web/dw-core), which adds the native drawing fast paths and the in-between frames.
-// Guest addresses: the page uses the build's own map (the library at 0x10000000), the core maps it at 0x100000.
+// Guest addresses: the core maps the library at 0x10000000, as the build's own runtime does.
 'use strict';
 window.createDW = async function createDW() {
-  const THEIRS = 0x10000000, LOAD = 0x100000, W = 480, H = 320;
+  const THEIRS = 0x10000000, LOAD = 0x10000000, W = 480, H = 320;
   const PREFIX = '/data/data/com.gamedoli.DarkWorldGoogle/';
   const utf = new TextDecoder(), euc = new TextDecoder('euc-kr'), enc = new TextEncoder();
   let ex = null, memory = null, pack = null, index = null, title1 = null;
@@ -46,7 +46,7 @@ window.createDW = async function createDW() {
       else sounds.push('X');
     },
   };
-  const resp = fetch('core.wasm?v=1');
+  const resp = fetch('core.wasm?v=2');
   const { instance } = await (WebAssembly.instantiateStreaming
     ? WebAssembly.instantiateStreaming(resp, { env })
     : WebAssembly.instantiate(await (await resp).arrayBuffer(), { env }));
@@ -69,7 +69,19 @@ window.createDW = async function createDW() {
     _dw_free: (p) => ex.host_free(p),
     _dw_error: () => reply(error || (ex.is_halted() ? logs.slice(-3).join(' / ') : '')),
     // dw.pack: u32 count, then per file u32 name length, name, u32 offset, u32 size
-    setPack(bytes) {
+    // The 1.57 build moves the game's touch buttons inward to make room for its DASH button and larger button
+    // skins: SetTouchInfo (which writes each button's place) starts with a jump to code of its own that shifts
+    // them. With opts.classicUi the function's first two instructions are put back (push {r4, lr}; sub sp, #8),
+    // so the buttons are where the game itself puts them; the build still draws them, at those places. Only
+    // when the build's words are there.
+    classicUi() {
+      const d = guest(), at = 0x233dc;
+      if (d.getUint16(at, true) !== 0xf15d || d.getUint16(at + 2, true) !== 0xba10) return false;
+      d.setUint16(at, 0xb510, true);
+      d.setUint16(at + 2, 0xb082, true);
+      return true;
+    },
+    setPack(bytes, opts = {}) {
       pack = bytes;
       const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       index = new Map();
@@ -88,6 +100,7 @@ window.createDW = async function createDW() {
       const ok = ex.load_library(sp, so[1]) === 0;
       ex.host_free(sp);
       if (!ok) { error = '게임 라이브러리를 불러오지 못했어요'; return 0; }
+      M.classic = !!opts.classicUi && M.classicUi();
       M.fastPaths = ex.install_fast_paths();
       const t1 = entry('runner/title1.rgb565');
       if (t1) title1 = new Uint16Array(pack.slice(t1[0], t1[0] + t1[1]).buffer);

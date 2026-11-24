@@ -18,15 +18,18 @@ typedef unsigned long size_t;
 #define GUEST_SIZE 0x04000000u
 #define GUEST_MASK (GUEST_SIZE - 1)
 
-// Fixed guest layout.
-#define TRAP_BASE 0x00010000u // HLE entry points, 4 bytes apart
+// Fixed guest layout. The library is mapped at 0x10000000, which the mask folds onto the bottom of guest
+// memory: modified builds (the 1.57 web build) add code that uses absolute addresses made for a library at
+// 0x10000000 (their own variables and buffers in the 2 MiB segment they add at 0x180000), so it has to be
+// there. Everything else sits above the library's 0x380000 bytes.
+#define LOAD_BASE 0x10000000u // where the .so is mapped (memory 0 .. 0x380000)
+#define TRAP_BASE 0x00400000u // HLE entry points, 4 bytes apart
 #define TRAP_COUNT 0x4000u
 #define TRAP_END (TRAP_BASE + TRAP_COUNT * 4)
 #define RETURN_MAGIC (TRAP_END - 4) // LR used when the host calls into the guest
-#define DATA_BASE 0x00030000u       // small runtime data (JNI tables, errno, FILE structs, strings)
-#define DATA_END 0x00100000u
-#define LOAD_BASE 0x00100000u // where the .so is mapped
-#define HEAP_BASE 0x00500000u // after the library, including the extra 2 MiB segment some modified builds add at 0x180000
+#define DATA_BASE 0x00420000u       // small runtime data (JNI tables, errno, FILE structs, strings)
+#define DATA_END 0x00500000u
+#define HEAP_BASE 0x00500000u
 #define STACK_TOP 0x03FF0000u
 #define STACK_SIZE 0x00200000u
 #define HEAP_END (STACK_TOP - STACK_SIZE)

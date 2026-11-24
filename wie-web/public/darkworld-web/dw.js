@@ -111,7 +111,7 @@ const DB = {
   },
   clear(store) { return this.tx(store, 'readwrite', (s) => s.clear()); },
 };
-const settings = { cheat_flags: 0, hide_transform: 0, xbr: 0, mute: 0, arena: 0x7d0000, arena_on: 0, buttons: 1, padui: 0, fill: 2, smooth: 1, impact: 1, combo: 1 };
+const settings = { cheat_flags: 0, hide_transform: 0, xbr: 0, mute: 0, arena: 0x7d0000, arena_on: 0, buttons: 1, padui: 0, fill: 2, smooth: 1, impact: 1, combo: 1, controls: 'classic', sides: 0 };
 function saveSettings() { DB.put('settings', 'main', JSON.stringify(settings)).catch(() => {}); }
 
 // called from wasm
@@ -150,7 +150,7 @@ async function boot() {
     msg.textContent = '게임 자료를 여는 중…';
     const [mod, pack] = await Promise.all([createDW(), DWDATA.bytes('dw.pack')]);
     M = mod;
-    if (!M.setPack(pack)) throw new Error(M.UTF8ToString(M._dw_error()));
+    if (!M.setPack(pack, { classicUi: settings.controls !== 'pad' })) throw new Error(M.UTF8ToString(M._dw_error()));
     M.onEvent = coreEvent;
     for (const [name, bytes] of Object.entries(saves)) addSave(name, bytes);
     const imgs = await Promise.all(SKIN_FILES.map((f) => loadImage('data/runner/skin424/' + f + '.png')));
@@ -413,9 +413,11 @@ function renderInner(t) {
       if (a.key === 10 || a.key === 0x40) { tile = 2; rect = true; }
       else if (a.key === 32 || a.key === 0x42) { tile = 4; rect = true; }
       else if (a.key === 11 || a.key === 0x41 || a.key === 0x0b) { tile = 3; rect = true; }
-      else if (i === 15) { tile = 1; rad = 54; }
-      else if (i === 0) { tile = 0; rad = 23.65; }
-      else if (i >= 8 && i <= 14) { tile = 0; rad = 16.5; }
+      // sizes in proportion to the button (the build's own places give its own sizes: 54, 23.65, 16.5)
+      else if (i === 15) { tile = 1; rad = (a.x2 - a.x1) * 0.509; }
+      else if (i === 0) { tile = 0; rad = (a.x2 - a.x1) * 0.364; }
+      else if (i === 14) { tile = 0; rad = (a.x2 - a.x1) * 0.569; }
+      else if (i >= 8 && i <= 13) { tile = 0; rad = (a.x2 - a.x1) * 0.367; }
       if (tile < 0) continue;
       if (rect) put(tile, a.x1, a.y1, a.x2, a.y2); else put(tile, cx - rad, cy - rad, cx + rad, cy + rad);
       if (i === 15) {
@@ -429,7 +431,8 @@ function renderInner(t) {
         ctx.fillStyle = 'rgba(143,229,255,.35)'; ctx.beginPath(); ctx.ellipse(view.x + cx * s, view.y + cy * sy, r, r * sy / s, 0, 0, Math.PI * 2); ctx.fill();
       }
     }
-    if (mode === 1 && !padui) put(0, 431, 233, 467, 269);
+    const [dx, dy, dr] = dashSpot();
+    if (mode === 1 && !padui) put(0, dx - dr, dy - dr, dx + dr, dy + dr);
     const ip = M._dw_icons_rgba();
     if (ip) {
       iImg.data.set(M.HEAPU8.subarray(ip, ip + 480 * 320 * 4));
@@ -438,7 +441,7 @@ function renderInner(t) {
     }
     if (mode === 1 && !padui) {
       ctx.font = `bold ${Math.max(8, 9 * s)}px Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const cx = view.x + 449 * s, cy = view.y + 251 * sy;
+      const cx = view.x + dx * s, cy = view.y + dy * sy;
       ctx.fillStyle = '#000'; ctx.fillText('DASH', cx + 1, cy + 1); ctx.fillStyle = '#fff'; ctx.fillText('DASH', cx, cy);
     }
   }
@@ -449,7 +452,10 @@ function renderInner(t) {
 // ------------------------------------------------------------------ pad UI (phone PadLayout / PC F6): no d-pad/attack, skills as a bottom bar
 const PAD_NY = 297;
 const padNx = (c) => (c === 14 ? 418 : 170 + (c - 8) * 40);
-function padUiOn(mode) { return !!settings.padui && mode === 1; }
+function padUiOn(mode) { return !!settings.padui && mode === 1 && !(M && M.classic); }
+// the DASH button (game pixels: centre x, y, radius): with the game's own button places (조작: 원래 게임 터치) it
+// sits in the free space above the skill arc, else where the build puts it
+const dashSpot = () => (M && M.classic ? [400, 204, 18] : [449, 251, 18]);
 let moved = new Uint32Array(480 * 320);
 function moveIcons(px) {  // px: 480x320 RGBA as u32, alpha 0 = transparent
   moved.set(px);
@@ -636,7 +642,7 @@ function overlayText() {
   }
 }
 window.DWInternals = {
-  padNx, PAD_NY, padUiOn,
+  padNx, PAD_NY, padUiOn, dashSpot,
   toast(t) { toastText = t; toastUntil = performance.now() + 1500; },
   togglePerf() { showPerf = !showPerf; perfText = '측정 중…'; Perf.reset(); }, get M() { return M; }, view, settings, saveSettings, Runner, Audio, Boss, get areas() { return areas; }, readAreas, $, nextTickReset() { nextTick = performance.now(); }, setPaused(v) { paused = v; } };
 const Input = window.DWInput = window.DWInput || { skinMode: 0, beforeTick() {}, afterTick() {}, feedback() { return false; }, releaseAll() {} };

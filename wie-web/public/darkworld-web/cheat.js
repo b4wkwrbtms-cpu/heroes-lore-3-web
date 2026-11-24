@@ -300,6 +300,14 @@ function openMenu() {
     row(b, '패드 UI (스킬 하단 배치)', s.padui ? '켬' : '끔', (r) => { togglePadUi(); r.querySelector('.v').textContent = s.padui ? '켬' : '끔'; });
     // this site's additions
     const flip = (k, r, a, b2) => { s[k] = s[k] === 0 ? 1 : 0; I().saveSettings(); r.querySelector('.v').textContent = s[k] === 0 ? b2 : a; };
+    const CTRL = { classic: '원래 게임 터치', pad: '1.57 패드' };
+    row(b, '조작 방식 (다시 시작하면 적용)', CTRL[s.controls === 'pad' ? 'pad' : 'classic'], (r) => {
+      s.controls = s.controls === 'pad' ? 'classic' : 'pad'; I().saveSettings();
+      r.querySelector('.v').textContent = CTRL[s.controls];
+      I().toast('다시 시작하면 적용돼요');
+    });
+    const SIDES = ['꽉 채우기', '카메라 쪽 비우기', '양쪽 비우기'];
+    row(b, '가로 화면 옆 여백', SIDES[s.sides || 0], (r) => { s.sides = ((s.sides || 0) + 1) % 3; I().saveSettings(); r.querySelector('.v').textContent = SIDES[s.sides]; });
     row(b, '움직임 부드럽게 (중간 프레임)', s.smooth === 0 ? '끔' : '켬', (r) => flip('smooth', r, '켬', '끔'));
     const IMPACT = ['끔', '보통', '강하게'];
     row(b, '타격 효과', IMPACT[s.impact === undefined ? 1 : s.impact], (r) => { s.impact = ((s.impact === undefined ? 1 : s.impact) + 1) % 3; I().saveSettings(); r.querySelector('.v').textContent = IMPACT[s.impact]; });

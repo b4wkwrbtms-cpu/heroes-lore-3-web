@@ -57,9 +57,12 @@ function controlAt(gx, gy) {
     const sw = areas[14]; if (sw && sw.on && (gx - I().padNx(14)) ** 2 + (gy - I().PAD_NY) ** 2 <= 20 * 20) return { role: 'btn', b: B.SWAP };
     return null;
   }
+  const [dx, dy, dr] = I().dashSpot();
+  if ((gx - dx) ** 2 + (gy - dy) ** 2 <= (dr + 5) ** 2) return { role: 'btn', b: B.DASH };
+  // 조작: 원래 게임 터치 — the d-pad, attack and skills are the game's own touch (one finger, as on the phone)
+  if (M().classic) return null;
   const d = areas[15];
   if (d && d.on && Math.abs(gx - d.cx) <= 58 && Math.abs(gy - d.cy) <= 58) return { role: 'dir' };
-  if (gx >= 426 && gx <= 472 && gy >= 228 && gy <= 274) return { role: 'btn', b: B.DASH };
   const a0 = areas[0];
   if (a0 && a0.on && (gx - a0.cx) ** 2 + (gy - a0.cy) ** 2 <= 28 * 28) return { role: 'btn', b: B.OK };
   for (let i = 8; i <= 13; i++) { const a = areas[i]; if (a && a.on && (gx - a.cx) ** 2 + (gy - a.cy) ** 2 <= 20 * 20) return { role: 'btn', b: B.Q1 + (i - 8) }; }
@@ -91,6 +94,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (c) { pointers.set(e.pointerId, { role: c.role, b: c.b, x, y }); refreshTouchButtons(); return; }
   if (touchPtr !== null) return;           // the game follows one finger for plain touches
   touchPtr = e.pointerId; pointers.set(e.pointerId, { role: 'touch', x, y });
+  if (onAttack(x, y)) combo.tap = true;
   pending.push([0x17, x, y]);
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -205,8 +209,13 @@ let gameTouch = null, feedbackArea = -1;
 // press comes within a few frames. Such a press is kept (two at most, for 12 game frames) and given to the
 // game again each frame the hero stands, until the game starts the swing. Any other button or direction is
 // a new action and drops the kept presses. Off in the settings (공격 연타 보정).
+// With the game's own touch (조작: 원래 게임 터치) the same is done for taps on the attack button: a kept tap is
+// given again as a tap on the button (or, with the finger still on it, as a lift and a new press).
 const hero8 = (off) => rd32(0x100d4dc4 + off) & 0xff;
-const combo = { kept: [], ticks: 0, sent: false, prevHeld: new Array(B.COUNT).fill(false), dir: -1 };
+const combo = { kept: [], ticks: 0, sent: false, prevHeld: new Array(B.COUNT).fill(false), dir: -1, tap: false };
+const onAttack = (x, y) => { const a = areas[0]; return !!(a && a.on && x >= a.x1 && x < a.x2 && y >= a.y1 && y < a.y2); };
+const heroLosesPress = () => { const st = hero8(0x104); return st === 3 || (st === 0 && hero8(0x108) === 3 && hero8(0x110) < 1); };
+function keep() { if (combo.kept.length < 2) combo.kept.push(combo.ticks); else combo.kept[1] = combo.ticks; }
 function comboBefore(playing) {
   combo.ticks++;
   combo.sent = false;
@@ -215,19 +224,25 @@ function comboBefore(playing) {
     const h = held(b);
     if (h && !combo.prevHeld[b]) {
       if (b !== B.OK) combo.kept = [];
-      else if (on) {
-        const st = hero8(0x104);
-        if (st === 3 || (st === 0 && hero8(0x108) === 3 && hero8(0x110) < 1)) {
-          if (combo.kept.length < 2) combo.kept.push(combo.ticks); else combo.kept[1] = combo.ticks;
-        }
-      }
+      else if (on && heroLosesPress()) keep();
     }
     combo.prevHeld[b] = h;
+  }
+  const tap = combo.tap;
+  combo.tap = false;
+  if (M().classic) {
+    if (tap && on && heroLosesPress()) keep();
+    else if (pending.some((p) => p[0] === 0x17 && !onAttack(p[1], p[2]))) combo.kept = []; // something else was touched
   }
   if (!on) { combo.kept = []; return; }
   combo.kept = combo.kept.filter((t) => combo.ticks - t <= 12);
   if (!combo.kept.length || held(B.OK) || hero8(0x104) !== 0) return;
-  kdown(-5); kup(-5);
+  if (M().classic) {
+    const a = areas[0];
+    if (gameTouch && !onAttack(gameTouch.x, gameTouch.y)) return;
+    if (gameTouch) { M()._dw_event(0, 0x18, gameTouch.x, gameTouch.y); M()._dw_event(0, 0x17, gameTouch.x, gameTouch.y); }
+    else { pending.push([0x17, a.cx, a.cy], [0x18, a.cx, a.cy]); }
+  } else { kdown(-5); kup(-5); }
   combo.sent = true;
 }
 function comboAfter() { if (combo.sent && hero8(0x104) === 3) combo.kept.shift(); }

@@ -8,6 +8,11 @@ The Android release is a small Java shell (`com.gamedoli.DarkWorldGoogle`) aroun
 touches and keys, calls it on a timer and plays the sounds it names. This core runs the library directly:
 
 - `cpu.c`, `thumb.inc` — ARMv5TE interpreter with the Thumb instruction set and ARM/Thumb interworking.
+- Memory: the library is mapped at guest address 0x10000000, as the 1.57 build's own runtime does: code that build
+  adds uses absolute addresses made for that place (its own variables, the HUD layer at 0x10200000). With the library
+  anywhere else those accesses landed in the game's code and broke it (for example the slash of an attack facing up
+  did not appear). The runtime data and HLE entry points sit above the library (`base.h`). `/darkworld/` still
+  ships the build from before this change, whose page reads game addresses with the library at 0x100000.
 - `thumb2.inc` — 32-bit Thumb-2 instructions and IT blocks, and in `cpu.c` the ARMv6/v7 media instructions
   (divide, bitfields, byte reverse, extend, saturate, MOVW/MOVT). The original library never uses them; modified
   builds add a segment of code compiled for ARMv7 and branch into it.

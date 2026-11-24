@@ -16,10 +16,20 @@ window.Layout = {
   apply() {
     const vw = window.innerWidth, vh = window.innerHeight, ins = this.insets();
     const rotated = vh > vw, fw = rotated ? vh : vw, fh = rotated ? vw : vh;
-    // held in landscape the game uses the whole screen, as the build itself does (only the picture passes under
-    // the camera; touches there still work); turned in portrait it keeps clear of the status bar, which takes
-    // touches, and of the home bar
-    const l = rotated ? ins.t : 0, r = rotated ? ins.b : 0;
+    // turned in portrait the game keeps clear of the status bar, which takes touches, and of the home bar; held in
+    // landscape it uses the whole screen, as the build itself does, unless the setting 가로 화면 옆 여백 leaves the
+    // camera side (1) or both sides (2) free
+    let l, r;
+    if (rotated) { l = ins.t; r = ins.b; }
+    else {
+      const s = window.DWInternals && window.DWInternals.settings, sides = (s && s.sides) || 0;
+      const inset = Math.max(ins.l, ins.r);
+      // the camera side, from the screen angle: 90 = turned counter-clockwise, camera on the left
+      const a = typeof screen.orientation?.angle === 'number' ? screen.orientation.angle : window.orientation;
+      const camLeft = !(a === 270 || a === -90);
+      l = sides === 2 || (sides === 1 && camLeft) ? inset : 0;
+      r = sides === 2 || (sides === 1 && !camLeft) ? inset : 0;
+    }
     const key = [vw, vh, l, r].join();
     if (key === this.key) return;
     this.key = key;
