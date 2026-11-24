@@ -1,12 +1,12 @@
 // 다크월드 player: runs the game's ARM library in dwcore.wasm and presents it on an iPhone in landscape.
-const VERSION = "1";
+const VERSION = "2";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "dw.prefs";
 const prefs = Object.assign(
-  { quality: "hd", color: "vivid", glow: "soft", screen: "notch", sound: "on" },
+  { quality: "hd", color: "vivid", glow: "soft", screen: "notch", sound: "on", mod: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -608,10 +608,89 @@ class AudioEngine {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Rule changes ("개조"), applied to the game's data tables as the game reads them. Each one first checks
+// the table's column layout and the original value, so another build of the game is left as it is.
+// The item descriptions keep their original numbers.
+
+// XDT table: u32 column count, u32 type per column, u32 row count, rows. 0 and 3 are length-prefixed text.
+const XDT_FIELD_SIZE = { 0: 0, 1: 4, 3: 0, 4: 1, 5: 2 };
+function readXdt(b) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const n = dv.getUint32(0, true);
+  const types = Array.from({ length: n }, (_, i) => dv.getUint32(4 + 4 * i, true));
+  if (types.some(t => !(t in XDT_FIELD_SIZE))) return null;
+  const countAt = 4 + 4 * n;
+  let o = countAt + 4;
+  const rows = [];
+  for (let r = dv.getUint32(countAt, true); r > 0; r--) {
+    const f = [];
+    for (const t of types) { f.push(o); o += XDT_FIELD_SIZE[t] || 1 + b[o]; }
+    rows.push(f);
+  }
+  return o === b.length ? { dv, layout: types.join(), countAt, rows } : null;
+}
+
+// Every item of the cash shop (which needed the publisher's payment server), plus the legendary card box,
+// as [item kind, index]: 13 adventure tools, 14 bags, 15 consumables.
+const CASH_ITEMS = [
+  [13, 7], [13, 9], [13, 11], [13, 13], [13, 15], [13, 17], [13, 18], [14, 2], [14, 3],
+  [15, 301], [15, 83], [15, 85], [15, 86], [15, 88], [15, 285], [15, 286], [15, 287], [15, 288], [15, 289],
+  [15, 308], [15, 293], [15, 302], [15, 303], [15, 304], [15, 305], [15, 87], [15, 307], [15, 309], [15, 310],
+  [15, 311], [15, 312], [15, 313], [15, 294], [15, 296], [15, 298], [15, 343], [15, 344], [15, 345], [15, 346],
+  [15, 358], [15, 359],
+];
+const CASH_MAKE_PRICE = 100;
+
+const MODS = {
+  // the alchemist's crafting list also makes every cash item, from gold alone (the list holds up to 80)
+  "res/make_alchemist.xdt": (b, x) => {
+    if (x.layout !== "0,4,4,5,4,5,4,5,4,4,5,4,4,5,4,1" || x.rows.length !== 33) return b;
+    const out = [b];
+    CASH_ITEMS.forEach(([kind, idx], i) => {
+      const id = String(x.rows.length + i);
+      const row = new Uint8Array(1 + id.length + 23);
+      const dv = new DataView(row.buffer);
+      row[0] = id.length;
+      for (let k = 0; k < id.length; k++) row[1 + k] = id.charCodeAt(k);
+      let o = 1 + id.length + 1; // level 0
+      for (let k = 0; k < 2; k++) { row[o] = kind; dv.setUint16(o + 1, idx, true); o += 3; } // made item, and the same on a great success
+      o += 12; // no materials
+      dv.setUint32(o, CASH_MAKE_PRICE, true);
+      out.push(row);
+    });
+    const res = new Uint8Array(out.reduce((n, a) => n + a.length, 0));
+    out.reduce((o, a) => (res.set(a, o), o + a.length), 0);
+    new DataView(res.buffer).setUint32(x.countAt, x.rows.length + CASH_ITEMS.length, true);
+    return res;
+  },
+  // 현자의 보주 (row 13): experience +50% -> +250%; 행운의 장신구 (row 17): drop rate +50% -> +250%
+  "res/item_13_adventure.xdt": (b, x) => {
+    if (x.layout !== "0,3,4,4,4,4,4,1,4" || x.rows.length !== 19) return b;
+    for (const r of [13, 17]) if (b[x.rows[r][3]] === 50) b[x.rows[r][3]] = 250;
+    return b;
+  },
+  // 워킹홀리데이 주문서 (row 305): experience and drop rate 100% -> 250%, 60 -> 240 minutes
+  "res/item_15_use.xdt": (b, x) => {
+    if (x.layout !== "0,3,4,4,4,4,4,5,4,1,4,5,4,1" || x.rows.length !== 367) return b;
+    const f = x.rows[305];
+    if (b[f[8]] === 100 && x.dv.getUint32(f[9], true) === 60) { b[f[8]] = 250; x.dv.setUint32(f[9], 240, true); }
+    return b;
+  },
+};
+
+function modAsset(name, bytes) {
+  const b = bytes.slice();
+  const x = readXdt(b);
+  return x ? MODS[name](b, x) : bytes;
+}
+
+// ---------------------------------------------------------------------------------------------
 // The emulator core
 class Core {
   async init(game, files, onEvent) {
     this.game = game;
+    this.modded = new Map(); // fixed for this run, so a table always reads the same
+    this.useMods = prefs.mod === "on";
     this.onEvent = onEvent;
     this.utf = new TextDecoder();
     this.euc = new TextDecoder("euc-kr");
@@ -627,12 +706,12 @@ class Core {
       host_file_saved: (p, pl, d, n) => saves.write(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl)), new Uint8Array(this.mem.buffer, d, n).slice()),
       host_file_deleted: (p, pl) => saves.remove(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl))),
       host_event: (kind, a, b, c) => this.onEvent(kind, a, b, c) | 0,
-      // Native.getResource: AssetManager.open(name + ".png")
       host_asset: (p, n, dst, cap) => {
-        const hit = this.game.index[this.utf.decode(new Uint8Array(this.mem.buffer, p, n)) + ".png"];
-        if (!hit) return -1;
-        if (dst) new Uint8Array(this.mem.buffer, dst, Math.min(cap, hit[1])).set(this.game.assets.subarray(hit[0], hit[0] + Math.min(cap, hit[1])));
-        return hit[1];
+        const name = this.utf.decode(new Uint8Array(this.mem.buffer, p, n));
+        const data = this.asset(name);
+        if (!data) return -1;
+        if (dst) new Uint8Array(this.mem.buffer, dst, Math.min(cap, data.length)).set(data.subarray(0, cap));
+        return data.length;
       },
       host_sound: (op, p, n, loop) => {
         if (op === 1) audio.play(this.utf.decode(new Uint8Array(this.mem.buffer, p, n)), !!loop);
@@ -657,6 +736,15 @@ class Core {
       new Uint8Array(this.mem.buffer, dp, data.length).set(data);
       ex.fs_put(this.cstr(path), dp, data.length);
     }
+  }
+  // Native.getResource: AssetManager.open(name + ".png")
+  asset(name) {
+    const hit = this.game.index[name + ".png"];
+    if (!hit) return null;
+    const raw = this.game.assets.subarray(hit[0], hit[0] + hit[1]);
+    if (!this.useMods || !MODS[name]) return raw;
+    if (!this.modded.has(name)) this.modded.set(name, modAsset(name, raw));
+    return this.modded.get(name);
   }
   cstr(s) {
     const b = new TextEncoder().encode(s + "\0");
@@ -885,6 +973,7 @@ function bindSettings() {
       savePrefs();
       syncSettings();
       if (key === "screen" && started) toast("화면 크기는 게임을 다시 시작하면 맞춰져요");
+      if (key === "mod" && started) toast("개조는 게임을 다시 시작하면 적용돼요");
       if (key === "sound") audio?.applyVolumes();
       if (key === "screen" && !started) lcdW = chooseLcdWidth();
       if (key === "screen") applyLayout();
