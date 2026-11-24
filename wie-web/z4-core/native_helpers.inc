@@ -44,3 +44,5 @@ static void (*const native_helpers[])(void) = {
 };
 #define NATIVE_HELPERS 8
 static u32 native_helper_addr(int i) { return find_symbol(native_helper_names[i]) & ~1u; }
+
+#include "blit_helpers.inc"

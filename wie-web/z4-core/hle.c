@@ -26,13 +26,13 @@ static u32 data_top = DATA_BASE;
 static u32 data_alloc(u32 n) {
   u32 a = (data_top + 7) & ~7u;
   data_top = a + n;
-  memset(gptr(a), 0, n);
+  memset(gwptr(a, n), 0, n);
   return a;
 }
 static u32 data_str(const char *s) {
   u32 n = hstrlen(s) + 1;
   u32 a = data_alloc(n);
-  memcpy(gptr(a), s, n);
+  memcpy(gwptr(a, n), s, n);
   return a;
 }
 
@@ -50,9 +50,14 @@ static inline void ret_flt(float f) { __builtin_memcpy(&R[0], &f, 4); }
 u16 *screen_buf;   // what the page shows, RGB565
 u32 scr_w, scr_h;  // size of the game's buffer (and of screen_buf)
 u32 frame_count;   // frames uploaded so far
+u16 *paint_out;    // set while motion.c draws an in-between frame: the picture goes there instead
 static void f_glTexSubImage2D(void) {
   // (target, level, xoff, yoff, w, h, format, type, pixels)
   u32 w = arg(4), h = arg(5), px = arg(8);
+  if (paint_out) {
+    if (px && w == scr_w && h == scr_h) memcpy(paint_out, gptr(px), w * h * 2);
+    return;
+  }
   if (!screen_buf || w != scr_w || h != scr_h) {
     if (screen_buf) hfree(screen_buf);
     scr_w = w;
@@ -95,11 +100,11 @@ static void f_realloc(void) {
   u32 old = gmalloc_usable(p);
   if (old >= n) { R[0] = p; return; }
   u32 q = gmalloc(n);
-  if (q) { memcpy(gptr(q), gptr(p), old); gfree(p); }
+  if (q) { memcpy(gwptr(q, old), gptr(p), old); gfree(p); }
   R[0] = q;
 }
-static void f_memcpy(void) { memmove(gptr(R[0]), gptr(R[1]), R[2]); }
-static void f_memset(void) { memset(gptr(R[0]), (int)R[1], R[2]); }
+static void f_memcpy(void) { memmove(gwptr(R[0], R[2]), gptr(R[1]), R[2]); }
+static void f_memset(void) { memset(gwptr(R[0], R[2]), (int)R[1], R[2]); }
 static void f_memcmp(void) {
   u32 a = R[0], b = R[1], n = R[2];
   for (u32 k = 0; k < n; k++) {
@@ -203,7 +208,7 @@ static void format_to_guest(u32 dst, u32 fmt, u32 ap) {
   char tmp[2048];
   int n = guest_vformat(tmp, sizeof tmp, fmt, ap);
   int m = n < (int)sizeof tmp - 1 ? n : (int)sizeof tmp - 1;
-  memcpy(gptr(dst), tmp, m);
+  memcpy(gwptr(dst, (u32)m), tmp, m);
   wr8(dst + m, 0);
   R[0] = (u32)n;
 }
@@ -533,7 +538,7 @@ EXPORT(load_library) int load_library(const u8 *elf, u32 len) {
     }
   }
   logf("loaded: %u symbols, %d imports, %d unresolved, init_array %u", nsyms, nimports, unresolved, init_array_sz / 4);
-  { void aot_enable(int on); aot_enable(3); } // translated functions and native division helpers
+  { void aot_enable(int on); aot_enable(7); } // translated functions, native division helpers and drawing routines
   for (u32 i = 0; i < init_array_sz / 4; i++) {
     u32 f = rd32(init_array + i * 4);
     if (f && f != 0xffffffff) call_guest(f, 0, 0);

@@ -412,7 +412,8 @@ static const AotEntry aot_entries[] = {{0, 0}};
 #define AOT_SPAN 0x000f0000u
 static u16 aot_index[AOT_SPAN >> 1];
 typedef void (*AotFn)(void);
-static AotFn aot_fns[AOT_MAX + NATIVE_HELPERS + 2];
+static AotFn aot_fns[AOT_MAX + NATIVE_HELPERS + BLIT_HELPERS + 8];
+static int aot_used; // slots in use, hooks go after them
 static int aot_ready;
 static int aot_text_matches(void) {
 #ifdef AOT
@@ -446,7 +447,47 @@ EXPORT(aot_enable) void aot_enable(int on) {
     u32 off = a - AOT_LO;
     if (a && off < AOT_SPAN) { aot_fns[n] = native_helpers[i]; aot_index[off >> 1] = (u16)n++; }
   }
+  if (on & 4) for (int i = 0; i < BLIT_HELPERS; i++) {
+    u32 a = blit_helper_addr(i);
+    u32 off = a - AOT_LO;
+    if (a && off < AOT_SPAN) { aot_fns[n] = blit_helpers[i].fn; aot_index[off >> 1] = (u16)n++; }
+  }
+  aot_used = n;
   aot_ready = (on & 1) && AOT_COUNT ? 2 : 1;
+}
+
+// Runs `fn` in place of the guest function at `addr` (fn 0 takes it away again); for motion.c.
+int aot_hook(u32 addr, void (*fn)(void)) {
+  u32 off = (addr & ~1u) - AOT_LO;
+  if (off >= AOT_SPAN) return -1;
+  if (!fn) { aot_index[off >> 1] = 0; return 0; }
+  for (int i = aot_used; i < (int)(sizeof aot_fns / sizeof aot_fns[0]); i++)
+    if (!aot_fns[i] || aot_fns[i] == fn) { aot_fns[i] = fn; aot_index[off >> 1] = (u16)i; return 0; }
+  return -1;
+}
+// Calls the guest function at `addr` itself, past any stand-in or hook installed there.
+u32 call_guest_unhooked(u32 addr, int nargs, const u32 *args) {
+  u32 off = (addr & ~1u) - AOT_LO;
+  u16 saved = 0;
+  if (off < AOT_SPAN) { saved = aot_index[off >> 1]; aot_index[off >> 1] = 0; }
+  u32 r = call_guest(addr, nargs, args);
+  if (off < AOT_SPAN) aot_index[off >> 1] = saved;
+  return r;
+}
+
+// One step of Screen_FADEOUT16_16 as a table: the game's routine run once, with the stand-in switched off,
+// over all 65536 pixel values in dead stack space well below the current frame.
+static void bh_fade_build(u32 step) {
+  u32 buf = (R[13] - 0x60000u) & ~15u;
+  for (u32 v = 0; v < 65536; v++) wr16(buf + 2 * v, (u16)v);
+  u32 args[5] = {buf, 2 * 65536, 65536, 1, step};
+  call_guest_unhooked(bh_fade_addr | 1, 5, args);
+  for (u32 v = 0; v < 65536; v++) bh_fade_store[step][v] = rd16(buf + 2 * v);
+  bh_fade_tbl[step] = bh_fade_store[step];
+}
+static u32 bh_rgbblend_run(u32 buf, u32 w, u32 colour, u32 step) {
+  u32 args[6] = {buf, 2 * w, w, 1, colour, step};
+  return call_guest_unhooked(bh_rgbblend_addr | 1, 6, args);
 }
 
 static void run_loop(u32 stop_pc, u32 stop_sp) {

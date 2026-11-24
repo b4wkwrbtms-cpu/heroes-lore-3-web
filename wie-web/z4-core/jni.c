@@ -94,7 +94,7 @@ static u32 new_string_bytes(const u8 *s, u32 n) {
   if (!o) return 0;
   o->len = n;
   o->gaddr = gmalloc(n + 1);
-  memcpy(gptr(o->gaddr), s, n);
+  memcpy(gwptr(o->gaddr, n), s, n);
   wr8(o->gaddr + n, 0);
   return h;
 }
@@ -113,7 +113,7 @@ static u32 new_array(int kind, u32 n) {
 static u32 new_bytes(const void *s, u32 n) {
   u32 h = new_array(OBJ_BYTES, n);
   Obj *o = obj_get(h);
-  if (o && n) memcpy(gptr(o->gaddr), s, n);
+  if (o && n) memcpy(gwptr(o->gaddr, n), s, n);
   return h;
 }
 
@@ -273,7 +273,7 @@ static u64 java_invoke(u32 mid, ArgReader *ar, u32 self) {
     if (size < 0) { logf("missing asset %s", name); return 0; }
     u32 h = new_array(OBJ_BYTES, (u32)size);
     Obj *o = obj_get(h);
-    if (o) host_asset(name, len, gptr(o->gaddr), size);
+    if (o) host_asset(name, len, gwptr(o->gaddr, (u32)size), size);
     return h;
   }
   if (streq(nm, "isFileExist") || streq(nm, "loadFile") || streq(nm, "saveFile") || streq(nm, "deleteFile")) {
@@ -409,8 +409,9 @@ static u64 java_invoke(u32 mid, ArgReader *ar, u32 self) {
     if (streq(f, "DrawFont") || streq(f, "DrawText")) {
       Obj *px = obj_get(font_pixels), *r = obj_get(measure_rect);
       float rect[4] = {0, 0, 0, 0};
-      if (f[4] == 'F') host_text(4, 0, 0, px ? gptr(px->gaddr) : 0, 0);
-      else host_text(21, (int)a[0], (int)a[1], px ? gptr(px->gaddr) : 0, (int)a[3]);
+      u8 *pp = px ? gwptr(px->gaddr, font_w * font_h * (font_bpp / 8)) : 0;
+      if (f[4] == 'F') host_text(4, 0, 0, pp, 0);
+      else host_text(21, (int)a[0], (int)a[1], pp, (int)a[3]);
       host_text(15, 0, 0, rect, 4);
       if (r) for (int k = 0; k < 4; k++) wr32(r->gaddr + k * 4, f32bits(rect[k]));
       return measure_rect;
@@ -426,7 +427,7 @@ static u64 java_invoke(u32 mid, ArgReader *ar, u32 self) {
     if (streq(f, "GetWordwrapPosition")) return (u64)(u32)host_text(22, (int)a[0], (int)a[1], 0, 0);
     if (streq(f, "GetWordwrapPositionEx")) { // (max width, int[] out) -> number of breaks, positions in out
       Obj *o = obj_get((u32)a[1]);
-      return (u64)(u32)host_text(9, (int)a[0], o ? (int)o->len : 0, o ? gptr(o->gaddr) : 0, 0);
+      return (u64)(u32)host_text(9, (int)a[0], o ? (int)o->len : 0, o ? gwptr(o->gaddr, o->len * 4) : 0, 0);
     }
     logf("jni: unhandled font method %s%s", nm, m->sig);
     return 0;
@@ -593,13 +594,13 @@ static void jni_call(u32 idx) {
   case 199: case 200: case 201: case 202: case 203: case 204: case 205: case 206: { // Get<T>ArrayRegion
     Obj *o = obj_get(R[1]);
     u32 buf = rd32(R[13]), el = o ? elem_size(o->kind) : 1;
-    if (o) memmove(gptr(buf), gptr(o->gaddr + R[2] * el), R[3] * el);
+    if (o) memmove(gwptr(buf, R[3] * el), gptr(o->gaddr + R[2] * el), R[3] * el);
     return;
   }
   case 207: case 208: case 209: case 210: case 211: case 212: case 213: case 214: { // Set<T>ArrayRegion
     Obj *o = obj_get(R[1]);
     u32 buf = rd32(R[13]), el = o ? elem_size(o->kind) : 1;
-    if (o) memmove(gptr(o->gaddr + R[2] * el), gptr(buf), R[3] * el);
+    if (o) memmove(gwptr(o->gaddr + R[2] * el, R[3] * el), gptr(buf), R[3] * el);
     return;
   }
   case 215: R[0] = 0; return;           // RegisterNatives
@@ -639,4 +640,11 @@ void jni_init(u32 (*data_alloc)(u32)) {
   for (u32 i = 0; i < 8; i++) wr32(vt + i * 4, TRAP_BASE + (JVM_TRAP_BASE + i) * 4);
   jni_vm_addr = data_alloc(4);
   wr32(jni_vm_addr, vt);
+}
+
+// the object table, saved and put back around an in-between frame (motion.c)
+u32 jni_state_size(void) { return sizeof objs + sizeof obj_hint; }
+void jni_state(u8 *buf, int save) {
+  if (save) { memcpy(buf, objs, sizeof objs); memcpy(buf + sizeof objs, &obj_hint, sizeof obj_hint); }
+  else { memcpy(objs, buf, sizeof objs); memcpy(&obj_hint, buf + sizeof objs, sizeof obj_hint); }
 }

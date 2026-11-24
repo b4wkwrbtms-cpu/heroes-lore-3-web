@@ -190,7 +190,7 @@ int fs_read(int fd, u32 buf, u32 len) {
   u32 size = node_size(n);
   if (f->pos >= size) return 0;
   if (len > size - f->pos) len = size - f->pos;
-  memcpy(gptr(buf), n->data + f->pos, len);
+  memcpy(gwptr(buf, len), n->data + f->pos, len);
   f->pos += len;
   return (int)len;
 }
@@ -243,7 +243,7 @@ int fs_stat(u32 gpath, u32 st) {
     }
     if (!n) { set_errno(2); return -1; }
   }
-  memset(gptr(st), 0, 104);
+  memset(gwptr(st, 104), 0, 104);
   wr32(st + 16, n->dir ? 0040777 : 0100666);
   wr32(st + 20, 1);
   u32 size = node_size(n);
@@ -300,4 +300,11 @@ int fs_rename(u32 from, u32 to) {
     persist(n);
   }
   return 0;
+}
+
+// open files, saved and put back around an in-between frame (motion.c)
+u32 fs_state_size(void) { return sizeof fds; }
+void fs_state(u8 *buf, int save) {
+  if (save) memcpy(buf, fds, sizeof fds);
+  else memcpy(fds, buf, sizeof fds);
 }

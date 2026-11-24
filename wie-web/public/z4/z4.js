@@ -1,14 +1,14 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "1";
+const VERSION = "2";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "z4.prefs";
 const prefs = Object.assign(
-  { quality: "smooth", color: "vivid", glow: "soft", screen: "notch", sound: "on" },
+  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", screen: "notch", sound: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -114,7 +114,7 @@ async function checkFastCore(bytes) {
     const m = await WebAssembly.compile(bytes);
     const names = WebAssembly.Module.exports(m).map(e => e.name);
     // the interpreter-only core of this site has the same exports but is far smaller
-    return names.includes("aot_build") && names.includes("app_frame") && bytes.length > 1000000;
+    return names.includes("aot_build") && names.includes("motion_enable") && bytes.length > 1000000;
   } catch { return false; }
 }
 async function importFastCore(file) {
@@ -258,6 +258,7 @@ function applyLayout() {
     side.style.top = sy + 4 + "px";
   }
   renderer?.resize(sw, sh);
+  fx?.resize(sw, sh);
 }
 
 // client point -> game coordinates
@@ -280,6 +281,62 @@ function toLcd(cx, cy) {
 // resolution, so no upscaling filter is needed.
 const VS = `attribute vec2 aPos; varying vec2 vUv; uniform float uFlip;
 void main(){ vUv = vec2(aPos.x * 0.5 + 0.5, uFlip > 0.5 ? 0.5 - aPos.y * 0.5 : aPos.y * 0.5 + 0.5); gl_Position = vec4(aPos, 0.0, 1.0); }`;
+// HD: an xBR-style pass doubles the picture, rounding the stair steps of diagonal edges into lines (pass 1
+// decides per pixel corner, pass 2 draws); the output pass then scales that the last bit to the screen.
+const FS_XBR_DEC = `precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform vec2 uTexSize; uniform vec2 uReg;
+vec3 px(vec2 c, vec2 o){ return texture2D(uTex, clamp(c + o / uTexSize, vec2(0.5) / uTexSize, (uReg - 0.5) / uTexSize)).rgb; }
+float wd(vec3 a, vec3 b){
+  vec3 d = a - b;
+  return 48.0 * abs(dot(d, vec3(0.299, 0.587, 0.114))) + 7.0 * abs(dot(d, vec3(-0.169, -0.331, 0.5))) + 6.0 * abs(dot(d, vec3(0.5, -0.419, -0.081)));
+}
+bool eq(vec3 a, vec3 b){ return wd(a, b) < 2.4; }
+// one corner, named as if it were the bottom-right one. Result: 0 none, else 1 + 2 shallow + 4 steep + 8 if H's colour
+float corner(vec3 E, vec3 B, vec3 D, vec3 F, vec3 H, vec3 C, vec3 G, vec3 I, vec3 F4, vec3 H5, vec3 I4, vec3 I5){
+  if (eq(E, F) || eq(E, H)) return 0.0;
+  bool keep = (!eq(F, B) && !eq(H, D)) || (eq(E, I) && !eq(F, I4) && !eq(H, I5)) || eq(E, G) || eq(E, C);
+  if (!keep) return 0.0;
+  float slash = wd(E, C) + wd(E, G) + wd(I, F4) + wd(I, H5) + 4.0 * wd(H, F);
+  float back = wd(H, D) + wd(H, I5) + wd(F, I4) + wd(F, B) + 4.0 * wd(E, I);
+  if (slash >= back) return 0.0;
+  float v = 1.0, fg = wd(F, G), hc = wd(H, C);
+  if (2.0 * fg <= hc && !eq(E, G) && !eq(D, G)) v += 2.0;
+  if (fg >= 2.0 * hc && !eq(E, C) && !eq(B, C)) v += 4.0;
+  if (wd(E, F) > wd(E, H)) v += 8.0;
+  return v;
+}
+void main(){
+  vec2 c = (floor(vUv * uReg) + 0.5) / uTexSize;
+  vec3 A1 = px(c, vec2(-1.0, -2.0)), B1 = px(c, vec2(0.0, -2.0)), C1 = px(c, vec2(1.0, -2.0));
+  vec3 A0 = px(c, vec2(-2.0, -1.0)), A = px(c, vec2(-1.0, -1.0)), B = px(c, vec2(0.0, -1.0)), C = px(c, vec2(1.0, -1.0)), C4 = px(c, vec2(2.0, -1.0));
+  vec3 D0 = px(c, vec2(-2.0, 0.0)), D = px(c, vec2(-1.0, 0.0)), E = px(c, vec2(0.0)), F = px(c, vec2(1.0, 0.0)), F4 = px(c, vec2(2.0, 0.0));
+  vec3 G0 = px(c, vec2(-2.0, 1.0)), G = px(c, vec2(-1.0, 1.0)), H = px(c, vec2(0.0, 1.0)), I = px(c, vec2(1.0, 1.0)), I4 = px(c, vec2(2.0, 1.0));
+  vec3 G5 = px(c, vec2(-1.0, 2.0)), H5 = px(c, vec2(0.0, 2.0)), I5 = px(c, vec2(1.0, 2.0));
+  // bottom-right, top-right, top-left, bottom-left: the neighbourhood turned so each is bottom-right
+  gl_FragColor = vec4(corner(E, B, D, F, H, C, G, I, F4, H5, I4, I5), corner(E, D, H, B, F, A, I, C, B1, F4, C1, C4),
+                      corner(E, H, F, D, B, G, C, A, D0, B1, A0, A1), corner(E, F, B, H, D, I, A, G, H5, D0, G5, G0)) / 255.0;
+}`;
+const FS_XBR = `precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform sampler2D uDec; uniform vec2 uTexSize; uniform vec2 uReg; uniform float uScale;
+vec3 px(vec2 c, vec2 o){ return texture2D(uTex, clamp(c + o / uTexSize, vec2(0.5) / uTexSize, (uReg - 0.5) / uTexSize)).rgb; }
+void apply(float v, float s, float t, vec3 F, vec3 H, float d, inout float best, inout vec3 col){
+  if (v < 0.5) return;
+  float m = smoothstep(0.5 - d * 1.414, 0.5 + d * 1.414, s + t);
+  if (mod(floor(v / 2.0), 2.0) > 0.5) m = max(m, smoothstep(0.25 - d * 1.118, 0.25 + d * 1.118, t + 0.5 * s));
+  if (mod(floor(v / 4.0), 2.0) > 0.5) m = max(m, smoothstep(0.25 - d * 1.118, 0.25 + d * 1.118, s + 0.5 * t));
+  if (m > best) { best = m; col = v >= 8.0 ? H : F; }
+}
+void main(){
+  vec2 p = vUv * uReg; vec2 ip = floor(p); vec2 f = p - ip - 0.5; vec2 c = (ip + 0.5) / uTexSize;
+  vec4 code = floor(texture2D(uDec, (ip + 0.5) / uReg) * 255.0 + 0.5); // the decisions of pass 1
+  vec3 E = px(c, vec2(0.0));
+  if (code.r + code.g + code.b + code.a < 0.5) { gl_FragColor = vec4(E, 1.0); return; }
+  vec3 R = px(c, vec2(1.0, 0.0)), Dn = px(c, vec2(0.0, 1.0)), U = px(c, vec2(0.0, -1.0)), L = px(c, vec2(-1.0, 0.0));
+  float d = 0.5 / uScale, best = 0.0; vec3 col = E;
+  apply(code.r, f.x, f.y, R, Dn, d, best, col);
+  apply(code.g, -f.y, f.x, U, R, d, best, col);
+  apply(code.b, -f.x, -f.y, L, U, d, best, col);
+  apply(code.a, f.y, -f.x, Dn, L, d, best, col);
+  gl_FragColor = vec4(mix(E, col, best), 1.0);
+}`;
 const FS_BRIGHT = `precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform vec2 uTexSize; uniform vec2 uReg;
 void main(){
   vec2 q = (floor(vUv * uReg) * 2.0 + 1.0) / uTexSize;
@@ -327,6 +384,8 @@ class Renderer {
     this.out = this.program(FS_OUT);
     this.bright = this.program(FS_BRIGHT);
     this.blur = this.program(FS_BLUR);
+    this.xbr = this.program(FS_XBR);
+    this.xbrDec = this.program(FS_XBR_DEC);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -352,7 +411,7 @@ class Renderer {
     gl.bindAttribLocation(p, 0, "aPos");
     gl.linkProgram(p);
     const u = {};
-    for (const n of ["uTex", "uTexSize", "uReg", "uOut", "uMode", "uVivid", "uFlip", "uBloom", "uGlow", "uDir"]) u[n] = gl.getUniformLocation(p, n);
+    for (const n of ["uTex", "uTexSize", "uReg", "uOut", "uMode", "uVivid", "uFlip", "uBloom", "uGlow", "uDir", "uDec", "uScale"]) u[n] = gl.getUniformLocation(p, n);
     return { p, u };
   }
   texture(w, h, fmt, type) {
@@ -425,16 +484,29 @@ class Renderer {
         this.pass(this.blur, from.tex, bw, bh, bw, bh, to, bw, bh, (gl, u) => gl.uniform2f(u.uDir, dx, dy));
       bloom = g0.tex;
     }
+    let tex = this.src, tw = W, th = H;
+    if (prefs.quality === "hd") {
+      const dec = this.fbo(2, W, H), b = this.fbo(3, W * 2, H * 2);
+      this.pass(this.xbrDec, this.src, W, H, W, H, dec, W, H);
+      this.pass(this.xbr, this.src, W, H, W, H, b, W * 2, H * 2, (gl, u) => {
+        gl.uniform1f(u.uScale, 2);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, dec.tex);
+        gl.uniform1i(u.uDec, 1);
+        gl.activeTexture(gl.TEXTURE0);
+      });
+      tex = b.tex; tw = W * 2; th = H * 2;
+    }
     this.dirty = false;
     const ow = this.canvas.width, oh = this.canvas.height;
-    this.pass(this.out, this.src, W, H, W, H, null, ow, oh, (gl, u) => {
+    this.pass(this.out, tex, tw, th, tw, th, null, ow, oh, (gl, u) => {
       gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, bloom || this.src);
+      gl.bindTexture(gl.TEXTURE_2D, bloom || tex);
       gl.uniform1i(u.uBloom, 1);
       gl.uniform1f(u.uGlow, glow);
       gl.activeTexture(gl.TEXTURE0);
       gl.uniform2f(u.uOut, ow, oh);
-      gl.uniform1f(u.uMode, prefs.quality === "pixel" ? 2 : prefs.quality === "sharp" ? 1 : 0);
+      gl.uniform1f(u.uMode, prefs.quality === "pixel" ? 2 : prefs.quality === "sharp" || prefs.quality === "hd" ? 1 : 0);
       gl.uniform1f(u.uVivid, prefs.color === "vivid" ? 1 : 0);
     });
   }
@@ -460,6 +532,9 @@ class TextEngine {
     this.setBitmap(32, 32);
     this.widthCache = new Map();
     this.metricsCache = new Map();
+    this.decoded = new Map();
+    this.f32 = new Float32Array(1);
+    this.i32 = new Int32Array(this.f32.buffer);
   }
   setBitmap(w, h) {
     this.w = Math.max(1, w);
@@ -504,10 +579,17 @@ class TextEngine {
     }
     return lo;
   }
+  // the game sets the same few strings again every frame: decoded strings are kept by their bytes
   decode(mode, bytes) {
-    if (mode === 2) return this.euc.decode(bytes);
-    if (mode === 3) return this.u16.decode(bytes);
-    return this.utf8.decode(bytes);
+    let h = 2166136261 ^ mode;
+    for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 16777619);
+    const key = h + ":" + bytes.length;
+    const hit = this.decoded.get(key);
+    if (hit && hit.b.length === bytes.length && hit.b.every((v, i) => v === bytes[i])) return hit.s;
+    const s = mode === 2 ? this.euc.decode(bytes) : mode === 3 ? this.u16.decode(bytes) : this.utf8.decode(bytes);
+    if (this.decoded.size > 4000) this.decoded.clear();
+    this.decoded.set(key, { b: bytes.slice(), s });
+    return s;
   }
   draw(mem, ptr, x, y) {
     const g = this.ctx;
@@ -546,10 +628,9 @@ class TextEngine {
     }
   }
   // the operations core/jni.c asks for
+  fromBits(v) { this.i32[0] = v; return this.f32[0]; }
+  toBits(v) { this.f32[0] = v; return this.i32[0]; }
   op(mem, op, a, b, ptr, len) {
-    const f32 = new Float32Array(1), i32 = new Int32Array(f32.buffer);
-    const fromBits = v => { i32[0] = v; return f32[0]; };
-    const toBits = v => { f32[0] = v; return i32[0]; };
     switch (op) {
       case 1: { // set the string: a = 0 UTF-8 (b = character count to keep, 0 for all), 2 KSC5601, 3 UTF-16
         let s = ptr ? this.decode(a, new Uint8Array(mem.buffer, ptr, len)) : "";
@@ -557,7 +638,7 @@ class TextEngine {
         this.str = s;
         return 0;
       }
-      case 2: this.size = fromBits(a) || 12; return 0;
+      case 2: this.size = this.fromBits(a) || 12; return 0;
       case 3: this.color = a; return 0;
       case 4: { // GFA_DrawFont: the string at the left edge, baseline one line down
         const m = this.metrics();
@@ -565,11 +646,11 @@ class TextEngine {
         this.rect = [0, 0, this.width(this.str), this.charHeight() + 1];
         return 0;
       }
-      case 5: return toBits(this.width(this.str));
+      case 5: return this.toBits(this.width(this.str));
       case 6: this.bpp = len & 0xff; this.aa = !!(len & 0x100); this.setBitmap(a, b); return 0;
       case 7: { const m = this.metrics(); return (m.ascent << 16) | (m.descent & 0xffff); }
       case 9: { // GFA_GetWordwrapPositionEx(maxWidth, int[] out)
-        const maxW = fromBits(a);
+        const maxW = this.fromBits(a);
         let s = this.str, count = 0, pos = 0;
         const out = ptr ? new Int32Array(mem.buffer, ptr, b) : null;
         for (;;) {
@@ -583,12 +664,12 @@ class TextEngine {
       }
       case 10: return this.str.length;
       case 11: return this.color;
-      case 12: return toBits(this.size);
+      case 12: return this.toBits(this.size);
       case 13: return this.charHeight();
       case 14: return Math.trunc(this.width("뷁"));
       case 15: { const r = new Float32Array(mem.buffer, ptr, 4); r.set(this.rect); return 0; }
       case 16: { // GFA_MeasureText(?, maxWidth): widest wrapped line and the height of the lines
-        const maxW = fromBits(b) || 1e9;
+        const maxW = this.fromBits(b) || 1e9;
         let s = this.str, lines = 1, widest = 0;
         for (;;) {
           const brk = Math.max(1, this.breakText(s, maxW));
@@ -605,13 +686,13 @@ class TextEngine {
       case 18: this.colorkey = a; return 0;
       case 20: this.aa = !!a; return 0;
       case 21: { // GFA_DrawText(x, y, ?, maxWidth)
-        const x = fromBits(a), y = fromBits(b);
+        const x = this.fromBits(a), y = this.fromBits(b);
         this.draw(mem, ptr, x, y + this.charHeight());
         this.rect = [x, y, this.width(this.str), this.charHeight() + this.metrics().descent];
         return 0;
       }
       case 22: { // GFA_GetWordwrapPosition(line, maxWidth): start of the given line
-        const maxW = fromBits(b);
+        const maxW = this.fromBits(b);
         let s = this.str, pos = 0;
         for (let line = 0; line < a; line++) {
           const brk = this.breakText(s, maxW);
@@ -731,9 +812,9 @@ class Core {
         if (window.Z4_DEBUG) console.debug("[game]", s);
       },
       host_now: () => Date.now(),
-      host_file_saved: (p, pl, d, n) => saves.write(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl)), new Uint8Array(this.mem.buffer, d, n).slice()),
-      host_file_deleted: (p, pl) => saves.remove(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl))),
-      host_event: (kind, a, b, c) => this.onEvent(kind, a, b, c) | 0,
+      host_file_saved: (p, pl, d, n) => this.painting || saves.write(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl)), new Uint8Array(this.mem.buffer, d, n).slice()),
+      host_file_deleted: (p, pl) => this.painting || saves.remove(this.utf.decode(new Uint8Array(this.mem.buffer, p, pl))),
+      host_event: (kind, a, b, c) => (this.painting ? 0 : this.onEvent(kind, a, b, c) | 0),
       // Natives.readAssete / isAssetExist: AssetManager.open(name)
       host_asset: (p, n, dst, cap) => {
         const hit = this.game.index[this.utf.decode(new Uint8Array(this.mem.buffer, p, n))];
@@ -742,14 +823,19 @@ class Core {
         return hit[1];
       },
       host_sound: (op, id, vol, loop) => {
+        if (this.painting) return;
         if (op === 1) audio.play(id, vol, loop);
         else audio.stopMusic();
       },
       host_text: (op, a, b, ptr, len) => this.text.op(this.mem, op, a, b, ptr, len) | 0,
     };
     let instance;
-    if (game.fast) ({ instance } = await WebAssembly.instantiate(game.fast, { env }));
-    else {
+    if (game.fast) {
+      ({ instance } = await WebAssembly.instantiate(game.fast, { env }));
+      // a fast core from before the in-between frames does not fit this page: the site's core runs instead
+      if (!instance.exports.motion_enable) { instance = null; this.staleFast = true; }
+    }
+    if (!instance) {
       const resp = fetch(`z4core.wasm?v=${VERSION}`);
       ({ instance } = await (WebAssembly.instantiateStreaming
         ? WebAssembly.instantiateStreaming(resp, { env })
@@ -787,7 +873,37 @@ class Core {
   screen() {
     const w = this.ex.screen_w(), h = this.ex.screen_h();
     const p = this.ex.screen();
-    return p ? { w, h, px: new Uint16Array(this.mem.buffer, p, w * h) } : null;
+    if (!p) return null;
+    if (this.view?.p !== p || this.view.w !== w || this.view.h !== h || this.view.px.buffer !== this.mem.buffer)
+      this.view = { p, w, h, px: new Uint16Array(this.mem.buffer, p, w * h) };
+    return this.view;
+  }
+  // In-between frames (core motion.c): the field drawn `f`/1024 of the way between the last two frames
+  motionOn(on) { return this.ex.motion_enable(on ? 1 : 0) === 0; }
+  motionState() { return this.ex.motion_state(); }
+  between(f) {
+    const w = this.ex.screen_w(), h = this.ex.screen_h();
+    if (!w || !h) return null;
+    if (!this.pbuf || this.pbuf.w !== w || this.pbuf.h !== h) {
+      if (this.pbuf) this.ex.host_free(this.pbuf.p);
+      const p = this.ex.host_alloc(w * h * 2);
+      this.pbuf = p ? { p, w, h } : null;
+      if (!p) return null;
+    }
+    this.painting = true;
+    let r;
+    try { r = this.ex.motion_paint(f, this.pbuf.p); } finally { this.painting = false; }
+    if (r !== 0) return null;
+    const b = this.pbuf;
+    if (b.view?.buffer !== this.mem.buffer) b.view = new Uint16Array(this.mem.buffer, b.p, w * h);
+    return { w, h, px: b.view };
+  }
+  // the camera (map pixels) of the picture `f`/1024 of the way from the frame before the last to the last
+  camera(f) {
+    const unpack = v => [(v >>> 16) << 16 >> 16, (v & 0xffff) << 16 >> 16];
+    if (!motion.on) return unpack(this.ex.live_cam());
+    const [ax, ay] = unpack(this.ex.motion_cam(1)), [bx, by] = unpack(this.ex.motion_cam(0));
+    return [ax + ((bx - ax) * f) / 1024, ay + ((by - ay) * f) / 1024];
   }
 }
 
@@ -902,16 +1018,176 @@ function bindInput() {
   document.addEventListener("dblclick", e => e.preventDefault());
 }
 
-// events from the core: 1 vibrate, 2 UI status, 3 Natives.OnEvent, 4 in-app purchase, 5 frame rate
+// events from the core: 1 vibrate, 2 UI status, 3 Natives.OnEvent, 4 in-app purchase, 5 frame rate,
+// 10 a blow landed (motion.c: map position x | y << 16, damage, 1 critical | 2 the hero was hit)
 let frameInterval = 1000 / 23;
-function onCoreEvent(kind, a) {
+let hitstop = 0;
+function onCoreEvent(kind, a, b, c) {
   if (kind === 4) toast("결제는 이 플레이어에서 쓸 수 없어요");
   if (kind === 5 && a > 0) frameInterval = 1000 / Math.min(60, a); // Natives.SetSpeed: the GL thread's frame rate
+  if (kind === 10 && fx) {
+    const x = (a << 16) >> 16, y = a >> 16;
+    if (c & 2) fx.hurtHero();
+    else {
+      const big = fx.hit(x, y - 36, b, c & 1);
+      if (big && prefs.impact === "strong") hitstop = Math.max(hitstop, 55);
+    }
+  }
   return 0;
 }
 
 // ---------------------------------------------------------------------------------------------
-// Game loop: the GL thread renders (and the game runs one step) at the rate the game asked for.
+// Hit feedback drawn over the game: sparks, a glow and a slash where a blow lands, a star, a ring and a
+// short shake on critical or unusually strong blows, red edges when the hero is hit. Driven by the game's own
+// damage (CMvCharacter::SetDamage, motion.c); the game's damage and effects are unchanged. Positions are
+// map pixels, drawn relative to the camera of the picture on screen so they stay on the target.
+class Fx {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.parts = []; this.rings = []; this.glows = []; this.slashes = []; this.bursts = [];
+    this.hurt = 0; this.shake = 0; this.shakeT = 0; this.shakeAng = 0;
+    this.cam = [0, 0];
+    this.u = 2.5;
+    this.drawn = false;
+    this.avg = 0;
+    this.reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+  resize(w, h) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.scale = (w * dpr) / lcdW;
+    this.u = lcdW / 400;
+    this.drawn = true;
+  }
+  level() { return prefs.impact === "strong" ? 1.4 : prefs.impact === "normal" ? 1 : 0; }
+  hit(x, y, dmg, crit) {
+    const k = this.level();
+    if (!k) return false;
+    const u = this.u; // the game is drawn about 1000 pixels wide: sizes are in units of 2.5 of its pixels
+    // a blow well above the recent average counts as big too (strong skills)
+    const big = !!crit || (this.avg > 0 && dmg > this.avg * 1.6);
+    this.avg = this.avg ? this.avg * 0.85 + dmg * 0.15 : dmg;
+    const n = Math.round((big ? 18 : 10) * k);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = (big ? 2.6 : 1.9) * (0.5 + Math.random()) * k * u;
+      this.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.7 * u, life: 1, decay: 0.04 + Math.random() * 0.035, w: (big && i % 3 === 0 ? 2 : 1.4) * u, hue: big ? 45 : 25 + Math.random() * 20 });
+    }
+    this.glows.push({ x, y, r: (big ? 18 : 12) * k * u, life: 1, decay: big ? 0.07 : 0.11, hue: big ? 48 : 32 });
+    const ang = -0.6 + Math.random() * 1.2 + (Math.random() < 0.5 ? 0 : Math.PI / 2);
+    this.slashes.push({ x, y, ang, len: (big ? 26 : 19) * k * u, life: 1, decay: big ? 0.09 : 0.14, hue: big ? 45 : 28 });
+    if (big) {
+      this.bursts.push({ x, y, len: 12 * k * u, life: 1, decay: 0.08 });
+      this.rings.push({ x, y, r: 4 * u, vr: 2.4 * k * u, life: 1, decay: 0.065, hue: 45 });
+      this.kick(2.2 * k * u);
+    } else this.kick(0.8 * k * u);
+    return big;
+  }
+  hurtHero() {
+    const k = this.level();
+    if (!k) return;
+    this.hurt = Math.min(1, 0.5 * k + this.hurt * 0.5);
+    this.kick(1.6 * k * this.u);
+  }
+  // a short damped sway in one direction instead of a random jitter every frame
+  kick(px) {
+    if (this.reduced) return;
+    if (px <= this.shake) return;
+    this.shake = px; this.shakeT = 0; this.shakeAng = Math.random() * Math.PI * 2;
+  }
+  shakeOffset() {
+    if (!this.shake) return [0, 0];
+    const v = Math.sin(this.shakeT * 0.09) * this.shake;
+    return [Math.cos(this.shakeAng) * v, Math.sin(this.shakeAng) * v * 0.7];
+  }
+  busy() { return this.parts.length || this.rings.length || this.glows.length || this.slashes.length || this.bursts.length || this.hurt > 0 || this.shake > 0; }
+  update(dt) {
+    const f = Math.min(dt / 16.7, 3);
+    for (const p of this.parts) { p.x += p.vx * f; p.y += p.vy * f; p.vy += 0.08 * this.u * f; p.vx *= 0.96; p.life -= p.decay * f; }
+    for (const r of this.rings) { r.r += r.vr * f; r.vr *= 0.93; r.life -= r.decay * f; }
+    for (const g of this.glows) g.life -= g.decay * f;
+    for (const sl of this.slashes) sl.life -= sl.decay * f;
+    for (const b of this.bursts) b.life -= b.decay * f;
+    this.parts = this.parts.filter(p => p.life > 0);
+    this.rings = this.rings.filter(r => r.life > 0);
+    this.glows = this.glows.filter(g => g.life > 0);
+    this.slashes = this.slashes.filter(sl => sl.life > 0);
+    this.bursts = this.bursts.filter(b => b.life > 0);
+    this.hurt = Math.max(0, this.hurt - 0.035 * f);
+    this.shakeT += dt;
+    this.shake = this.shake < 0.15 ? 0 : this.shake * Math.pow(0.84, f);
+  }
+  draw() {
+    const c = this.ctx, s = this.scale;
+    if (!this.busy() && !this.drawn) return;
+    c.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.drawn = !!this.busy();
+    const [cx, cy] = this.cam;
+    const dot = (x, y, size) => c.fillRect((x - cx - size / 2) * s, (y - cy - size / 2) * s, size * s, size * s);
+    const line = (x0, y0, x1, y1, size) => {
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / (size * 0.6)));
+      for (let i = 0; i <= n; i++) dot(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, size);
+    };
+    if (this.hurt > 0) { // red edges
+      const W = this.canvas.width, H = this.canvas.height;
+      const g = c.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.62);
+      g.addColorStop(0, "rgba(200,0,0,0)");
+      g.addColorStop(1, `rgba(200,0,0,${0.45 * this.hurt})`);
+      c.fillStyle = g;
+      c.fillRect(0, 0, W, H);
+    }
+    c.globalCompositeOperation = "lighter";
+    for (const g of this.glows) {
+      const r = g.r * s * (1.2 - g.life * 0.4), gx = (g.x - cx) * s, gy = (g.y - cy) * s;
+      const grd = c.createRadialGradient(gx, gy, 0, gx, gy, r);
+      grd.addColorStop(0, `hsla(${g.hue},100%,85%,${0.75 * g.life})`);
+      grd.addColorStop(0.35, `hsla(${g.hue},100%,60%,${0.35 * g.life})`);
+      grd.addColorStop(1, `hsla(${g.hue},100%,50%,0)`);
+      c.fillStyle = grd;
+      c.fillRect(gx - r, gy - r, r * 2, r * 2);
+    }
+    for (const sl of this.slashes) {
+      const half = (sl.len * (1.25 - sl.life * 0.25)) / 2;
+      const dx = Math.cos(sl.ang) * half, dy = Math.sin(sl.ang) * half * 0.8;
+      c.fillStyle = `hsla(${sl.hue},100%,60%,${0.5 * sl.life})`;
+      line(sl.x - dx, sl.y - dy, sl.x + dx, sl.y + dy, (sl.life > 0.5 ? 3 : 2) * this.u);
+      c.fillStyle = `rgba(255,255,240,${sl.life})`;
+      line(sl.x - dx * 0.85, sl.y - dy * 0.85, sl.x + dx * 0.85, sl.y + dy * 0.85, this.u);
+    }
+    for (const b of this.bursts) {
+      const len = b.len * (1.35 - b.life * 0.35);
+      c.fillStyle = `rgba(255,250,215,${b.life})`;
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4, l = i % 2 ? len * 0.55 : len, r0 = len * 0.18 * (1 - b.life);
+        line(b.x + Math.cos(a) * r0, b.y + Math.sin(a) * r0 * 0.8, b.x + Math.cos(a) * l, b.y + Math.sin(a) * l * 0.8, this.u);
+      }
+      c.fillStyle = `rgba(255,220,120,${0.8 * b.life})`;
+      dot(b.x, b.y, 3 * this.u);
+    }
+    for (const p of this.parts) {
+      c.fillStyle = `hsla(${p.hue},100%,${62 + 30 * p.life}%,${p.life})`;
+      dot(p.x, p.y, p.w);
+      c.fillStyle = `hsla(${p.hue},100%,55%,${0.45 * p.life})`;
+      dot(p.x - p.vx * 0.9, p.y - p.vy * 0.9, p.w * 0.6);
+    }
+    for (const r of this.rings) {
+      c.fillStyle = `hsla(${r.hue},100%,70%,${0.8 * r.life})`;
+      const n = Math.max(16, Math.ceil((r.r / this.u) * 4.2));
+      for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; dot(r.x + Math.cos(a) * r.r, r.y + Math.sin(a) * r.r * 0.6, this.u); }
+    }
+    c.globalCompositeOperation = "source-over";
+  }
+}
+let fx;
+
+// ---------------------------------------------------------------------------------------------
+// Game loop: the GL thread renders (and the game runs one step) at the rate the game asked for, about 23
+// times a second. With 부드럽게 on, the display runs one game frame behind and shows the frames in between:
+// the field drawn with the camera, the hero and the monsters part of the way between their positions in
+// the last two game frames (core motion.c). Menus and anything that jumps show the game's own frames. A
+// device too slow for that gets one in-between frame per game frame, or none.
+const motion = { on: false, cost: 0, shown: -1, state: -1, off: 0 };
 let acc = 0;
 let lastT = 0;
 let shownFrame = -1;
@@ -920,6 +1196,7 @@ function frameLoop(t) {
   if (!running) { lastT = t; return; }
   const dt = lastT ? Math.min(t - lastT, 250) : 0;
   lastT = t;
+  if (hitstop > 0) { hitstop -= dt; fxFrame(motion.shown < 0 ? 1024 : motion.shown); return; } // a short freeze on a big blow
   acc += dt;
   let ran = 0;
   while (acc >= frameInterval && ran < 2) {
@@ -929,15 +1206,57 @@ function frameLoop(t) {
     ran++;
   }
   if (acc > frameInterval) acc = 0; // fell behind: drop the backlog instead of rushing
-  if (ran) {
-    const n = core.frames();
-    if (n !== shownFrame) {
-      shownFrame = n;
-      const f = core.screen();
-      if (f) renderer.upload(f.px, f.w, f.h);
+  if (ran) motion.state = motion.on ? core.motionState() : -1;
+  let f = 1024;
+  if (motion.on && motion.state > 0 && ran < 2) {
+    f = Math.min(1024, Math.round((acc / frameInterval) * 1024));
+    if (motion.cost > 9) f = f < 512 ? 512 : 1024; // slow device: one in-between frame per game frame
+    if (f > 980) f = 1024;
+  }
+  if (!ran && f === motion.shown) { if (renderer.dirty) renderer.draw(); fxFrame(f); return; }
+  let frame = null;
+  if (f < 1024) {
+    const t0 = performance.now();
+    frame = core.between(f);
+    const ms = performance.now() - t0;
+    motion.cost = motion.cost * 0.9 + ms * 0.1;
+    if (!frame) f = 1024;
+    if (motion.cost > 18 && ++motion.off > 30) { // far too slow here: plain frames for a while
+      motion.on = false;
+      core.motionOn(false);
+      setTimeout(() => { if (prefs.motion === "smooth") { motion.cost = 6; motion.off = 0; motion.on = core.motionOn(true); } }, 20000);
     }
   }
+  if (f === 1024) {
+    const n = core.frames();
+    if (n === shownFrame && motion.shown === 1024) { if (renderer.dirty) renderer.draw(); fxFrame(f); return; }
+    shownFrame = n;
+    frame = core.screen();
+  }
+  motion.shown = f;
+  if (frame) renderer.upload(frame.px, frame.w, frame.h);
   if (renderer.dirty) renderer.draw();
+  fxFrame(f);
+}
+
+// the effects follow the camera of the picture on screen; the shake moves the game and the effects together
+let fxT = 0;
+let stageShaken = false;
+function fxFrame(f) {
+  if (!fx) return;
+  const now = performance.now(), dt = fxT ? Math.min(now - fxT, 100) : 16.7;
+  fxT = now;
+  if (!fx.busy() && !fx.drawn) {
+    if (stageShaken) { $("stage").style.transform = ""; stageShaken = false; }
+    return;
+  }
+  fx.cam = core.camera(f);
+  fx.update(dt);
+  fx.draw();
+  const [ox, oy] = fx.shakeOffset();
+  const px = layout.stage.w / lcdW;
+  stageShaken = !!(ox || oy);
+  $("stage").style.transform = stageShaken ? `translate(${(ox * px).toFixed(1)}px, ${(oy * px).toFixed(1)}px)` : "";
 }
 
 function crashed() {
@@ -986,6 +1305,7 @@ function bindSettings() {
       syncSettings();
       if (key === "screen" && started) toast("화면 크기는 게임을 다시 시작하면 맞춰져요");
       if (key === "sound") audio?.applyVolumes();
+      if (key === "motion" && started) { motion.on = prefs.motion === "smooth" && core.motionOn(true); if (prefs.motion !== "smooth") core.motionOn(false); motion.shown = -1; motion.cost = 0; motion.off = 0; }
       if (key === "screen" && !started) lcdW = chooseLcdWidth();
       if (key === "screen") applyLayout();
       if (renderer) renderer.dirty = true;
@@ -1087,11 +1407,13 @@ async function prepareAndWait(game) {
     return;
   }
   $("tap-text").textContent = "화면을 터치하면 시작해요";
-  $("tap-err").textContent = core.fast ? "" : game.fast
-    ? "가속 파일이 이 게임 파일과 맞지 않아서 느리게 돌아가요. 설정에서 맞는 가속 파일로 바꿔 주세요."
-    : "가속 파일(z4fast.wasm)이 없어서 느리게 돌아가요. 설정 → 가속 파일에서 넣을 수 있어요.";
+  $("tap-err").textContent = core.fast ? "" : core.staleFast
+    ? "가속 파일이 예전 버전이라 쓰지 않았어요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꾸면 더 빨라져요."
+    : game.fast
+    ? "가속 파일이 이 게임 파일과 맞지 않아요. 설정 → 가속 파일에서 맞는 파일로 바꾸면 더 빨라져요."
+    : "";
   syncFastRow(game.fast, core.fast);
-  window.__z4 = { core, audio: () => audio, lcd: () => lcdW, running: () => running, hold: v => { running = !v; }, ready: true };
+  window.__z4 = { core, audio: () => audio, lcd: () => lcdW, running: () => running, hold: v => { running = !v; }, fx: () => fx, ready: true };
   $("tap").onclick = () => {
     if (started) return;
     started = true;
@@ -1108,6 +1430,8 @@ async function startGame() {
     return;
   }
   showOverlay(null);
+  try { core.ex.fx_enable(1); } catch {}
+  motion.on = prefs.motion === "smooth" && core.motionOn(true);
   running = true;
   requestAnimationFrame(frameLoop);
 }
@@ -1133,6 +1457,7 @@ async function boot() {
   bindSettings();
   syncSettings();
   renderer = new Renderer($("screen"));
+  fx = new Fx($("fx"));
   // iOS may drop the GL context while the app is in the background
   $("screen").addEventListener("webglcontextlost", e => e.preventDefault());
   $("screen").addEventListener("webglcontextrestored", () => {

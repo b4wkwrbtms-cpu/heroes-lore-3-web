@@ -32,6 +32,7 @@
       #frame { position: fixed; left: 0; top: 0; transform-origin: 0 0; }
       #stage { position: absolute; background: #000; }
       #stage canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+      #fx { pointer-events: none; }
       .side { position: absolute; display: flex; flex-direction: column; gap: 10px; align-items: center; }
       .side.split { justify-content: space-between; padding-top: 10px; }
       .side-group { display: flex; flex-direction: column; gap: 10px; }
@@ -88,7 +89,7 @@
   <body>
     <div id="probe"></div>
     <div id="frame">
-      <div id="stage"><canvas id="screen"></canvas></div>
+      <div id="stage"><canvas id="screen"></canvas><canvas id="fx"></canvas></div>
       <div class="side" id="side">
         <div class="side-group">
         <button id="btn-settings" aria-label="설정">
@@ -120,12 +121,16 @@
     <div class="overlay" id="settings">
       <div class="panel">
         <h3>설정 <button class="btn ghost" id="btn-close" style="padding: 8px 14px; margin: 0">닫기</button></h3>
-        <div class="row"><label>화질<span class="hint">부드럽게는 매끈하게, 선명하게는 픽셀 경계를 또렷하게 키워요</span></label>
-          <div class="seg" data-pref="quality"><button data-v="smooth">부드럽게</button><button data-v="sharp">선명하게</button><button data-v="pixel">원본 픽셀</button></div></div>
+        <div class="row"><label>화질<span class="hint">HD는 대각선 계단을 매끈한 선으로 다듬어 두 배로 키워요 · 부드럽게는 매끈하게, 선명하게는 픽셀 경계를 또렷하게</span></label>
+          <div class="seg" data-pref="quality"><button data-v="hd">HD</button><button data-v="smooth">부드럽게</button><button data-v="sharp">선명하게</button><button data-v="pixel">원본 픽셀</button></div></div>
         <div class="row"><label>색감<span class="hint">색을 조금 더 또렷하게</span></label>
           <div class="seg" data-pref="color"><button data-v="vivid">또렷하게</button><button data-v="original">원본</button></div></div>
         <div class="row"><label>빛 번짐<span class="hint">스킬·불꽃처럼 밝은 부분이 은은하게 빛나요</span></label>
           <div class="seg" data-pref="glow"><button data-v="strong">강하게</button><button data-v="soft">은은하게</button><button data-v="off">끄기</button></div></div>
+        <div class="row"><label>움직임<span class="hint">게임이 1초에 23번 그리는 사이사이를 채워서 걷기·카메라·몬스터가 매끄럽게 움직여요</span></label>
+          <div class="seg" data-pref="motion"><button data-v="smooth">부드럽게</button><button data-v="original">원래대로</button></div></div>
+        <div class="row"><label>타격감<span class="hint">맞힐 때 불꽃·베기 자국·화면 흔들림 · 강하게는 큰 한 방에 잠깐 멈칫해요</span></label>
+          <div class="seg" data-pref="impact"><button data-v="strong">강하게</button><button data-v="normal">보통</button><button data-v="off">끄기</button></div></div>
         <div class="row"><label>화면 크기<span class="hint">카메라에 가리지 않게 그쪽만 비워요 · 게임을 다시 시작하면 맞춰져요</span></label>
           <div class="seg" data-pref="screen"><button data-v="notch">카메라 쪽만 비움</button><button data-v="full">가장자리까지</button><button data-v="safe">양쪽 비움</button></div></div>
         <div class="row"><label>소리</label>
@@ -149,6 +154,6 @@
     </div>
 
     <div id="toast"></div>
-    <script type="module" src="z4.js?v=1"></script>
+    <script type="module" src="z4.js?v=2"></script>
   </body>
 </html>

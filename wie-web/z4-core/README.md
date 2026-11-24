@@ -21,6 +21,19 @@ library directly:
   the value the library expects) and NexusFont, whose drawing is done by the page (`host_text`).
 - `fs.c`, `util.c` — the file system behind the guest's libc (saves are reported to the page, which keeps
   them in IndexedDB), heaps and formatting.
+- `blit_helpers.inc` — native stand-ins for the drawing routines that take most of a frame (sprite
+  decompression into the 16-bit buffer, alpha and level blending, grey, flipped sprites, screen fades and
+  tints). Each is installed only when the routine's bytes hash to the value it was written against, and was
+  checked by comparing a checksum of every frame with and without it. The two screen effects that are a
+  fixed function of the pixel per step build a table once by running the game's own routine over all 65536
+  values.
+- `cow.c`, `motion.c` — in-between frames and hit reports. While the game's `CMvApp::Draw` runs, the first
+  write to each 4 KiB page saves the page (guest stores and host writes through `gwptr` are both seen), and
+  the camera and object positions are noted. `motion_paint` winds memory back to before that draw, moves the
+  camera and the objects part of the way from the frame before, lets the game draw once more into a separate
+  picture and restores every page and the host-side tables, so the game never sees the extra frame (checked
+  the same way: identical frame checksums with paints after every frame). `CMvCharacter::SetDamage` reports
+  where a blow landed (host event 10) for the page's hit effects.
 
 Build (clang with the wasm32 target and wasm-ld): `./build.sh ../public/z4/z4core.wasm`
 
@@ -48,5 +61,8 @@ apk. The translations carry a checksum of the library's code and switch themselv
 
 `CFLAGS=-DAOT` adds the translations, `-DPROFILE` counts interpreted instructions per address
 (`out/prof.bin`), `SAMPLE=<frame>` samples the guest PC from that frame on (works inside translated code).
+`SUMS=1` prints a checksum per frame, `AOT=n` picks what runs translated or native (1 translations, 2 division
+helpers, 4 drawing routines), `MOTION=f` draws an in-between frame after each frame that moved, `FX=1` turns
+on the hit reports: comparing the checksums of two runs shows whether any of these changed the game.
 
 No game files are part of this repository: the page asks for the player's own apk and keeps it on the device.

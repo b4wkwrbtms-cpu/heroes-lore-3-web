@@ -2,6 +2,9 @@
 // Build with build_native.sh. Paths: Z4_LIB (libgameDSO.so), Z4_ASSETS (the apk's assets/ folder, with a
 // trailing slash), Z4_OUT (folder for frames and saves). Usage: z4native frames [script], where the
 // script has lines "frame t x y" (tap), "frame d|m|u x y" (touch down, move, up), "frame s" (screenshot).
+// Checks: SUMS=1 prints a checksum of every frame; AOT=n picks what runs translated or native (1 translated
+// functions, 2 division helpers, 4 drawing routines); MOTION=f draws an in-between frame f/1024 of the way
+// after every frame that moved (PAINTSHOT=frame writes a few of them); FX=1 turns on the hit reports.
 #include "base.h"
 int printf(const char *, ...);
 int puts(const char *);
@@ -44,7 +47,8 @@ void host_log(const char *s, int len) {
   if (quiet) return;
   printf("[log] %.*s\n", len, s);
 }
-double host_now(void) { now_ms += 0.05; return now_ms; }
+static long now_calls;
+double host_now(void) { now_calls++; now_ms += 0.05; return now_ms; }
 void host_file_saved(const char *path, int plen, const void *data, int len) {
   printf("[save] %.*s (%d bytes)\n", plen, path, len);
   char p[512];
@@ -158,7 +162,7 @@ int main(int argc, char **argv) {
   if (getenv("TRACE_IMPORTS")) set_trace_imports(1);
   if (getenv("TRACE_JAVA")) set_trace_java(1);
   if (load_library(elf, (u32)n)) { puts("load failed"); return 1; }
-  { void aot_enable(int); aot_enable(getenv("AOT") ? atoi(getenv("AOT")) : 3); }
+  { void aot_enable(int); aot_enable(getenv("AOT") ? atoi(getenv("AOT")) : 7); }
   if (getenv("LOADSAVE")) {
     // restore files saved by an earlier run (names keep '/' as '_')
     extern void fs_put(const char *path, const u8 *data, u32 len);
@@ -182,6 +186,7 @@ int main(int argc, char **argv) {
     if (d) closedir(d);
   }
   if (app_start(w, h)) { puts("start failed"); return 1; }
+  if (getenv("FX")) { int fx_enable(int); printf("fx_enable %d\n", fx_enable(1)); }
   // input script
   static int sc_frame[4096], sc_type[4096], sc_x[4096], sc_y[4096];
   int nsc = 0;
@@ -222,11 +227,37 @@ int main(int argc, char **argv) {
       static double last;
       clock_gettime(1, &t);
       double now = t.s * 1000.0 + t.ns / 1e6;
-      if (last) printf("frames %d-%d: %.2f ms/frame\n", i - 98, i + 1, (now - last) / 100);
+      if (last) printf("frames %d-%d: %.2f ms/frame, %ld clock reads/frame\n", i - 98, i + 1, (now - last) / 100, now_calls / 100);
+      now_calls = 0;
       last = now;
     }
     if (getenv("PROGRESS") && i % 20 == 0) { printf("frame %d\n", i); fflush(stdout); }
     if (app_frame()) { printf("halted at frame %d\n", i); break; }
+    if (getenv("MOTION")) {
+      int motion_enable(int), motion_state(void), motion_paint(int, u16 *);
+      static int on;
+      static u16 *pbuf;
+      if (!on) { on = 1; printf("motion_enable %d\n", motion_enable(1)); }
+      int st = motion_state();
+      static int hist[3];
+      hist[st + 1]++;
+      if (i % 500 == 0) { u32 motion_pages(int); printf("motion states at %d: none-usable %d still %d moving %d (log pages %u)\n", i, hist[0], hist[1], hist[2], motion_pages(0)); }
+      if (st > 0) {
+        if (!pbuf) pbuf = malloc(2048 * 1024 * 2);
+        int r = motion_paint(atoi(getenv("MOTION")), pbuf);
+        static int painted, failed;
+        if (r) failed++; else painted++;
+        if (i % 100 == 0) printf("motion frame %d: painted %d failed %d\n", i, painted, failed);
+        if (getenv("PAINTSHOT") && i >= atoi(getenv("PAINTSHOT")) && i < atoi(getenv("PAINTSHOT")) + 4 && !r) {
+          char p[512];
+          snprintf(p, sizeof p, "%s/p%05d.ppm", out_dir, i);
+          FILE *f = fopen(p, "wb");
+          fprintf(f, "P6\n%u %u\n255\n", scr_w, scr_h);
+          for (u32 k = 0; k < scr_w * scr_h; k++) { u16 v = pbuf[k]; u8 rgb[3] = {(u8)(((v >> 11) & 31) * 255 / 31), (u8)(((v >> 5) & 63) * 255 / 63), (u8)((v & 31) * 255 / 31)}; fwrite(rgb, 1, 3, f); }
+          fclose(f);
+        }
+      }
+    }
     if (getenv("SUMS") && screen()) { u32 h = 2166136261u; u16 *sp = screen(); for (u32 k = 0; k < scr_w * scr_h; k++) h = (h ^ sp[k]) * 16777619u; printf("sum %d %08x\n", i, h); }
     if (shot_every && i % shot_every == 0) {
       char p[512];

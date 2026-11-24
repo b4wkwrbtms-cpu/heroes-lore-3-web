@@ -36,7 +36,10 @@ typedef struct {
 } Heap;
 
 static inline u32 h_rd(Heap *h, u32 o) { u32 v; __builtin_memcpy(&v, h->base + o, 4); return v; }
-static inline void h_wr(Heap *h, u32 o, u32 v) { __builtin_memcpy(h->base + o, &v, 4); }
+static inline void h_wr(Heap *h, u32 o, u32 v) {
+  if (__builtin_expect(cow_on, 0) && h->base == G) cow_range(o, 4);
+  __builtin_memcpy(h->base + o, &v, 4);
+}
 
 static u32 bin_of(u32 size) {
   if (size < 1024) return size >> 4;
@@ -166,7 +169,7 @@ u32 gmalloc(u32 n) {
 void gfree(u32 a) { heap_free(&guest_heap, a); }
 u32 gcalloc(u32 n) {
   u32 a = gmalloc(n);
-  if (a) memset(gptr(a), 0, n);
+  if (a) memset(gwptr(a, n), 0, n);
   return a;
 }
 void heap_state(void *buf, int save) {
@@ -186,7 +189,7 @@ int gstrlen(u32 a) {
 u32 gstrdup_host(const char *s) {
   u32 n = hstrlen(s);
   u32 a = gmalloc(n + 1);
-  memcpy(gptr(a), s, n + 1);
+  memcpy(gwptr(a, n + 1), s, n + 1);
   return a;
 }
 

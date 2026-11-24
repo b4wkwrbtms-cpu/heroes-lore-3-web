@@ -49,10 +49,34 @@ static inline u16 rd16(u32 a) {
   return v;
 }
 static inline u8 rd8(u32 a) { return G[a & GUEST_MASK]; }
-static inline void wr32(u32 a, u32 v) { __builtin_memcpy(G + (a & GUEST_MASK), &v, 4); }
-static inline void wr16(u32 a, u16 v) { __builtin_memcpy(G + (a & GUEST_MASK), &v, 2); }
-static inline void wr8(u32 a, u8 v) { G[a & GUEST_MASK] = v; }
+// Copy-on-write log (cow.c): while cow_on is set, the first write to each 4 KiB page saves the page first,
+// so everything a stretch of guest code wrote can be put back afterwards (the in-between frames).
+extern u32 cow_on;
+extern u32 cow_bits[GUEST_SIZE >> 17];
+void cow_save_page(u32 page);
+static inline void cow_touch(u32 a) {
+  u32 p = (a & GUEST_MASK) >> 12;
+  if (!(cow_bits[p >> 5] & (1u << (p & 31)))) cow_save_page(p);
+}
+void cow_range(u32 a, u32 n);
+static inline void wr32(u32 a, u32 v) {
+  if (__builtin_expect(cow_on, 0)) { cow_touch(a); if ((a & 0xfff) > 0xffc) cow_touch(a + 3); }
+  __builtin_memcpy(G + (a & GUEST_MASK), &v, 4);
+}
+static inline void wr16(u32 a, u16 v) {
+  if (__builtin_expect(cow_on, 0)) { cow_touch(a); if ((a & 0xfff) == 0xfff) cow_touch(a + 1); }
+  __builtin_memcpy(G + (a & GUEST_MASK), &v, 2);
+}
+static inline void wr8(u32 a, u8 v) {
+  if (__builtin_expect(cow_on, 0)) cow_touch(a);
+  G[a & GUEST_MASK] = v;
+}
 static inline u8 *gptr(u32 a) { return G + (a & GUEST_MASK); }
+// a pointer for the host to write n bytes of guest memory through
+static inline u8 *gwptr(u32 a, u32 n) {
+  if (__builtin_expect(cow_on, 0)) cow_range(a, n);
+  return G + (a & GUEST_MASK);
+}
 
 // CPU state
 extern u32 R[16];
