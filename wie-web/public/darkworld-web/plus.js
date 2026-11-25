@@ -275,7 +275,8 @@ window.ClassicArt = {
   async fromFile(file) {
     let buf = new Uint8Array(await file.arrayBuffer()), ents = DWDATA.zipEntries(buf);
     if (!ents) throw new Error('APK(zip) 파일이 아니에요');
-    if (!ents.some((e) => e.name === 'assets/' + this.NAMES[0])) { // a zip holding the APK
+    const has = (n) => (e) => e.name === n || e.name.endsWith('/' + n);
+    if (!ents.some(has(this.NAMES[0]))) { // a zip holding the APK
       const apk = ents.find((e) => /\.apk$/i.test(e.name));
       if (!apk) throw new Error(ents.some((e) => /(^|\/)dw\.pack$/.test(e.name))
         ? '이건 1.57 웹판 압축 파일이에요. 원본 다크월드 APK(또는 원래 버튼 그림 zip)를 골라 주세요.'
@@ -283,7 +284,7 @@ window.ClassicArt = {
       buf = await DWDATA.zipData(buf, apk);
       ents = DWDATA.zipEntries(buf);
     }
-    const pick = async (n) => { const e = ents && ents.find((x) => x.name === 'assets/' + n); return e ? DWDATA.zipData(buf, e) : null; };
+    const pick = async (n) => { const e = ents && ents.find(has(n)); return e ? DWDATA.zipData(buf, e) : null; };
     const gmf = await pick(this.NAMES[0]), gbm = await pick(this.NAMES[1]);
     if (!gmf || !gbm) throw new Error('다크월드 APK가 아니에요');
     const a = { gmf, gbm };

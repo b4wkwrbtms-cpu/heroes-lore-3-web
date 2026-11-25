@@ -64,6 +64,11 @@ window.DWDATA = (() => {
     if (!pack) throw new Error('이 압축 파일에는 다크월드 웹판 자료(dw.pack)가 없어요');
     const root = pack.name.slice(0, -'dw.pack'.length);
     const files = all.filter((x) => x.name.startsWith(root) && !x.name.endsWith('/') && wanted(x.name.slice(root.length)));
+    // the game's own button pictures (plus.js ClassicArt), when the zip carries them too
+    for (const n of ['res/UI_Touch.GMF.png', 'res/touch.GBM.png']) {
+      const x = all.find((e) => e.name.endsWith('/' + n) || e.name === n);
+      if (x) files.unshift({ ...x, name: root + 'classic/' + n });
+    }
     files.sort((a, b) => (a === pack) - (b === pack)); // dw.pack last: it marks the import complete
     const c = await open();
     await c.delete(key('dw.pack'));
