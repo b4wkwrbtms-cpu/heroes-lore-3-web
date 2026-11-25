@@ -192,6 +192,7 @@ int main(int argc, char **argv) {
   if (getenv("DPAD")) { int dpad_enable(void); printf("dpad_enable %d\n", dpad_enable()); }
   if (getenv("REFINE")) { int refine_easy(int); printf("refine_easy %d\n", refine_easy(1)); }
   if (getenv("CRITZOOM")) { int crit_zoom(int); printf("crit_zoom %d\n", crit_zoom(atoi(getenv("CRITZOOM")))); }
+  if (getenv("SPMAX")) { int sp_unlimited(int); printf("sp_unlimited %d\n", sp_unlimited(1)); }
   if (getenv("DAMAGE")) { int damage_uncapped(int); printf("damage_uncapped %d\n", damage_uncapped(1)); }
   if (getenv("STATS")) { int stat_rules(int, int); printf("stat_rules %d\n", stat_rules(1, atoi(getenv("STATS")))); }
   // input script
@@ -326,6 +327,20 @@ int main(int argc, char **argv) {
       u32 a[3] = {player, getenv("HITN") ? (u32)atoi(getenv("HITN")) : 127, 0};
       if (player) call_guest(find_symbol("_ZN12CMvCharacter9SetDamageEib"), 3, a);
       printf("hit at %d\n", i);
+    }
+    if (getenv("SPTEST") && i == atoi(getenv("SPTEST"))) {
+      // test: empty the hero's SP, then ask whether a skill costing 100 can go off
+      u32 find_symbol(const char *), call_guest(u32, int, const u32 *);
+      u32 as = find_symbol("_ZN12CMvStateMenu11OnApplyStatEb") & ~1u;
+      u32 g = rd32(rd32(as + 0xc + rd32(as + 0x184))), player = g ? rd32(g + 8) : 0;
+      u32 xr = find_symbol("_Z13GsGetXorValueIiET_S0_");
+      u32 a[3] = {player, 0, 1};
+      call_guest(find_symbol("_ZN9CMvPlayer5SetSPEib"), 3, a);
+      u32 v = rd32(player + 0x5c0), before = call_guest(xr, 1, &v);
+      a[1] = 100;
+      int ok = (int)call_guest(find_symbol("_ZN12CMvCharacter10IsEnoughSPEi"), 2, a);
+      v = rd32(player + 0x5c0);
+      printf("sp test at %d: sp %u, enough %d, sp now %u\n", i, before, ok, call_guest(xr, 1, &v));
     }
     if (getenv("SKILLS") && i == atoi(getenv("SKILLS"))) { int skills_max(void); printf("skills_max at %d: %d\n", i, skills_max()); }
     if (getenv("BOOST") && i == atoi(getenv("BOOST"))) {

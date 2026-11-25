@@ -1,14 +1,14 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "14";
+const VERSION = "15";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
 // Preferences (prefixed: the origin is shared with the other games of this site)
 const PREF_KEY = "z4.prefs";
 const prefs = Object.assign(
-  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", money: "max", refine: "easy", statPoints: "max", statStep: "10000", damage: "uncapped", skills: "max", critZoom: "off", perf: "off", dpad: "smooth", screen: "notch", sound: "on" },
+  { quality: "hd", color: "vivid", glow: "soft", motion: "smooth", impact: "normal", money: "max", refine: "easy", statPoints: "max", statStep: "10000", damage: "uncapped", skills: "max", sp: "max", critZoom: "off", perf: "off", dpad: "smooth", screen: "notch", sound: "on" },
   (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY)) || {}; } catch { return {}; } })(),
 );
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch {} };
@@ -1453,7 +1453,7 @@ function bindSettings() {
       syncSettings();
       if (key === "screen" && started) toast("화면 크기는 게임을 다시 시작하면 맞춰져요");
       if (key === "sound") audio?.applyVolumes();
-      if (["money", "refine", "statPoints", "statStep", "damage", "skills", "critZoom"].includes(key) && started) applyRules();
+      if (["money", "refine", "statPoints", "statStep", "damage", "skills", "sp", "critZoom"].includes(key) && started) applyRules();
       if (key === "motion" && started) { motion.on = prefs.motion === "smooth" && core.motionOn(true); if (prefs.motion !== "smooth") core.motionOn(false); motion.shown = -1; motion.cost = 0; motion.off = 0; }
       if (key === "screen" && !started) lcdW = chooseLcdWidth();
       if (key === "screen") applyLayout();
@@ -1529,6 +1529,7 @@ function applyRules() {
   core.ex.money_unlimited(prefs.money === "max" ? 1 : 0);
   core.ex.refine_easy(prefs.refine === "easy" ? 1 : 0);
   core.ex.crit_zoom?.(prefs.critZoom === "on" ? 1 : 0);
+  core.ex.sp_unlimited?.(prefs.sp === "max" ? 1 : 0);
   if (!core.ex.stat_rules) return; // an accelerated core from before these
   core.ex.stat_rules(prefs.statPoints === "max" ? 1 : 0, +prefs.statStep || 1);
   core.ex.damage_uncapped(prefs.damage === "uncapped" ? 1 : 0);

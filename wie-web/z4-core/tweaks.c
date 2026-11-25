@@ -33,7 +33,7 @@ u32 call_guest_unhooked(u32 addr, int nargs, const u32 *args);
 
 static u32 get_zen, set_zen, get_gold, set_gold, do_refine, smith_ok, smith_fail;
 static u32 get_points, set_points, use_points, apply_stat, stat_cursor, xor_int, xor_byte, percent;
-static u32 skill_level, skill_max, game_var;
+static u32 skill_level, skill_max, game_var, enough_sp, sp_max, set_sp;
 
 typedef struct { const char *name; u32 size, sig; u32 *addr; } TweakSym;
 static const TweakSym tsyms[] = {
@@ -54,6 +54,9 @@ static const TweakSym tsyms[] = {
     {"_Z15GetPercentValueiibi", 54, 0xe6714865u, &percent},
     {"_ZN8CMvSkill8SetLevelEi", 32, 0x90413da0u, &skill_level},
     {"_ZN8CMvSkill12LoadMaxLevelEi", 48, 0x7084551au, &skill_max},
+    {"_ZN12CMvCharacter10IsEnoughSPEi", 44, 0x0ed5041eu, &enough_sp},
+    {"_ZN12CMvCharacter8GetSPMaxEv", 10, 0x38ddb20du, &sp_max},
+    {"_ZN9CMvPlayer5SetSPEib", 74, 0x0ee2515au, &set_sp},
 };
 
 static int t_resolve(void) {
@@ -217,4 +220,24 @@ EXPORT(skills_max) int skills_max(void) {
     call_guest_unhooked(rd32(rd32(player) + 0x228), 5, a);
   }
   return raised;
+}
+
+// ---- SP
+// CMvCharacter::IsEnoughSP(cost), which every skill, special attack and dash of the hero asks first: for
+// the hero it fills SP to the most it holds (CMvPlayer::SetSP) and says yes, so maxed skills, whose cost is
+// a share of SP, always go off; for anyone else it answers as the game does.
+static void t_enough_sp(void) {
+  u32 ch = R[0], player = hero();
+  if (ch && ch == player) {
+    u32 a[3] = {player, guest1(sp_max, player), 1};
+    call_guest_unhooked(set_sp | 1, 3, a);
+    t_return(1);
+    return;
+  }
+  u32 a[2] = {R[0], R[1]};
+  t_return(call_guest_unhooked(enough_sp | 1, 2, a));
+}
+EXPORT(sp_unlimited) int sp_unlimited(int on) {
+  if (!t_resolve()) return -1;
+  return aot_hook(enough_sp, on ? t_enough_sp : 0);
 }
