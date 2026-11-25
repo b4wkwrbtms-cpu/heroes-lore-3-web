@@ -277,7 +277,9 @@ window.ClassicArt = {
     if (!ents) throw new Error('APK(zip) 파일이 아니에요');
     if (!ents.some((e) => e.name === 'assets/' + this.NAMES[0])) { // a zip holding the APK
       const apk = ents.find((e) => /\.apk$/i.test(e.name));
-      if (!apk) throw new Error('다크월드 APK가 아니에요');
+      if (!apk) throw new Error(ents.some((e) => /(^|\/)dw\.pack$/.test(e.name))
+        ? '이건 1.57 웹판 압축 파일이에요. 원본 다크월드 APK(또는 원래 버튼 그림 zip)를 골라 주세요.'
+        : '다크월드 APK가 아니에요');
       buf = await DWDATA.zipData(buf, apk);
       ents = DWDATA.zipEntries(buf);
     }

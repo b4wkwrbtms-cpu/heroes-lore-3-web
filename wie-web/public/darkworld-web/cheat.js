@@ -307,7 +307,7 @@ function openMenu() {
       I().toast('다시 시작하면 적용돼요');
     });
     row(b, '원래 버튼 그림 (원본 APK)', I().M && I().M.classicArt ? '사용 중' : '고르기 ›', async (r) => {
-      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.apk,.zip,application/zip';
+      const inp = document.createElement('input'); inp.type = 'file'; // no accept filter: iPhone greys out .apk otherwise
       inp.onchange = async () => {
         if (!inp.files[0]) return;
         try { await window.ClassicArt.fromFile(inp.files[0]); r.querySelector('.v').textContent = '다시 시작하면 적용'; I().toast('원래 버튼 그림을 넣었어요. 다시 시작하면 적용돼요'); }
