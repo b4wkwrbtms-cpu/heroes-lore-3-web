@@ -4,6 +4,8 @@
 const I = () => window.DWInternals;
 const $ = (id) => document.getElementById(id);
 const panel = $('menu'), box = $('menubox');
+// this page's update number (index.html loads the files as ?v=N), shown in the menu so the player can see the update came
+const PAGE_V = (() => { try { return new URL(document.currentScript.src).searchParams.get('v') || ''; } catch (e) { return ''; } })();
 const CATS = ['', '대검', '낫', '크로', '너클', '망토', '상의', '투구', '어깨', '신발', '목걸이', '부적', '반지', '모험 장비', '가방', '소비 / 캐시 아이템', '재료', '퀘스트 아이템', '강화석', '마석', '신석', '분해 / 거래 도구'];
 const SETTINGS = ['무적', '스킬 MP 소모 없음', '스킬 쿨타임 없음', '사용 아이템 수량 유지', '획득 경험치', '몬스터 획득 골드', '강화 100% 성공', '몬스터대전 테스트 설정', '변신 외형 숨기기 (듀란)'];
 const MULT = ['기본', '2배', '5배', '10배', '50배', '100배'];
@@ -290,7 +292,7 @@ fileInput.onchange = async () => {
 // ---------------------------------------------------------------- ⚙ menu
 function openMenu() {
   show((b) => {
-    header(b, '설정');
+    header(b, '설정', PAGE_V ? '업데이트 ' + PAGE_V : '');
     const s = S();
     row(b, '저장 내보내기 (.dwsave)', '›', exportSave);
     row(b, '저장 가져오기 (.dwsave, 기존 다크월드)', '›', () => fileInput.click());
