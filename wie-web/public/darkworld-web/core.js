@@ -8,6 +8,7 @@ window.createDW = async function createDW() {
   const PREFIX = '/data/data/com.gamedoli.DarkWorldGoogle/';
   const utf = new TextDecoder(), euc = new TextDecoder('euc-kr'), enc = new TextEncoder();
   let ex = null, memory = null, pack = null, index = null, title1 = null;
+  const overrides = new Map(); // asset name -> bytes used instead of the pack's
   let sounds = [], editbox = 0, error = '', scratch = 0, rgba = 0, icons = 0, mid = 0;
   const logs = [];
   const u8 = () => new Uint8Array(memory.buffer);
@@ -36,7 +37,9 @@ window.createDW = async function createDW() {
     },
     // Native.getResource: the APK's assets/<name>.png, kept in dw.pack under game/
     host_asset: (p, n, dst, cap) => {
-      const e = entry('game/' + str(p, n) + '.png');
+      const name = str(p, n), o = overrides.get(name);
+      if (o) { if (dst) u8().set(o.subarray(0, Math.min(cap, o.length)), dst); return o.length; }
+      const e = entry('game/' + name + '.png');
       if (!e) return -1;
       if (dst) u8().set(pack.subarray(e[0], e[0] + Math.min(cap, e[1])), dst);
       return e[1];
@@ -69,16 +72,32 @@ window.createDW = async function createDW() {
     _dw_free: (p) => ex.host_free(p),
     _dw_error: () => reply(error || (ex.is_halted() ? logs.slice(-3).join(' / ') : '')),
     // dw.pack: u32 count, then per file u32 name length, name, u32 offset, u32 size
-    // The 1.57 build moves the game's touch buttons inward to make room for its DASH button and larger button
-    // skins: SetTouchInfo (which writes each button's place) starts with a jump to code of its own that shifts
-    // them. With opts.classicUi the function's first two instructions are put back (push {r4, lr}; sub sp, #8),
-    // so the buttons are where the game itself puts them; the build still draws them, at those places. Only
-    // when the build's words are there.
-    classicUi() {
-      const d = guest(), at = 0x233dc;
-      if (d.getUint16(at, true) !== 0xf15d || d.getUint16(at + 2, true) !== 0xba10) return false;
-      d.setUint16(at, 0xb510, true);
-      d.setUint16(at + 2, 0xb082, true);
+    // The 1.57 build moves the game's touch buttons inward (SetTouchInfo) and draws them into a layer of its own
+    // for the page's button skins (DrawTouchUI, DrawTouchUICommon). classicUi(true) puts those calls back to the
+    // game's own, so it draws its buttons in the picture at their original places (with the original pictures,
+    // classicArt); classicUi(false) puts back only the places. Each spot is checked against the build's words
+    // first; if one differs, nothing is changed.
+    classicUi(all) {
+      const bl = (from, to) => { const o = to - (from + 4), s = o < 0 ? 1 : 0, i1 = (o >> 23) & 1, i2 = (o >> 22) & 1;
+        return [0xf000 | (s << 10) | ((o >> 12) & 0x3ff), 0xd000 | ((1 - (i1 ^ s)) << 13) | ((1 - (i2 ^ s)) << 11) | ((o >> 1) & 0x7ff)]; };
+      const b16 = (from, to) => [0xe000 | (((to - (from + 4)) >> 1) & 0x7ff)];
+      const bne = (from, to) => [0xd100 | (((to - (from + 4)) >> 1) & 0xff)];
+      const DRAW_SPRITE = 0x267bc, IS_GAME_SCRIPT = 0x677bc, COMMON = 0x22da0, LOOP = 0x22ef0;
+      const places = [ // [file offset, the build's halfwords, the game's own]
+        [0x233dc, [0xf15d, 0xba10], [0xb510, 0xb082]], // SetTouchInfo: push {r4, lr}; sub sp, #8
+      ];
+      if (all) places.push(
+        [0x22eb8, [0xf1db, 0xb8a2, 0xbf00], [0xb570, ...bl(0x22eba, IS_GAME_SCRIPT)]], // DrawTouchUI: push {r4-r6, lr}
+        [0x22f0c, [0xf1db, 0xf8f8], bl(0x22f0c, COMMON)],
+        [0x22f16, [0xd101], bne(0x22f16, LOOP)],
+        [0x22f1c, [0xf1db, 0xb970], [...b16(0x22f1c, LOOP), 0x46c0]],
+        [0x22dfc, [0xf1db, 0xfc00], bl(0x22dfc, DRAW_SPRITE)], // DrawTouchUICommon's sprites
+        [0x22e2a, [0xf1dc, 0xffe9], bl(0x22e2a, DRAW_SPRITE)],
+        [0x22e84, [0xf1db, 0xfc3c], bl(0x22e84, DRAW_SPRITE)],
+      );
+      const d = guest();
+      for (const [at, was] of places) for (let i = 0; i < was.length; i++) if (d.getUint16(at + i * 2, true) !== was[i]) return false;
+      for (const [at, , now] of places) now.forEach((h, i) => d.setUint16(at + i * 2, h, true));
       return true;
     },
     setPack(bytes, opts = {}) {
@@ -100,7 +119,10 @@ window.createDW = async function createDW() {
       const ok = ex.load_library(sp, so[1]) === 0;
       ex.host_free(sp);
       if (!ok) { error = '게임 라이브러리를 불러오지 못했어요'; return 0; }
-      M.classic = !!opts.classicUi && M.classicUi();
+      const art = opts.classicUi && opts.classicArt;
+      M.classic = !!opts.classicUi && M.classicUi(!!art);
+      M.classicArt = M.classic && !!art;
+      if (M.classicArt) { overrides.set('res/UI_Touch.GMF', art.gmf); overrides.set('res/touch.GBM', art.gbm); }
       M.fastPaths = ex.install_fast_paths();
       const t1 = entry('runner/title1.rgb565');
       if (t1) title1 = new Uint16Array(pack.slice(t1[0], t1[0] + t1[1]).buffer);

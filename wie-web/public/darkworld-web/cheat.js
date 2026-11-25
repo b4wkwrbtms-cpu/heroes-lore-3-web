@@ -306,6 +306,15 @@ function openMenu() {
       r.querySelector('.v').textContent = CTRL[s.controls];
       I().toast('다시 시작하면 적용돼요');
     });
+    row(b, '원래 버튼 그림 (원본 APK)', I().M && I().M.classicArt ? '사용 중' : '고르기 ›', async (r) => {
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.apk,.zip,application/zip';
+      inp.onchange = async () => {
+        if (!inp.files[0]) return;
+        try { await window.ClassicArt.fromFile(inp.files[0]); r.querySelector('.v').textContent = '다시 시작하면 적용'; I().toast('원래 버튼 그림을 넣었어요. 다시 시작하면 적용돼요'); }
+        catch (e) { alert(e.message); }
+      };
+      inp.click();
+    });
     const SIDES = ['꽉 채우기', '카메라 쪽 비우기', '양쪽 비우기'];
     row(b, '가로 화면 옆 여백', SIDES[s.sides || 0], (r) => { s.sides = ((s.sides || 0) + 1) % 3; I().saveSettings(); r.querySelector('.v').textContent = SIDES[s.sides]; });
     row(b, '움직임 부드럽게 (중간 프레임)', s.smooth === 0 ? '끔' : '켬', (r) => flip('smooth', r, '켬', '끔'));

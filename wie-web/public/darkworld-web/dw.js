@@ -150,7 +150,8 @@ async function boot() {
     msg.textContent = '게임 자료를 여는 중…';
     const [mod, pack] = await Promise.all([createDW(), DWDATA.bytes('dw.pack')]);
     M = mod;
-    if (!M.setPack(pack, { classicUi: settings.controls !== 'pad' })) throw new Error(M.UTF8ToString(M._dw_error()));
+    const classicArt = settings.controls !== 'pad' ? await ClassicArt.load() : null;
+    if (!M.setPack(pack, { classicUi: settings.controls !== 'pad', classicArt })) throw new Error(M.UTF8ToString(M._dw_error()));
     M.onEvent = coreEvent;
     for (const [name, bytes] of Object.entries(saves)) addSave(name, bytes);
     const imgs = await Promise.all(SKIN_FILES.map((f) => loadImage('data/runner/skin424/' + f + '.png')));
@@ -398,8 +399,15 @@ function renderInner(t) {
   const flag = M._dw_read32(0x10296000), pressed = (flag >>> 8) & 0xff;
   // the game reports menu mode (2) while a message box is open over play (input-only signal): keep drawing the play layout
   let mode = flag & 0xff; if (mode === 2 && (M._dw_read32(0x100c5750) & 0xff)) mode = 1;
+  // the game's own buttons, drawn by the game itself: in play, only DASH is added here
+  if (M.classicArt) {
+    areas = readAreas();
+    const has = (k) => areas.some((a) => a.on && a.key === k);
+    mode = has(43) && has(13) ? 1 : 0;
+    if (mode && settings.buttons !== 0) drawClassicDash(ctx, view, dashSpot(), Input.dashHeld && Input.dashHeld());
+  }
   Input.skinMode = mode;
-  if (mode && settings.buttons !== 0) {
+  if (mode && settings.buttons !== 0 && !M.classicArt) {
     areas = readAreas();
     const s = view.w / 480, sy = view.h / 320;
     const padui = padUiOn(mode);

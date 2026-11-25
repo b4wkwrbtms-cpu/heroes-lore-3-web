@@ -52,6 +52,7 @@ let touchState = null;       // { kind: 'down'|'move'|'up', x, y } pending for t
 const pending = [];
 function controlAt(gx, gy) {
   if (I().Input_skinMode !== 1 || !inGame() || I().settings.buttons === 0) return null;
+  if (M().classicArt) { const [dx, dy, dr] = I().dashSpot(); return (gx - dx) ** 2 + (gy - dy) ** 2 <= (dr + 5) ** 2 ? { role: 'btn', b: B.DASH } : null; }
   if (I().padUiOn(1)) {  // pad UI: only the moved skill bar is touchable
     for (let i = 8; i <= 13; i++) { const a = areas[i]; if (a && a.on && (gx - I().padNx(i)) ** 2 + (gy - I().PAD_NY) ** 2 <= 20 * 20) return { role: 'btn', b: B.Q1 + (i - 8) }; }
     const sw = areas[14]; if (sw && sw.on && (gx - I().padNx(14)) ** 2 + (gy - I().PAD_NY) ** 2 <= 20 * 20) return { role: 'btn', b: B.SWAP };
@@ -253,7 +254,7 @@ function reconcile() {
   // a game message box (YES/NO 등, MB 열림 플래그 0x100c5750) open over the play HUD: keys go to the box as plain
   // presses, so no attack repeat / direction re-press / dash (the re-press flipped the YES/NO cursor back)
   const mbOpen = (rd32(0x100c5750) & 0xff) !== 0;
-  const playing = inGame() && (rd32(0x10296000) & 0xff) === 1 && !mbOpen;
+  const playing = inGame() && (M().classicArt || (rd32(0x10296000) & 0xff) === 1) && !mbOpen;
   let resume = false;
   let dir = -1;
   for (let i = order.length - 1; i >= 0; i--) if (order[i] <= B.RIGHT && held(order[i])) { dir = order[i]; break; }
@@ -342,6 +343,7 @@ function reconcile() {
 
 window.DWInput = {
   touchActive() { return !!gameTouch; },
+  dashHeld() { return held(B.DASH); },
   ACTIONS, KB_DEFAULT, PAD_DEFAULT, PAD_NAMES, RESERVED, keymap: KS, capturing: false, padCapture: null, padRaw,
   set skinMode(v) { I().Input_skinMode = v; },
   get skinMode() { return I().Input_skinMode; },

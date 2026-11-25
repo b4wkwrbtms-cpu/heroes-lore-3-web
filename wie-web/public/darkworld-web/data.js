@@ -19,6 +19,29 @@ window.DWDATA = (() => {
     const s = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
     return new Uint8Array(await new Response(s).arrayBuffer());
   }
+  // the entries of a zip (an APK is one): name, method, size, offset of the local header
+  function zipEntries(buf) {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    let e = buf.length - 22;
+    while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+    if (e < 0) return null;
+    const out = [];
+    let p = dv.getUint32(e + 16, true);
+    for (let i = dv.getUint16(e + 10, true); i > 0; i--) {
+      if (dv.getUint32(p, true) !== 0x02014b50) return null;
+      const nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true);
+      out.push({ name: new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nl)), method: dv.getUint16(p + 10, true), size: dv.getUint32(p + 20, true), off: dv.getUint32(p + 42, true) });
+      p += 46 + nl + xl + cl;
+    }
+    return out;
+  }
+  async function zipData(buf, x) {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength), h = x.off;
+    const start = h + 30 + dv.getUint16(h + 26, true) + dv.getUint16(h + 28, true), raw = buf.subarray(start, start + x.size);
+    if (x.method === 0) return raw;
+    if (x.method === 8) return inflate(raw);
+    throw new Error('지원하지 않는 압축 방식이에요');
+  }
   // a zip: end of central directory, then the central directory, then each entry's local header
   async function importZip(file, onp) {
     const buf = new Uint8Array(await file.arrayBuffer()), dv = new DataView(buf.buffer);
@@ -95,5 +118,5 @@ window.DWDATA = (() => {
       if (r.ok) { const ff = new FontFace('NeoDunggeunmo', await r.arrayBuffer()); await ff.load(); document.fonts.add(ff); }
     } catch (e) {}
   }
-  return { ready, get, bytes, url };
+  return { ready, get, bytes, url, zipEntries, zipData, put: async (p, data) => (await open()).put(key(p), new Response(new Blob([data]))) };
 })();

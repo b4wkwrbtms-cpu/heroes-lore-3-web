@@ -236,3 +236,70 @@ window.OldSaves = {
     return this.pick(f);
   },
 };
+
+// ------------------------------------------------------------------ the game's own touch buttons
+// The 1.57 build changed the game's button pictures (res/UI_Touch.GMF, res/touch.GBM) for its skins. The
+// original two files come from the player's own Dark World APK: from /darkworld/'s storage when it is
+// reachable (read only), or from an APK (or a zip holding it) the player picks. They are kept with the game data.
+window.ClassicArt = {
+  NAMES: ['res/UI_Touch.GMF.png', 'res/touch.GBM.png'],
+  async load() {
+    try {
+      const got = await Promise.all(this.NAMES.map((n) => DWDATA.get('classic/' + n)));
+      if (got.every((r) => r.ok)) return { gmf: new Uint8Array(await got[0].arrayBuffer()), gbm: new Uint8Array(await got[1].arrayBuffer()) };
+      const old = await this.fromOldPage();
+      if (old) { await this.keep(old); return old; }
+    } catch (e) {}
+    return null;
+  },
+  async keep(a) { await DWDATA.put('classic/' + this.NAMES[0], a.gmf); await DWDATA.put('classic/' + this.NAMES[1], a.gbm); },
+  // /darkworld/: IndexedDB 'darkworld-player', store 'game': 'index' (asset name -> [offset, size]) and 'assets'
+  async fromOldPage() {
+    if (indexedDB.databases && !(await indexedDB.databases()).some((d) => d.name === 'darkworld-player')) return null;
+    const db = await new Promise((res) => {
+      const r = indexedDB.open('darkworld-player');
+      r.onupgradeneeded = () => r.transaction.abort();
+      r.onsuccess = () => res(r.result); r.onerror = () => res(null); r.onblocked = () => res(null);
+    });
+    if (!db) return null;
+    try {
+      if (!db.objectStoreNames.contains('game')) return null;
+      const get = (k) => new Promise((res) => { const q = db.transaction('game', 'readonly').objectStore('game').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); });
+      const index = await get('index'), assets = await get('assets');
+      if (!index || !assets) return null;
+      const part = (n) => { const e = index[n]; return e ? new Uint8Array(assets, e[0], e[1]).slice() : null; };
+      const gmf = part(this.NAMES[0]), gbm = part(this.NAMES[1]);
+      return gmf && gbm ? { gmf, gbm } : null;
+    } finally { db.close(); }
+  },
+  async fromFile(file) {
+    let buf = new Uint8Array(await file.arrayBuffer()), ents = DWDATA.zipEntries(buf);
+    if (!ents) throw new Error('APK(zip) 파일이 아니에요');
+    if (!ents.some((e) => e.name === 'assets/' + this.NAMES[0])) { // a zip holding the APK
+      const apk = ents.find((e) => /\.apk$/i.test(e.name));
+      if (!apk) throw new Error('다크월드 APK가 아니에요');
+      buf = await DWDATA.zipData(buf, apk);
+      ents = DWDATA.zipEntries(buf);
+    }
+    const pick = async (n) => { const e = ents && ents.find((x) => x.name === 'assets/' + n); return e ? DWDATA.zipData(buf, e) : null; };
+    const gmf = await pick(this.NAMES[0]), gbm = await pick(this.NAMES[1]);
+    if (!gmf || !gbm) throw new Error('다크월드 APK가 아니에요');
+    const a = { gmf, gbm };
+    await this.keep(a);
+    return a;
+  },
+};
+
+// the DASH button over the game's own buttons, in their see-through style
+window.drawClassicDash = function drawClassicDash(c, view, spot, pressed) {
+  const s = view.w / 480, sy = view.h / 320, [x, y, r] = spot;
+  const cx = view.x + x * s, cy = view.y + y * sy, rx = r * s, ry = r * sy;
+  c.save();
+  c.beginPath(); c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  c.fillStyle = pressed ? 'rgba(255,255,255,0.32)' : 'rgba(0,0,0,0.28)'; c.fill();
+  c.lineWidth = Math.max(1, 1.5 * s); c.strokeStyle = 'rgba(235,235,235,0.6)'; c.stroke();
+  c.font = `bold ${Math.max(8, 8.5 * s)}px Arial, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillStyle = 'rgba(0,0,0,0.7)'; c.fillText('DASH', cx + 1, cy + 1);
+  c.fillStyle = 'rgba(255,255,255,0.92)'; c.fillText('DASH', cx, cy);
+  c.restore();
+};
