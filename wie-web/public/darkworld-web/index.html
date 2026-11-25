@@ -23,21 +23,21 @@
   #boot { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 18px; background: #000; z-index: 10; text-align: center; padding: 16px; }
   #boot h1 { margin: 0; font-size: 34px; color: #ffdf72; letter-spacing: 2px; font-weight: normal; }
-  #boot .bar { width: min(320px, 80vw); height: 10px; border: 2px solid #d4b66b; background: #101d16; }
+  #boot .bar { width: min(320px, calc(var(--fw, 100vw) * .8)); height: 10px; border: 2px solid #d4b66b; background: #101d16; }
   #boot .bar i { display: block; height: 100%; width: 0; background: #ffdf72; }
   #boot button { font: inherit; font-size: 22px; color: #ffe064; background: #304333; border: 2px solid #d4b66b;
     padding: 10px 28px; display: none; }
-  #boot .msg { font-size: 15px; color: #9ca994; min-height: 1.2em; max-width: 90vw; white-space: pre-wrap; }
+  #boot .msg { font-size: 15px; color: #9ca994; min-height: 1.2em; max-width: calc(var(--fw, 100vw) * .9); white-space: pre-wrap; }
   #gear { position: absolute; right: calc(var(--mr, 0px) + 6px); top: 6px; z-index: 5;
     width: 34px; height: 34px; border-radius: 17px; border: 1px solid rgba(212,182,107,.5); background: rgba(16,29,22,.55);
     color: #d4b66b; font-size: 18px; line-height: 32px; text-align: center; padding: 0; }
   #dwchatbtn { position: absolute !important; right: calc(var(--mr, 0px) + 46px) !important; top: 6px !important; }
   #boot .pick { display: block; }
-  #boot .hint, #boot .credit { font-size: 13px; color: #768366; max-width: 90vw; font-family: system-ui, sans-serif; }
+  #boot .hint, #boot .credit { font-size: 13px; color: #768366; max-width: calc(var(--fw, 100vw) * .9); font-family: system-ui, sans-serif; }
   #boot .credit a { color: inherit; }
   .panel { position: absolute; inset: 0; z-index: 8; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
   .panel.open { display: flex; }
-  .box { width: min(560px, 94vw); max-height: 92vh; overflow: auto; background: #1f2c23; border: 3px solid #d4b66b;
+  .box { width: min(560px, calc(var(--fw, 100vw) * .94)); max-height: calc(var(--fh, 100vh) * .92); overflow: auto; background: #1f2c23; border: 3px solid #d4b66b;
     outline: 2px solid #768366; outline-offset: -9px; padding: 18px; box-sizing: border-box; }
   .box h2 { margin: 0 0 12px; font-weight: normal; color: #ffdf72; font-size: 22px; background: #304333; border: 2px solid #d4b66b; padding: 8px 12px; display: flex; justify-content: space-between; }
   .box h2 small { font-size: 15px; color: #9ca994; align-self: center; }
@@ -68,11 +68,11 @@
 <div class="panel" id="menu"><div class="box" id="menubox"></div></div>
 </div>
 <input type="file" id="file" style="display:none">
-<script src="data.js?v=10"></script>
-<script src="core.js?v=10"></script>
-<script src="plus.js?v=10"></script>
-<script src="input.js?v=10"></script>
-<script src="cheat.js?v=10"></script>
-<script src="dw.js?v=10"></script>
+<script src="data.js?v=11"></script>
+<script src="core.js?v=11"></script>
+<script src="plus.js?v=11"></script>
+<script src="input.js?v=11"></script>
+<script src="cheat.js?v=11"></script>
+<script src="dw.js?v=11"></script>
 </body>
 </html>

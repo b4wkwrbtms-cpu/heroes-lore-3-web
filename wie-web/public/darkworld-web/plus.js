@@ -36,6 +36,9 @@ window.Layout = {
     const frame = document.getElementById('frame');
     frame.style.width = fw + 'px';
     frame.style.height = fh + 'px';
+    // the frame's size for the boot screen and the menus inside it: vw and vh are the screen's, not the turned frame's
+    frame.style.setProperty('--fw', fw + 'px');
+    frame.style.setProperty('--fh', fh + 'px');
     frame.style.transform = rotated ? `translate(${vw}px, 0) rotate(90deg)` : 'none';
     frame.style.setProperty('--ml', l + 'px');
     frame.style.setProperty('--mr', r + 'px');

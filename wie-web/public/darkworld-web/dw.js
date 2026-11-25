@@ -15,7 +15,7 @@ const DW_CHAT_URL = "https://darkworld-chat.hyt0118.workers.dev/";
     if (ov) return;
     try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
     ov = document.createElement('div');
-    ov.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:max(8px,env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom));box-sizing:border-box;touch-action:auto';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:99998;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:max(8px,var(--ft,0px)) max(8px,var(--fr,0px)) max(8px,var(--fb,0px)) max(8px,var(--fl,0px));box-sizing:border-box;touch-action:auto';
     const box = document.createElement('div');
     box.style.cssText = 'width:min(560px,100%);height:min(640px,100%);display:flex;flex-direction:column;background:#101620;border:2px solid #d4b66b;box-sizing:border-box';
     const bar = document.createElement('div');
@@ -59,7 +59,7 @@ const DW_NOTES = "[v1.57]\n\u25a0 \ucd94\uac00\n- \uc0c8 \uc9c0\uc5ed '\ub18d\uc
     const ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
     const box = document.createElement('div');
-    box.style.cssText = 'max-width:min(460px,92vw);max-height:84vh;display:flex;flex-direction:column;background:#17261d;border:2px solid #d4b66b;color:#e8e2c8;font:15px/1.5 sans-serif;padding:14px;box-sizing:border-box';
+    box.style.cssText = 'max-width:min(460px,calc(var(--fw,100vw)*.92));max-height:calc(var(--fh,100vh)*.84);display:flex;flex-direction:column;background:#17261d;border:2px solid #d4b66b;color:#e8e2c8;font:15px/1.5 sans-serif;padding:14px;box-sizing:border-box';
     const h = document.createElement('div');
     h.style.cssText = 'color:#ffdf72;font-size:17px;margin-bottom:8px';
     h.textContent = '업데이트 내역 (' + DW_VERSION + ')';
