@@ -28,6 +28,7 @@ void fs_state(u8 *buf, int save);
 extern u16 *paint_out; // hle.c: glTexSubImage2D copies here instead of the screen while set
 
 static u32 app_draw, gl_draw, map_slot, obj_var;
+static u32 num_update, num_draw, num_init, alpha_begin, alpha_end;
 
 // the routines this reads its addresses from, as they were when this was written
 typedef struct { const char *name; u32 size, sig; u32 *addr; } MotionSym;
@@ -37,6 +38,11 @@ static const MotionSym msyms[] = {
     {"_ZN6CMvApp4DrawEv", 124, 0x31d7ce87u, &app_draw},
     {"_ZN9CMvObject27UpdateScreenPosFromWorldPosEv", 52, 0xf100487du, &upd_screen_pos},
     {"_ZN6CMvMap4DrawEb", 688, 0x15e42cd4u, &map_draw},
+    {"_ZN15CMvNumberObject6UpdateEv", 98, 0x77942f22u, &num_update},
+    {"_ZN15CMvNumberObject4DrawEv", 324, 0x5ca56624u, &num_draw},
+    {"_ZN15CMvNumberObject10InitializeEv", 24, 0x8337c2fau, &num_init},
+    {"_ZN11CMvGraphics10BeginAlphaEi", 22, 0x1e5666aeu, &alpha_begin},
+    {"_ZN11CMvGraphics8EndAlphaEv", 34, 0x2b888343u, &alpha_end},
 };
 
 static int m_resolve(void) {
@@ -67,6 +73,9 @@ typedef struct {
   Pos o[MAX_OBJ];
 } Frame;
 static Frame frames[2];
+static int num_frac = 1024; // how far a drawing is between the last two frames (1024: the frame itself)
+static int numbers_on;
+static int numbers_showing(u32 mgr);
 static int cur; // frames[cur] is the latest, frames[cur ^ 1] the one before
 
 static u32 m_map(void) { u32 v = rd32(map_slot); return v ? rd32(v) : 0; }
@@ -162,6 +171,7 @@ EXPORT(motion_state) int motion_state(void) {
   if (!drawn_ok || !cow_ok(0) || !b->map || !b->mgr || a->map != b->map || a->mgr != b->mgr) return -1;
   if (!near16(a->cx, b->cx) || !near16(a->cy, b->cy)) return -1;
   if (a->cx != b->cx || a->cy != b->cy) return 1;
+  if (numbers_on && numbers_showing(b->mgr)) return 1; // damage numbers float at the screen's own pace
   for (u32 i = 0; i < b->n; i++) {
     const Pos *q = m_find(a, i, b->o[i].obj);
     if (q && (q->x != b->o[i].x || q->y != b->o[i].y) && near16(q->x, b->o[i].x) && near16(q->y, b->o[i].y)) return 1;
@@ -198,11 +208,13 @@ EXPORT(motion_paint) int motion_paint(int f, u16 *out) {
   cow_rewind(0);
   host_state(pre_state, 0);
   m_apply(f);
+  num_frac = f;
   paint_out = out;
   u32 app = app_obj;
   call_guest_unhooked(app_draw | 1, 1, &app);
   if (!cpu_halt) call_guest(gl_draw, 0, 0);
   paint_out = 0;
+  num_frac = 1024;
   cow_end();
   int ok = cow_ok(1) && !cpu_halt;
   cow_restore(1);
@@ -237,9 +249,62 @@ static void m_set_damage(void) {
   R[0] = r;
   helper_ret();
 }
+// Damage numbers (CMvNumberObject, 30 of them from the object manager's +0xc8): the game shows one 9 frames
+// (0.4 s), rising in 8-pixel jumps every other frame, and drops it at the end at full strength, so it seems
+// to blink away. Instead it stays 15 frames (0.65 s), rises 30 pixels easing out over the first 8 and fades
+// out over the last 6, worked out for the moment drawn (in-between frames too), so it moves at the
+// screen's pace. The game's own pop on the first frames (bigger, then settling) stays as it is.
+#define NUM_LIFE 15
+#define NUM_RISE 30
+#define NUM_RISE_T 8
+#define NUM_FADE 6
+static int numbers_showing(u32 mgr) {
+  if (!mgr || !num_update) return 0;
+  for (u32 o = mgr + 0xc8; o < mgr + 0x320; o += 0x14)
+    if ((s8)rd8(o + 0xc) >= 0) return 1;
+  return 0;
+}
+// how far it has risen at t/1024 frames
+static s32 num_rise(s32 t) {
+  const s64 span = NUM_RISE_T * 1024;
+  s64 left = span - (t < 0 ? 0 : t > span ? span : t);
+  return (s32)(NUM_RISE - NUM_RISE * left * left / (span * span));
+}
+// CMvNumberObject::Update: one frame older; y is where it has risen to at this frame
+static void m_num_update(void) {
+  u32 o = R[0];
+  if ((s8)rd8(o + 0xc) >= 0) {
+    u32 e = rd8(o + 0xe);
+    if (!e) wr8(o + 0xf, NUM_LIFE);
+    s32 dy = num_rise((s32)(e + 1) * 1024) - num_rise((s32)e * 1024);
+    wr16(o + 6, (u16)((s32)(s16)rd16(o + 6) - dy));
+    wr8(o + 0xe, (u8)++e);
+    if (e >= rd8(o + 0xf)) call_guest_unhooked(num_init | 1, 1, &o);
+  }
+  helper_ret();
+}
+// CMvNumberObject::Draw: placed and faded for the moment drawn, then as it was
+static void m_num_draw(void) {
+  u32 o = R[0];
+  s32 e = (s8)rd8(o + 0xc) >= 0 ? (s32)rd8(o + 0xe) : -1;
+  if (e < 1) { call_guest_unhooked(num_draw | 1, 1, &o); helper_ret(); return; }
+  s32 t = (e - 1) * 1024 + num_frac, life = (s32)rd8(o + 0xf) * 1024;
+  u16 y = rd16(o + 6);
+  wr16(o + 6, (u16)((s32)(s16)y + num_rise(e * 1024) - num_rise(t)));
+  s32 left = life - t, fade = left < NUM_FADE * 1024 && e > 3; // (frames 1-3 are the game's own pop)
+  if (fade) { u32 a[2] = {0, (u32)(left < 0 ? 0 : left * 240 / (NUM_FADE * 1024))}; call_guest_unhooked(alpha_begin | 1, 2, a); }
+  call_guest_unhooked(num_draw | 1, 1, &o);
+  if (fade) { u32 a[1] = {0}; call_guest_unhooked(alpha_end | 1, 1, a); }
+  wr16(o + 6, y);
+  helper_ret();
+}
+
 EXPORT(fx_enable) int fx_enable(int on) {
   if (!set_damage && !m_resolve()) return -1;
-  return aot_hook(set_damage, on ? m_set_damage : 0);
+  numbers_on = on;
+  int r = aot_hook(num_update, on ? m_num_update : 0);
+  if (!r) r = aot_hook(num_draw, on ? m_num_draw : 0);
+  return r ? r : aot_hook(set_damage, on ? m_set_damage : 0);
 }
 
 EXPORT(motion_pages) u32 motion_pages(int log) { return cow_pages(log); }
@@ -252,6 +317,7 @@ EXPORT(live_cam) u32 live_cam(void) {
   return map ? ((u32)rd16(map + 0x166) << 16) | rd16(map + 0x168) : 0;
 }
 
-// Which in-between frames this core makes, for the page: 2 = from memory as it was when the frame was drawn
-// (the log covers the whole frame; before, a dash could stop them and effects showed the next frame early).
-EXPORT(motion_rev) int motion_rev(void) { return 2; }
+// What this core's pictures do, for the page: 2 = in-between frames from memory as it was when the frame was
+// drawn (the log covers the whole frame; before, a dash could stop them and effects showed the next frame
+// early), 3 = also damage numbers that float up and fade out smoothly.
+EXPORT(motion_rev) int motion_rev(void) { return 3; }

@@ -317,6 +317,15 @@ int main(int argc, char **argv) {
       u32 h = mgr ? rd32(mgr + 8) : 0;
       if (h) printf("hero %d: %d %d\n", i, (s16)rd16(h + 0x36), (s16)rd16(h + 0x38));
     }
+    if (getenv("HITTEST") && i == atoi(getenv("HITTEST"))) {
+      // test: the hero takes a blow (CMvCharacter::SetDamage), to watch the number it shows
+      u32 find_symbol(const char *), call_guest(u32, int, const u32 *);
+      u32 as = find_symbol("_ZN12CMvStateMenu11OnApplyStatEb") & ~1u;
+      u32 g = rd32(rd32(as + 0xc + rd32(as + 0x184))), player = g ? rd32(g + 8) : 0;
+      u32 a[3] = {player, 127, 0};
+      if (player) call_guest(find_symbol("_ZN12CMvCharacter9SetDamageEib"), 3, a);
+      printf("hit at %d\n", i);
+    }
     if (getenv("SKILLS") && i == atoi(getenv("SKILLS"))) { int skills_max(void); printf("skills_max at %d: %d\n", i, skills_max()); }
     if (getenv("BOOST") && i == atoi(getenv("BOOST"))) {
       // test: put BOOSTN * 60000 points into STR (stat 0) the way the status window does
