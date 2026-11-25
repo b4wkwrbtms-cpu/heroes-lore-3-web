@@ -371,7 +371,15 @@ function renderInner(t) {
   const classicPlay = () => { const ar = readAreas(); return ar.some((a) => a.on && a.key === 43) && ar.some((a) => a.on && a.key === 13); };
   const frameRGBA = (k) => {
     const p = fpMid || M._dw_frame_rgba(k);
-    if (M.classicArt && settings.buttons !== 0 && classicPlay()) ClassicDash.into(M.HEAPU8, p, dashSpot(), Input.dashHeld && Input.dashHeld());
+    if (M.classicArt && settings.buttons !== 0 && classicPlay()) {
+      ClassicDash.into(M.HEAPU8, p, dashSpot(), Input.dashHeld && Input.dashHeld());
+      // held attack and skill buttons glow as under the game's own touch
+      const ar = readAreas();
+      for (const i of [0, 8, 9, 10, 11, 12, 13]) {
+        const a = ar[i];
+        if (a && a.on && Input.feedback(i)) ClassicDash.into(M.HEAPU8, p, [a.cx, a.cy], 0, ClassicDash.glow((a.x2 - a.x1) * 0.29));
+      }
+    }
     return p;
   };
   const fresh = renderedSerial !== frameSerial || f !== shownF;

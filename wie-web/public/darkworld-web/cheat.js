@@ -300,8 +300,8 @@ function openMenu() {
     row(b, '패드 UI (스킬 하단 배치)', s.padui ? '켬' : '끔', (r) => { togglePadUi(); r.querySelector('.v').textContent = s.padui ? '켬' : '끔'; });
     // this site's additions
     const flip = (k, r, a, b2) => { s[k] = s[k] === 0 ? 1 : 0; I().saveSettings(); r.querySelector('.v').textContent = s[k] === 0 ? b2 : a; };
-    const CTRL = { classic: '원래 게임 터치', pad: '1.57 패드' };
-    row(b, '조작 방식 (다시 시작하면 적용)', CTRL[s.controls === 'pad' ? 'pad' : 'classic'], (r) => {
+    const CTRL = { classic: '원래 버튼 모양', pad: '1.57 패드 모양' };
+    row(b, '버튼 모양 (다시 시작하면 적용)', CTRL[s.controls === 'pad' ? 'pad' : 'classic'], (r) => {
       s.controls = s.controls === 'pad' ? 'classic' : 'pad'; I().saveSettings();
       r.querySelector('.v').textContent = CTRL[s.controls];
       I().toast('다시 시작하면 적용돼요');

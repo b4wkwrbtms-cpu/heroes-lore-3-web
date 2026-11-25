@@ -341,9 +341,26 @@ window.ClassicDash = {
     }
     return (this.sprites[pressed] = { n, h, px: out });
   },
+  // the game's yellow-green glow around a button's ring (radius ring) while it is held: the game draws it for its own
+  // touch only, and the buttons here are pressed through the 1.57 pad's input
+  glows: {},
+  glow(ring) {
+    const key = Math.round(ring * 4);
+    if (this.glows[key]) return this.glows[key];
+    const h = Math.ceil(ring + 3.5), n = 2 * h + 1, px = new Float32Array(n * n * 4), S = 4;
+    for (let py = 0; py < n; py++) for (let qx = 0; qx < n; qx++) {
+      let g = 0;
+      for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+        const d = Math.hypot(qx - h + (i + 0.5) / S - 0.5, py - h + (j + 0.5) / S - 0.5);
+        g += Math.max(0, 1 - Math.abs(d - ring - 0.5) / 2.5);
+      }
+      if (g) px.set([200, 235, 40, 0.55 * g / (S * S)], (py * n + qx) * 4);
+    }
+    return (this.glows[key] = { n, h, px });
+  },
   // over the RGBA frame (480 wide) at heap offset p, centred on the game point (x, y)
-  into(heap, p, [x, y], pressed) {
-    const { n, h, px } = this.sprite(pressed ? 1 : 0);
+  into(heap, p, [x, y], pressed, sprite) {
+    const { n, h, px } = sprite || this.sprite(pressed ? 1 : 0);
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
       const s = (j * n + i) * 4, a = px[s + 3], gx = x - h + i, gy = y - h + j;
       if (!a || gx < 0 || gx >= 480 || gy < 0 || gy >= 320) continue;

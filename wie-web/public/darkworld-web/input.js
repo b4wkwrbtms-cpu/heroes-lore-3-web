@@ -52,7 +52,6 @@ let touchState = null;       // { kind: 'down'|'move'|'up', x, y } pending for t
 const pending = [];
 function controlAt(gx, gy) {
   if (I().Input_skinMode !== 1 || !inGame() || I().settings.buttons === 0) return null;
-  if (M().classicArt) { const [dx, dy, dr] = I().dashSpot(); return (gx - dx) ** 2 + (gy - dy) ** 2 <= (dr + 5) ** 2 ? { role: 'btn', b: B.DASH } : null; }
   if (I().padUiOn(1)) {  // pad UI: only the moved skill bar is touchable
     for (let i = 8; i <= 13; i++) { const a = areas[i]; if (a && a.on && (gx - I().padNx(i)) ** 2 + (gy - I().PAD_NY) ** 2 <= 20 * 20) return { role: 'btn', b: B.Q1 + (i - 8) }; }
     const sw = areas[14]; if (sw && sw.on && (gx - I().padNx(14)) ** 2 + (gy - I().PAD_NY) ** 2 <= 20 * 20) return { role: 'btn', b: B.SWAP };
@@ -60,8 +59,6 @@ function controlAt(gx, gy) {
   }
   const [dx, dy, dr] = I().dashSpot();
   if ((gx - dx) ** 2 + (gy - dy) ** 2 <= (dr + 5) ** 2) return { role: 'btn', b: B.DASH };
-  // 조작: 원래 게임 터치 — the d-pad, attack and skills are the game's own touch (one finger, as on the phone)
-  if (M().classic) return null;
   const d = areas[15];
   if (d && d.on && Math.abs(gx - d.cx) <= 58 && Math.abs(gy - d.cy) <= 58) return { role: 'dir' };
   const a0 = areas[0];
@@ -94,7 +91,6 @@ canvas.addEventListener('pointerdown', (e) => {
   if (c) { pointers.set(e.pointerId, { role: c.role, b: c.b, x, y }); refreshTouchButtons(); return; }
   if (touchPtr !== null) return;           // the game follows one finger for plain touches
   touchPtr = e.pointerId; pointers.set(e.pointerId, { role: 'touch', x, y });
-  if (onAttack(x, y)) combo.tap = true;
   pending.push([0x17, x, y]);
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -202,18 +198,15 @@ function pollPad() {
 const sent = new Array(B.COUNT).fill(0), holdTicks = new Array(B.COUNT).fill(0);
 let idleTicks = 0, okOwner = -1;
 let dirSent = -1, attackRepeat = false, dashPrev = false, dashKey = 0, dashRelease = 0, dashIdle = 0;
-let gameTouch = null, feedbackArea = -1, touchHold = { i: -1, ticks: 0, sent: false };
+let gameTouch = null, feedbackArea = -1;
 // Attack combo buffer (this site's addition), so every tap on attack becomes a swing however fast it comes.
 // The game takes a press only while the hero stands: one during a swing (hero state 3), or in the first frame
 // after it, is dropped, and the combo (left slash, right slash, thrust) goes back to the start unless the next
 // press comes within a few frames. Such a press is kept (two at most, for 12 game frames) and given to the
 // game again each frame the hero stands, until the game starts the swing. Any other button or direction is
 // a new action and drops the kept presses. Off in the settings (공격 연타 보정).
-// With the game's own touch (조작: 원래 게임 터치) the same is done for taps on the attack button: a kept tap is
-// given again as a tap on the button (or, with the finger still on it, as a lift and a new press).
 const hero8 = (off) => rd32(0x100d4dc4 + off) & 0xff;
-const combo = { kept: [], ticks: 0, sent: false, prevHeld: new Array(B.COUNT).fill(false), dir: -1, tap: false };
-const onAttack = (x, y) => { const a = areas[0]; return !!(a && a.on && x >= a.x1 && x < a.x2 && y >= a.y1 && y < a.y2); };
+const combo = { kept: [], ticks: 0, sent: false, prevHeld: new Array(B.COUNT).fill(false), dir: -1 };
 const heroLosesPress = () => { const st = hero8(0x104); return st === 3 || (st === 0 && hero8(0x108) === 3 && hero8(0x110) < 1); };
 function keep() { if (combo.kept.length < 2) combo.kept.push(combo.ticks); else combo.kept[1] = combo.ticks; }
 function comboBefore(playing) {
@@ -228,21 +221,10 @@ function comboBefore(playing) {
     }
     combo.prevHeld[b] = h;
   }
-  const tap = combo.tap;
-  combo.tap = false;
-  if (M().classic) {
-    if (tap && on && heroLosesPress()) keep();
-    else if (pending.some((p) => p[0] === 0x17 && !onAttack(p[1], p[2]))) combo.kept = []; // something else was touched
-  }
   if (!on) { combo.kept = []; return; }
   combo.kept = combo.kept.filter((t) => combo.ticks - t <= 12);
   if (!combo.kept.length || held(B.OK) || hero8(0x104) !== 0) return;
-  if (M().classic) {
-    const a = areas[0];
-    if (gameTouch && !onAttack(gameTouch.x, gameTouch.y)) return;
-    if (gameTouch) { M()._dw_event(0, 0x18, gameTouch.x, gameTouch.y); M()._dw_event(0, 0x17, gameTouch.x, gameTouch.y); }
-    else { pending.push([0x17, a.cx, a.cy], [0x18, a.cx, a.cy]); }
-  } else { kdown(-5); kup(-5); }
+  kdown(-5); kup(-5);
   combo.sent = true;
 }
 function comboAfter() { if (combo.sent && hero8(0x104) === 3) combo.kept.shift(); }
@@ -335,20 +317,6 @@ function reconcile() {
     if (t === 0x17) { if (gameTouch) M()._dw_event(0, 0x18, gameTouch.x, gameTouch.y); gameTouch = { x: gx, y: gy }; M()._dw_event(0, 0x17, gx, gy); }
     else if (t === 0x19) { if (gameTouch && (gameTouch.x !== gx || gameTouch.y !== gy)) { gameTouch = { x: gx, y: gy }; M()._dw_event(0, 0x19, gx, gy); } }
     else if (gameTouch) { M()._dw_event(0, 0x18, gameTouch.x, gameTouch.y); gameTouch = null; }
-  }
-  // 원래 게임 터치: the game attacks once per touch on its attack button and casts a skill once per touch on a skill
-  // button. A finger kept there repeats them as holding the key does: attack repeat (-105) every other frame, and the
-  // skill again whenever it is ready
-  const holdOn = M().classic && playing && gameTouch ? areas.findIndex((a, i) => (i === 0 || (i >= 8 && i <= 13)) && a.on &&
-    gameTouch.x >= a.x1 && gameTouch.x < a.x2 && gameTouch.y >= a.y1 && gameTouch.y < a.y2) : -1;
-  if (holdOn !== touchHold.i) { if (touchHold.sent) kup(-5); touchHold = { i: holdOn, ticks: 0, sent: false }; }
-  else if (holdOn >= 0) {
-    touchHold.ticks++;
-    if (holdOn === 0) { if (!touchHold.sent) kdown(-105); else kup(-5); touchHold.sent = !touchHold.sent; }
-    else if (touchHold.ticks >= 4 && touchHold.ticks % 3 === 1) {
-      const code = PAD_CODE[B.Q1 + holdOn - 8];
-      if (skillReady(code)) { const k = phoneKey(code); kdown(k); kup(k); }
-    }
   }
   feedbackArea = -1;
   if (gameTouch) for (let i = 0; i < 25; i++) { const a = areas[i]; if (a.on && a.key >= 0 && gameTouch.x >= a.x1 && gameTouch.x < a.x2 && gameTouch.y >= a.y1 && gameTouch.y < a.y2) { feedbackArea = i; break; } }
