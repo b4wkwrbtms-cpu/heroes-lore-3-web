@@ -545,15 +545,20 @@ const Boss = {
 
 // ------------------------------------------------------------------ audio (Web Audio; iOS needs a tap to unlock)
 const Audio = {
-  ctx: null, buffers: {}, loading: {}, lastPlay: {}, active: 0, bgm: null, bgmName: '', bgmGain: null, sfxGain: null, volB: 1, volS: 1,
+  ctx: null, buffers: {}, loading: {}, lastPlay: {}, active: 0, bgm: null, bgmName: '', bgmTicket: 0, bgmGain: null, sfxGain: null, volB: 1, volS: 1,
   unlock() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    // iPhone: play like a game (heard with the silent switch on); the game's own '소리' setting mutes it
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
     this.ctx = new AC(); this.bgmGain = this.ctx.createGain(); this.sfxGain = this.ctx.createGain();
     this.bgmGain.connect(this.ctx.destination); this.sfxGain.connect(this.ctx.destination);
     const b = this.ctx.createBuffer(1, 1, 22050), s = this.ctx.createBufferSource(); s.buffer = b; s.connect(this.ctx.destination); s.start(0);
     this.applyMute();
   },
+  // after another app, a call, a notification or the lock screen, iOS leaves the sound stopped ('suspended' or
+  // 'interrupted') and lets it start again only from a touch or a key: every one tries
+  wake() { if (this.ctx && this.ctx.state !== 'running' && !document.hidden) this.ctx.resume().catch(() => {}); },
   applyMute() { if (!this.ctx) return; this.bgmGain.gain.value = settings.mute ? 0 : this.volB; this.sfxGain.gain.value = settings.mute ? 0 : this.volS; },
   async load(name) {
     if (this.buffers[name]) return this.buffers[name];
@@ -568,17 +573,22 @@ const Audio = {
           this.buffers[name] = ab; return ab;
         } catch (e) {}
       }
+      delete this.loading[name]; // not there or not decoded: try again the next time it is asked for
       return null;
     })();
     return this.loading[name];
   },
   async play(name, loop) {
     if (!this.ctx || !name || name.startsWith('__')) return;
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    this.wake();
     if (loop) {
       if (this.bgmName === name) return;
       this.stopBgm(); this.bgmName = name;
-      const b = await this.load(name); if (!b || this.bgmName !== name) return;
+      // a stop and the same music again while it loads would start it twice, one copy past stopping
+      const ticket = this.bgmTicket;
+      const b = await this.load(name);
+      if (ticket !== this.bgmTicket) return;
+      if (!b) { this.bgmName = ''; return; }
       const s = this.ctx.createBufferSource(); s.buffer = b; s.loop = true; s.connect(this.bgmGain); s.start(0); this.bgm = s;
     } else {
       // 같은 효과음이 한 틱에 수십 번 겹치는 경우(보스전 스킬 연타) 소리가 뭉개지고 버벅임 → 같은 소리 80ms 간격, 동시에 최대 10개
@@ -590,13 +600,14 @@ const Audio = {
       this.active++; s.onended = () => { this.active--; }; s.start(0);
     }
   },
-  stopBgm() { if (this.bgm) { try { this.bgm.stop(); } catch (e) {} } this.bgm = null; this.bgmName = ''; },
+  stopBgm() { this.bgmTicket++; if (this.bgm) { try { this.bgm.stop(); } catch (e) {} } this.bgm = null; this.bgmName = ''; },
   volume(b, s) { this.volB = b / 5; this.volS = s / 5; this.applyMute(); },
 };
 document.addEventListener('visibilitychange', () => {
   if (!Audio.ctx) return;
-  if (document.hidden) Audio.ctx.suspend(); else { Audio.ctx.resume(); nextTick = performance.now(); }
+  if (document.hidden) Audio.ctx.suspend(); else { Audio.wake(); nextTick = performance.now(); }
 });
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'keydown']) document.addEventListener(ev, () => Audio.wake(), true);
 
 // ------------------------------------------------------------------ runner protocol (cheats, beast, volume, upscale, arena)
 const Runner = {

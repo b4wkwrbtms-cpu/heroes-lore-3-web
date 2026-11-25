@@ -88,7 +88,6 @@ function refreshTouchButtons() {
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (I().Boss.active) { I().Boss.skip(); return; }
-  if (I().Audio && I().Audio.ctx && I().Audio.ctx.state === 'suspended') I().Audio.ctx.resume();
   try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
   const [x, y] = toGame(e);
   const c = controlAt(x, y);
