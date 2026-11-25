@@ -1,7 +1,7 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "12";
+const VERSION = "13";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -1188,19 +1188,21 @@ class Fx {
     // a blow well above the recent average counts as big too (strong skills)
     const big = !!crit || (this.avg > 0 && dmg > this.avg * 1.6);
     this.avg = this.avg ? this.avg * 0.85 + dmg * 0.15 : dmg;
-    const n = Math.round((big ? 18 : 10) * k);
+    // a critical is a little bigger than a plain blow, not a burst over the screen (with high stats almost
+    // every blow is one)
+    const n = Math.round((big ? 12 : 9) * k);
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2, sp = (big ? 2.6 : 1.9) * (0.5 + Math.random()) * k * u;
-      this.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.7 * u, life: 1, decay: 0.04 + Math.random() * 0.035, w: (big && i % 3 === 0 ? 2 : 1.4) * u, hue: big ? 45 : 25 + Math.random() * 20 });
+      const a = Math.random() * Math.PI * 2, sp = (big ? 1.9 : 1.6) * (0.7 + Math.random() * 0.6) * k * u;
+      this.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.7 * u, life: 1, decay: 0.04 + Math.random() * 0.035, w: (big && i % 3 === 0 ? 1.7 : 1.4) * u, hue: big ? 45 : 25 + Math.random() * 20 });
     }
-    this.glows.push({ x, y, r: (big ? 18 : 12) * k * u, life: 1, decay: big ? 0.07 : 0.11, hue: big ? 48 : 32 });
+    this.glows.push({ x, y, r: (big ? 12 : 10) * k * u, life: 1, decay: big ? 0.09 : 0.11, hue: big ? 48 : 32 });
     const ang = -0.6 + Math.random() * 1.2 + (Math.random() < 0.5 ? 0 : Math.PI / 2);
-    this.slashes.push({ x, y, ang, len: (big ? 26 : 19) * k * u, life: 1, decay: big ? 0.09 : 0.14, hue: big ? 45 : 28 });
+    this.slashes.push({ x, y, ang, len: (big ? 19 : 16) * k * u, life: 1, decay: big ? 0.11 : 0.14, hue: big ? 45 : 28 });
     if (big) {
-      this.bursts.push({ x, y, len: 12 * k * u, life: 1, decay: 0.08 });
-      this.rings.push({ x, y, r: 4 * u, vr: 2.4 * k * u, life: 1, decay: 0.065, hue: 45 });
-      this.kick(2.2 * k * u);
-    } else this.kick(0.8 * k * u);
+      this.bursts.push({ x, y, len: 7 * k * u, life: 1, decay: 0.1 });
+      this.rings.push({ x, y, r: 3 * u, vr: 1.2 * k * u, life: 1, decay: 0.09, hue: 45 });
+      this.kick(1.1 * k * u);
+    } else this.kick(0.7 * k * u);
     return big;
   }
   hurtHero() {
