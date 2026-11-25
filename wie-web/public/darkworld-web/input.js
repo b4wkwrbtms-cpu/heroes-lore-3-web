@@ -206,7 +206,7 @@ function reconcile() {
   // a game message box (YES/NO 등, MB 열림 플래그 0x100c5750) open over the play HUD: keys go to the box as plain
   // presses, so no attack repeat / direction re-press / dash (the re-press flipped the YES/NO cursor back)
   const mbOpen = (rd32(0x100c5750) & 0xff) !== 0;
-  const playing = inGame() && (M().classicArt || (rd32(0x10296000) & 0xff) === 1) && !mbOpen;
+  const playing = inGame() && (M().classicArt ? I().fieldPlay() : (rd32(0x10296000) & 0xff) === 1) && !mbOpen;
   let resume = false;
   let dir = -1;
   for (let i = order.length - 1; i >= 0; i--) if (order[i] <= B.RIGHT && held(order[i])) { dir = order[i]; break; }
@@ -277,8 +277,13 @@ function reconcile() {
   }
   dashPrev = dash;
   // plain touches (menus, MAP/SAVE/CLR, anything that is not an on-screen control)
+  let downNow = false;
   while (pending.length) {
+    // a lift right after a press waits for the next frame, so the game sees the press for a frame: iOS gives a tap at
+    // the screen edge (MAP, CLR, SAVE) as a press and a lift at once
+    if (downNow && pending[0][0] === 0x18) break;
     const [t, x, y] = pending.shift();
+    if (t === 0x17) downNow = true;
     const gx = Math.max(0, Math.min(479, Math.round(x))), gy = Math.max(0, Math.min(319, Math.round(y)));
     if (t === 0x17) { if (gameTouch) M()._dw_event(0, 0x18, gameTouch.x, gameTouch.y); gameTouch = { x: gx, y: gy }; M()._dw_event(0, 0x17, gx, gy); }
     else if (t === 0x19) { if (gameTouch && (gameTouch.x !== gx || gameTouch.y !== gy)) { gameTouch = { x: gx, y: gy }; M()._dw_event(0, 0x19, gx, gy); } }

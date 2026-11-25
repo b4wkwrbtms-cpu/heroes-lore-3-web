@@ -333,6 +333,19 @@ function resize() {
   Object.assign(view, { x: Math.floor((W - vw) / 2), y: Math.floor((H - vh) / 2), w: vw, h: vh, dpr });
 }
 window.addEventListener('resize', resize); resize();
+// in play on the field, with the game's own buttons on screen: the 1.57 build marks this as mode 1 in its button layer
+// (0x10296000), which it writes only when it draws its own buttons, not the original ones. So the original drawing's
+// own test (DrawTouchUI) is used: field state 4000 (4001 is its menus, 4004 the map), no script such as a talk running
+// unless the field mode byte (+0x110) is 9, no teleport, the screen not held, and that mode byte set
+function fieldPlay() {
+  const r = (a) => M._dw_read32(a) >>> 0, r8 = (a) => r(a) & 0xff;
+  const g = r(r(0x100bcb2c)), mode = r8(g + 0x110);
+  if (r(g + 0x6c) !== 4000) return false;
+  if (r8(r(0x100bcca0)) === 1 && mode !== 9) return false; // IsGameScript
+  if (r8(r(0x100bce90) + 1)) return false;                 // IsTeleporting
+  if (r8(r(0x100bc9dc))) return false;
+  return mode !== 0;
+}
 function readAreas() {
   const out = [];
   const p = M._dw_host(areaTable, 25 * 0x2c);
@@ -368,10 +381,9 @@ function renderInner(t) {
     else f = 256;
   }
   // the game's own buttons are drawn by the game itself: in play, only DASH is added, into the frame (plus.js ClassicDash)
-  const classicPlay = () => { const ar = readAreas(); return ar.some((a) => a.on && a.key === 43) && ar.some((a) => a.on && a.key === 13); };
   const frameRGBA = (k) => {
     const p = fpMid || M._dw_frame_rgba(k);
-    if (M.classicArt && settings.buttons !== 0 && classicPlay()) {
+    if (M.classicArt && settings.buttons !== 0 && fieldPlay()) {
       ClassicDash.into(M.HEAPU8, p, dashSpot(), Input.dashHeld && Input.dashHeld());
       // held attack and skill buttons glow as under the game's own touch
       const ar = readAreas();
@@ -413,11 +425,7 @@ function renderInner(t) {
   const flag = M._dw_read32(0x10296000), pressed = (flag >>> 8) & 0xff;
   // the game reports menu mode (2) while a message box is open over play (input-only signal): keep drawing the play layout
   let mode = flag & 0xff; if (mode === 2 && (M._dw_read32(0x100c5750) & 0xff)) mode = 1;
-  if (M.classicArt) {
-    areas = readAreas();
-    const has = (k) => areas.some((a) => a.on && a.key === k);
-    mode = has(43) && has(13) ? 1 : 0;
-  }
+  if (M.classicArt) mode = fieldPlay() ? 1 : 0;
   Input.skinMode = mode;
   if (mode && settings.buttons !== 0 && !M.classicArt) {
     areas = readAreas();
@@ -674,7 +682,7 @@ function overlayText() {
 window.DWInternals = {
   padNx, PAD_NY, padUiOn, dashSpot,
   toast(t) { toastText = t; toastUntil = performance.now() + 1500; },
-  togglePerf() { showPerf = !showPerf; perfText = '측정 중…'; Perf.reset(); }, get M() { return M; }, view, settings, saveSettings, Runner, Audio, Boss, get areas() { return areas; }, readAreas, $, nextTickReset() { nextTick = performance.now(); }, setPaused(v) { paused = v; } };
+  togglePerf() { showPerf = !showPerf; perfText = '측정 중…'; Perf.reset(); }, get M() { return M; }, view, settings, saveSettings, Runner, Audio, Boss, get areas() { return areas; }, readAreas, fieldPlay, $, nextTickReset() { nextTick = performance.now(); }, setPaused(v) { paused = v; } };
 const Input = window.DWInput = window.DWInput || { skinMode: 0, beforeTick() {}, afterTick() {}, feedback() { return false; }, releaseAll() {} };
 const Cheat = window.DWCheat = window.DWCheat || { open() {}, granted() {} };
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

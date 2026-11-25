@@ -5,8 +5,7 @@
 // ------------------------------------------------------------------ layout
 // iOS web apps cannot lock the screen to landscape. In portrait the whole frame is turned 90° clockwise,
 // so the phone can be held sideways with the rotation lock on: the frame's left edge is then the side of
-// the camera and the status bar, its right edge the side of the home bar, and the game stays clear of both.
-// In landscape it fills the screen.
+// the camera, as it usually is held in landscape. Either way the game gets the same place on the screen.
 const inset0 = (ins, rotated) => (rotated ? Math.max(ins.t, ins.b) : Math.max(ins.l, ins.r));
 window.Layout = {
   rotated: false, cw: 0, ch: 0, ox: 0,
@@ -17,22 +16,17 @@ window.Layout = {
   apply() {
     const vw = window.innerWidth, vh = window.innerHeight, ins = this.insets();
     const rotated = vh > vw, fw = rotated ? vh : vw, fh = rotated ? vw : vh;
-    // turned in portrait the game keeps clear of the status bar, which takes touches, and of the home bar; held in
-    // landscape it uses the whole screen, as the build itself does, unless the setting 화면 여백 leaves the
-    // camera side (1) or both sides (2) free
+    // the game uses the whole screen, as the build itself does, unless the setting 화면 여백 leaves the camera side (1)
+    // or both sides (2) free, or gives it the Zenonia 4 page's proportions (3): held upright or sideways the same
     const s = window.DWInternals && window.DWInternals.settings, sides = (s && s.sides) || 0;
-    let l, r, t = 0, b = 0;
-    if (rotated) { l = ins.t; r = ins.b; }
-    else {
-      const inset = Math.max(ins.l, ins.r);
-      // the camera side, from the screen angle: 90 = turned counter-clockwise, camera on the left
-      const a = typeof screen.orientation?.angle === 'number' ? screen.orientation.angle : window.orientation;
-      const camLeft = !(a === 270 || a === -90);
-      l = sides === 2 || (sides === 1 && camLeft) ? inset : 0;
-      r = sides === 2 || (sides === 1 && !camLeft) ? inset : 0;
-    }
-    // 제노니아처럼 (3): the Zenonia 4 page's proportions, a black border all round (both sides as 양쪽 비우기, top and bottom 7.5%)
-    if (sides === 3) { l = Math.max(l, inset0(ins, rotated)); r = Math.max(r, inset0(ins, rotated)); t = b = Math.round(fh * 0.075); }
+    const inset = inset0(ins, rotated);
+    // the camera side, from the screen angle: 90 = turned counter-clockwise, camera on the left
+    const a = typeof screen.orientation?.angle === 'number' ? screen.orientation.angle : window.orientation;
+    const camLeft = rotated || !(a === 270 || a === -90);
+    const l = sides >= 2 || (sides === 1 && camLeft) ? inset : 0;
+    const r = sides >= 2 || (sides === 1 && !camLeft) ? inset : 0;
+    // 제노니아처럼: a black border all round, both sides as 양쪽 비우기 and 7.5% at the top and the bottom
+    const t = sides === 3 ? Math.round(fh * 0.075) : 0, b = t;
     const key = [vw, vh, l, r, t, b].join();
     if (key === this.key) return;
     this.key = key;
