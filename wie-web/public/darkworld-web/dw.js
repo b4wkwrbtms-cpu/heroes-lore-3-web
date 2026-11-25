@@ -367,7 +367,13 @@ function renderInner(t) {
     if (fpMid) Smooth.cost = Smooth.cost * 0.9 + (performance.now() - t0) * 0.1;
     else f = 256;
   }
-  const frameRGBA = (k) => fpMid || M._dw_frame_rgba(k);
+  // the game's own buttons are drawn by the game itself: in play, only DASH is added, into the frame (plus.js ClassicDash)
+  const classicPlay = () => { const ar = readAreas(); return ar.some((a) => a.on && a.key === 43) && ar.some((a) => a.on && a.key === 13); };
+  const frameRGBA = (k) => {
+    const p = fpMid || M._dw_frame_rgba(k);
+    if (M.classicArt && settings.buttons !== 0 && classicPlay()) ClassicDash.into(M.HEAPU8, p, dashSpot(), Input.dashHeld && Input.dashHeld());
+    return p;
+  };
   const fresh = renderedSerial !== frameSerial || f !== shownF;
   const [shx, shy] = Fx.shakeOffset(view);
   ctx.save(); ctx.translate(shx, shy);
@@ -399,12 +405,10 @@ function renderInner(t) {
   const flag = M._dw_read32(0x10296000), pressed = (flag >>> 8) & 0xff;
   // the game reports menu mode (2) while a message box is open over play (input-only signal): keep drawing the play layout
   let mode = flag & 0xff; if (mode === 2 && (M._dw_read32(0x100c5750) & 0xff)) mode = 1;
-  // the game's own buttons, drawn by the game itself: in play, only DASH is added here
   if (M.classicArt) {
     areas = readAreas();
     const has = (k) => areas.some((a) => a.on && a.key === k);
     mode = has(43) && has(13) ? 1 : 0;
-    if (mode && settings.buttons !== 0) drawClassicDash(ctx, view, dashSpot(), Input.dashHeld && Input.dashHeld());
   }
   Input.skinMode = mode;
   if (mode && settings.buttons !== 0 && !M.classicArt) {

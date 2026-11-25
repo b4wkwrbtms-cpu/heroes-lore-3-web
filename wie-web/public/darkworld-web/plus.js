@@ -296,16 +296,59 @@ window.ClassicArt = {
   },
 };
 
-// the DASH button over the game's own buttons, in their see-through style
-window.drawClassicDash = function drawClassicDash(c, view, spot, pressed) {
-  const s = view.w / 480, sy = view.h / 320, [x, y, r] = spot;
-  const cx = view.x + x * s, cy = view.y + y * sy, rx = r * s, ry = r * sy;
-  c.save();
-  c.beginPath(); c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  c.fillStyle = pressed ? 'rgba(255,255,255,0.32)' : 'rgba(0,0,0,0.28)'; c.fill();
-  c.lineWidth = Math.max(1, 1.5 * s); c.strokeStyle = 'rgba(235,235,235,0.6)'; c.stroke();
-  c.font = `bold ${Math.max(8, 8.5 * s)}px Arial, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.fillStyle = 'rgba(0,0,0,0.7)'; c.fillText('DASH', cx + 1, cy + 1);
-  c.fillStyle = 'rgba(255,255,255,0.92)'; c.fillText('DASH', cx, cy);
-  c.restore();
+// the DASH button in the style of the game's own attack button, laid into the game frame so it is scaled with it
+// (xBR or plain pixels) and keeps its pixel edges. Built pixel by pixel with the attack button's recipe, measured
+// from the game's frames: a see-through black disc, a white ring two pixels in from its edge, a glossy upper half
+// and, in place of the attack button's inner ring, « drawn like that ring (light over the gloss, grey below it).
+// Held, it glows yellow-green around the ring as the game's buttons do under a finger.
+window.ClassicDash = {
+  sprites: [],
+  sprite(pressed) {
+    if (this.sprites[pressed]) return this.sprites[pressed];
+    const R = 18.6, RING = 16.3, GLOSS = 14.2, h = Math.ceil(RING + 3.5), n = 2 * h + 1;
+    // «: two chevrons pointing left, their strokes two pixels wide
+    const segs = [];
+    for (const ax of [-5.5, 0.5]) for (const sy of [-1, 1]) segs.push([ax, 0, ax + 5, sy * 5.5]);
+    const seg = (x, y, [x0, y0, x1, y1]) => {
+      const dx = x1 - x0, dy = y1 - y0, t = Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy)));
+      return Math.hypot(x - x0 - t * dx, y - y0 - t * dy);
+    };
+    const out = new Float32Array(n * n * 4), S = 4;
+    for (let py = 0; py < n; py++) for (let px = 0; px < n; px++) {
+      let disc = 0, gloss = 0, mark = 0, ring = 0, glow = 0;
+      for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+        const x = px - h + (i + 0.5) / S - 0.5, y = py - h + (j + 0.5) / S - 0.5, d = Math.hypot(x, y);
+        if (d < R) disc++;
+        if (d < GLOSS && y < 1.5) gloss++;
+        if (segs.some((g) => seg(x, y, g) < 1)) mark++;
+        if (Math.abs(d - RING) < 0.6) ring++;
+        glow += Math.max(0, 1 - Math.abs(d - RING - 0.5) / 2.5);
+      }
+      const k = S * S;
+      if (!disc && !(pressed && glow)) continue;
+      let a = 0.424 * disc / k, c = [0, 0, 0]; // black, see-through
+      const over = (p, col) => {
+        const na = a + p * (1 - a);
+        c = c.map((v, ch) => (na ? (v * a * (1 - p) + col[ch] * p) / na : 0));
+        a = na;
+      };
+      const white = [255, 255, 255];
+      over(0.352 * gloss / k, white);
+      over(0.352 * mark / k, white);
+      over(0.9 * ring / k, white);
+      if (pressed) over(0.55 * glow / k, [200, 235, 40]);
+      out.set([c[0], c[1], c[2], a], (py * n + px) * 4);
+    }
+    return (this.sprites[pressed] = { n, h, px: out });
+  },
+  // over the RGBA frame (480 wide) at heap offset p, centred on the game point (x, y)
+  into(heap, p, [x, y], pressed) {
+    const { n, h, px } = this.sprite(pressed ? 1 : 0);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const s = (j * n + i) * 4, a = px[s + 3], gx = x - h + i, gy = y - h + j;
+      if (!a || gx < 0 || gx >= 480 || gy < 0 || gy >= 320) continue;
+      const o = p + (gy * 480 + gx) * 4;
+      for (let ch = 0; ch < 3; ch++) heap[o + ch] = heap[o + ch] * (1 - a) + px[s + ch] * a;
+    }
+  },
 };

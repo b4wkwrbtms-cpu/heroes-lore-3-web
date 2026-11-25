@@ -202,7 +202,7 @@ function pollPad() {
 const sent = new Array(B.COUNT).fill(0), holdTicks = new Array(B.COUNT).fill(0);
 let idleTicks = 0, okOwner = -1;
 let dirSent = -1, attackRepeat = false, dashPrev = false, dashKey = 0, dashRelease = 0, dashIdle = 0;
-let gameTouch = null, feedbackArea = -1;
+let gameTouch = null, feedbackArea = -1, touchHold = { i: -1, ticks: 0, sent: false };
 // Attack combo buffer (this site's addition), so every tap on attack becomes a swing however fast it comes.
 // The game takes a press only while the hero stands: one during a swing (hero state 3), or in the first frame
 // after it, is dropped, and the combo (left slash, right slash, thrust) goes back to the start unless the next
@@ -335,6 +335,20 @@ function reconcile() {
     if (t === 0x17) { if (gameTouch) M()._dw_event(0, 0x18, gameTouch.x, gameTouch.y); gameTouch = { x: gx, y: gy }; M()._dw_event(0, 0x17, gx, gy); }
     else if (t === 0x19) { if (gameTouch && (gameTouch.x !== gx || gameTouch.y !== gy)) { gameTouch = { x: gx, y: gy }; M()._dw_event(0, 0x19, gx, gy); } }
     else if (gameTouch) { M()._dw_event(0, 0x18, gameTouch.x, gameTouch.y); gameTouch = null; }
+  }
+  // 원래 게임 터치: the game attacks once per touch on its attack button and casts a skill once per touch on a skill
+  // button. A finger kept there repeats them as holding the key does: attack repeat (-105) every other frame, and the
+  // skill again whenever it is ready
+  const holdOn = M().classic && playing && gameTouch ? areas.findIndex((a, i) => (i === 0 || (i >= 8 && i <= 13)) && a.on &&
+    gameTouch.x >= a.x1 && gameTouch.x < a.x2 && gameTouch.y >= a.y1 && gameTouch.y < a.y2) : -1;
+  if (holdOn !== touchHold.i) { if (touchHold.sent) kup(-5); touchHold = { i: holdOn, ticks: 0, sent: false }; }
+  else if (holdOn >= 0) {
+    touchHold.ticks++;
+    if (holdOn === 0) { if (!touchHold.sent) kdown(-105); else kup(-5); touchHold.sent = !touchHold.sent; }
+    else if (touchHold.ticks >= 4 && touchHold.ticks % 3 === 1) {
+      const code = PAD_CODE[B.Q1 + holdOn - 8];
+      if (skillReady(code)) { const k = phoneKey(code); kdown(k); kup(k); }
+    }
   }
   feedbackArea = -1;
   if (gameTouch) for (let i = 0; i < 25; i++) { const a = areas[i]; if (a.on && a.key >= 0 && gameTouch.x >= a.x1 && gameTouch.x < a.x2 && gameTouch.y >= a.y1 && gameTouch.y < a.y2) { feedbackArea = i; break; } }
