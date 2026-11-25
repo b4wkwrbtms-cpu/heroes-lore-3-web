@@ -461,9 +461,8 @@ function renderInner(t) {
 const PAD_NY = 297;
 const padNx = (c) => (c === 14 ? 418 : 170 + (c - 8) * 40);
 function padUiOn(mode) { return !!settings.padui && mode === 1 && !(M && M.classic); }
-// the DASH button (game pixels: centre x, y, radius): with the game's own button places (조작: 원래 게임 터치) it
-// sits in the free space above the skill arc, else where the build puts it
-const dashSpot = () => (M && M.classic ? [400, 204, 18] : [449, 251, 18]);
+// the DASH button (game pixels: centre x, y, radius), where the build puts it
+const dashSpot = () => [449, 251, 18];
 let moved = new Uint32Array(480 * 320);
 function moveIcons(px) {  // px: 480x320 RGBA as u32, alpha 0 = transparent
   moved.set(px);
