@@ -191,6 +191,7 @@ int main(int argc, char **argv) {
   if (getenv("MONEY")) { int money_unlimited(int); printf("money_unlimited %d\n", money_unlimited(1)); }
   if (getenv("DPAD")) { int dpad_enable(void); printf("dpad_enable %d\n", dpad_enable()); }
   if (getenv("REFINE")) { int refine_easy(int); printf("refine_easy %d\n", refine_easy(1)); }
+  if (getenv("CRITZOOM")) { int crit_zoom(int); printf("crit_zoom %d\n", crit_zoom(atoi(getenv("CRITZOOM")))); }
   if (getenv("DAMAGE")) { int damage_uncapped(int); printf("damage_uncapped %d\n", damage_uncapped(1)); }
   if (getenv("STATS")) { int stat_rules(int, int); printf("stat_rules %d\n", stat_rules(1, atoi(getenv("STATS")))); }
   // input script

@@ -28,7 +28,7 @@ void fs_state(u8 *buf, int save);
 extern u16 *paint_out; // hle.c: glTexSubImage2D copies here instead of the screen while set
 
 static u32 app_draw, gl_draw, map_slot, obj_var;
-static u32 num_update, num_draw, num_init, alpha_begin, alpha_end, num_width;
+static u32 num_update, num_draw, num_init, alpha_begin, alpha_end, num_width, do_attack, set_enlarge;
 extern u32 scr_w, scr_h;
 
 // the routines this reads its addresses from, as they were when this was written
@@ -45,6 +45,8 @@ static const MotionSym msyms[] = {
     {"_ZN11CMvGraphics10BeginAlphaEi", 22, 0x1e5666aeu, &alpha_begin},
     {"_ZN11CMvGraphics8EndAlphaEv", 34, 0x2b888343u, &alpha_end},
     {"_ZN11CMvGraphics20CalcDrawNumbersWidthEiiib", 56, 0x78ab1e04u, &num_width},
+    {"_ZN9CMvPlayer8DoAttackEv", 788, 0x687e8db7u, &do_attack},
+    {"_ZN15CMvScreenEffMgr10SetEnlargeE8TGXPOINT18EnumEnlargePatterntt", 80, 0x7e5b3d6cu, &set_enlarge},
 };
 
 static int m_resolve(void) {
@@ -327,6 +329,21 @@ static void m_num_draw(void) {
   wr16(o + 4, x);
   wr16(o + 6, y);
   helper_ret();
+}
+
+// A critical blow of the hero zooms the whole screen in on the target, to 150% over five frames
+// (CMvPlayer::DoAttack calls CMvScreenEffMgr::SetEnlarge with the strong pattern); with high stats almost
+// every blow is one, so the screen keeps jumping and the damage numbers are pushed off the top. With
+// crit_zoom(0) that one call does nothing; skills' own zooms and the story's stay.
+static void m_set_enlarge(void) {
+  if ((R[14] & ~1u) == do_attack + 0x228) { helper_ret(); return; } // the critical blow's call (bl at +0x224)
+  u32 a[5] = {R[0], R[1], R[2], R[3], rd32(R[13])};
+  call_guest_unhooked(set_enlarge | 1, 5, a);
+  helper_ret();
+}
+EXPORT(crit_zoom) int crit_zoom(int on) {
+  if (!set_damage && !m_resolve()) return -1;
+  return aot_hook(set_enlarge, on ? 0 : m_set_enlarge);
 }
 
 EXPORT(fx_enable) int fx_enable(int on) {
