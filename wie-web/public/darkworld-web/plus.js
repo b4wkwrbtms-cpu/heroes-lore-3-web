@@ -7,6 +7,7 @@
 // so the phone can be held sideways with the rotation lock on: the frame's left edge is then the side of
 // the camera and the status bar, its right edge the side of the home bar, and the game stays clear of both.
 // In landscape it fills the screen.
+const inset0 = (ins, rotated) => (rotated ? Math.max(ins.t, ins.b) : Math.max(ins.l, ins.r));
 window.Layout = {
   rotated: false, cw: 0, ch: 0, ox: 0,
   insets() {
@@ -17,12 +18,12 @@ window.Layout = {
     const vw = window.innerWidth, vh = window.innerHeight, ins = this.insets();
     const rotated = vh > vw, fw = rotated ? vh : vw, fh = rotated ? vw : vh;
     // turned in portrait the game keeps clear of the status bar, which takes touches, and of the home bar; held in
-    // landscape it uses the whole screen, as the build itself does, unless the setting 가로 화면 옆 여백 leaves the
+    // landscape it uses the whole screen, as the build itself does, unless the setting 화면 여백 leaves the
     // camera side (1) or both sides (2) free
-    let l, r;
+    const s = window.DWInternals && window.DWInternals.settings, sides = (s && s.sides) || 0;
+    let l, r, t = 0, b = 0;
     if (rotated) { l = ins.t; r = ins.b; }
     else {
-      const s = window.DWInternals && window.DWInternals.settings, sides = (s && s.sides) || 0;
       const inset = Math.max(ins.l, ins.r);
       // the camera side, from the screen angle: 90 = turned counter-clockwise, camera on the left
       const a = typeof screen.orientation?.angle === 'number' ? screen.orientation.angle : window.orientation;
@@ -30,7 +31,9 @@ window.Layout = {
       l = sides === 2 || (sides === 1 && camLeft) ? inset : 0;
       r = sides === 2 || (sides === 1 && !camLeft) ? inset : 0;
     }
-    const key = [vw, vh, l, r].join();
+    // 제노니아처럼 (3): the Zenonia 4 page's proportions, a black border all round (both sides as 양쪽 비우기, top and bottom 7.5%)
+    if (sides === 3) { l = Math.max(l, inset0(ins, rotated)); r = Math.max(r, inset0(ins, rotated)); t = b = Math.round(fh * 0.075); }
+    const key = [vw, vh, l, r, t, b].join();
     if (key === this.key) return;
     this.key = key;
     const frame = document.getElementById('frame');
@@ -42,12 +45,14 @@ window.Layout = {
     frame.style.transform = rotated ? `translate(${vw}px, 0) rotate(90deg)` : 'none';
     frame.style.setProperty('--ml', l + 'px');
     frame.style.setProperty('--mr', r + 'px');
+    frame.style.setProperty('--mt', t + 'px');
+    frame.style.setProperty('--mb', b + 'px');
     // safe-area insets as seen from inside the frame (top, right, bottom, left), for the boot screen and menus
     const fi = rotated ? [ins.r, ins.b, ins.l, ins.t] : [ins.t, ins.r, ins.b, ins.l];
     ['--ft', '--fr', '--fb', '--fl'].forEach((k, i) => frame.style.setProperty(k, fi[i] + 'px'));
     const hint = document.getElementById('turn-hint');
     if (hint) hint.hidden = !rotated;
-    Object.assign(this, { rotated, cw: fw - l - r, ch: fh, ox: l });
+    Object.assign(this, { rotated, cw: fw - l - r, ch: fh - t - b, ox: l });
   },
   // a pointer event -> CSS pixels inside the game canvas
   toCanvas(e) {

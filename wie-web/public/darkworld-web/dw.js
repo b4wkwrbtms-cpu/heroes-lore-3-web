@@ -111,7 +111,7 @@ const DB = {
   },
   clear(store) { return this.tx(store, 'readwrite', (s) => s.clear()); },
 };
-const settings = { cheat_flags: 0, hide_transform: 0, xbr: 0, mute: 0, arena: 0x7d0000, arena_on: 0, buttons: 1, padui: 0, fill: 2, smooth: 1, impact: 1, combo: 1, controls: 'classic', sides: 0 };
+const settings = { cheat_flags: 0, hide_transform: 0, xbr: 0, mute: 0, arena: 0x7d0000, arena_on: 0, buttons: 1, padui: 0, fill: 2, smooth: 1, impact: 1, controls: 'classic', sides: 0 };
 function saveSettings() { DB.put('settings', 'main', JSON.stringify(settings)).catch(() => {}); }
 
 // called from wasm

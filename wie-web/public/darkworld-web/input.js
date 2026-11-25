@@ -199,35 +199,6 @@ const sent = new Array(B.COUNT).fill(0), holdTicks = new Array(B.COUNT).fill(0);
 let idleTicks = 0, okOwner = -1;
 let dirSent = -1, attackRepeat = false, dashPrev = false, dashKey = 0, dashRelease = 0, dashIdle = 0;
 let gameTouch = null, feedbackArea = -1;
-// Attack combo buffer (this site's addition), so every tap on attack becomes a swing however fast it comes.
-// The game takes a press only while the hero stands: one during a swing (hero state 3), or in the first frame
-// after it, is dropped, and the combo (left slash, right slash, thrust) goes back to the start unless the next
-// press comes within a few frames. Such a press is kept (two at most, for 12 game frames) and given to the
-// game again each frame the hero stands, until the game starts the swing. Any other button or direction is
-// a new action and drops the kept presses. Off in the settings (공격 연타 보정).
-const hero8 = (off) => rd32(0x100d4dc4 + off) & 0xff;
-const combo = { kept: [], ticks: 0, sent: false, prevHeld: new Array(B.COUNT).fill(false), dir: -1 };
-const heroLosesPress = () => { const st = hero8(0x104); return st === 3 || (st === 0 && hero8(0x108) === 3 && hero8(0x110) < 1); };
-function keep() { if (combo.kept.length < 2) combo.kept.push(combo.ticks); else combo.kept[1] = combo.ticks; }
-function comboBefore(playing) {
-  combo.ticks++;
-  combo.sent = false;
-  const on = I().settings.combo !== 0 && playing;
-  for (let b = 0; b < B.COUNT; b++) {
-    const h = held(b);
-    if (h && !combo.prevHeld[b]) {
-      if (b !== B.OK) combo.kept = [];
-      else if (on && heroLosesPress()) keep();
-    }
-    combo.prevHeld[b] = h;
-  }
-  if (!on) { combo.kept = []; return; }
-  combo.kept = combo.kept.filter((t) => combo.ticks - t <= 12);
-  if (!combo.kept.length || held(B.OK) || hero8(0x104) !== 0) return;
-  kdown(-5); kup(-5);
-  combo.sent = true;
-}
-function comboAfter() { if (combo.sent && hero8(0x104) === 3) combo.kept.shift(); }
 
 function reconcile() {
   areas = I().readAreas();
@@ -239,7 +210,6 @@ function reconcile() {
   let resume = false;
   let dir = -1;
   for (let i = order.length - 1; i >= 0; i--) if (order[i] <= B.RIGHT && held(order[i])) { dir = order[i]; break; }
-  comboBefore(playing);
   if (dir !== dirSent) { if (dirSent >= 0) kup(PHONE_KEY[PAD_CODE[dirSent]]); if (dir >= 0) kdown(PHONE_KEY[PAD_CODE[dir]]); dirSent = dir; }
   for (let b = B.OK; b < B.COUNT; b++) {
     if (!PAD_CODE[b]) continue;
@@ -307,12 +277,8 @@ function reconcile() {
   }
   dashPrev = dash;
   // plain touches (menus, MAP/SAVE/CLR, anything that is not an on-screen control)
-  let downNow = false;
   while (pending.length) {
-    // a lift right after a press waits for the next frame, so the game sees the press for a frame (a quick tap)
-    if (downNow && pending[0][0] === 0x18) break;
     const [t, x, y] = pending.shift();
-    if (t === 0x17) downNow = true;
     const gx = Math.max(0, Math.min(479, Math.round(x))), gy = Math.max(0, Math.min(319, Math.round(y)));
     if (t === 0x17) { if (gameTouch) M()._dw_event(0, 0x18, gameTouch.x, gameTouch.y); gameTouch = { x: gx, y: gy }; M()._dw_event(0, 0x17, gx, gy); }
     else if (t === 0x19) { if (gameTouch && (gameTouch.x !== gx || gameTouch.y !== gy)) { gameTouch = { x: gx, y: gy }; M()._dw_event(0, 0x19, gx, gy); } }
@@ -329,7 +295,7 @@ window.DWInput = {
   set skinMode(v) { I().Input_skinMode = v; },
   get skinMode() { return I().Input_skinMode; },
   beforeTick() { pollPad(); reconcile(); },
-  afterTick() { comboAfter(); for (let b = 0; b < B.COUNT; b++) latched[b] = false; },
+  afterTick() { for (let b = 0; b < B.COUNT; b++) latched[b] = false; },
   feedback(i) {
     if (i === feedbackArea) return true;
     if (i === 0) return held(B.OK);

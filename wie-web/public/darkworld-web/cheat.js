@@ -315,12 +315,14 @@ function openMenu() {
       };
       inp.click();
     });
-    const SIDES = ['꽉 채우기', '카메라 쪽 비우기', '양쪽 비우기'];
-    row(b, '가로 화면 옆 여백', SIDES[s.sides || 0], (r) => { s.sides = ((s.sides || 0) + 1) % 3; I().saveSettings(); r.querySelector('.v').textContent = SIDES[s.sides]; });
+    const SIDES = ['꽉 채우기', '카메라 쪽 비우기', '양쪽 비우기', '제노니아처럼'];
+    row(b, '화면 여백', SIDES[s.sides || 0], (r) => {
+      s.sides = ((s.sides || 0) + 1) % SIDES.length; I().saveSettings(); r.querySelector('.v').textContent = SIDES[s.sides];
+      window.dispatchEvent(new Event('resize'));
+    });
     row(b, '움직임 부드럽게 (중간 프레임)', s.smooth === 0 ? '끔' : '켬', (r) => flip('smooth', r, '켬', '끔'));
     const IMPACT = ['끔', '보통', '강하게'];
     row(b, '타격 효과', IMPACT[s.impact === undefined ? 1 : s.impact], (r) => { s.impact = ((s.impact === undefined ? 1 : s.impact) + 1) % 3; I().saveSettings(); r.querySelector('.v').textContent = IMPACT[s.impact]; });
-    row(b, '공격 연타 보정', s.combo === 0 ? '끔' : '켬', (r) => flip('combo', r, '켬', '끔'));
     row(b, '키 설정', '›', () => openKeys());
     row(b, '치트 설정', '›', openSettings);
     if (backupInfo) row(b, '가져오기 전 저장으로 되돌리기', new Date(backupInfo.time).toLocaleString(), restoreBackup);
