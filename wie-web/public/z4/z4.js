@@ -1,7 +1,7 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "10";
+const VERSION = "11";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -132,10 +132,51 @@ async function importFastCore(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const names = wasmExports(bytes);
   if (!names) throw new Error(`가속 파일(z4fast.wasm)이 아니에요 (${file.name || "이름 없음"}, ${bytes.length} 바이트)`);
-  // the site's own core has the same exports but is far smaller; an older fast core lacks the in-between frames
-  if (!names.includes("aot_build") || bytes.length < 1000000) throw new Error("이건 가속 파일이 아니라 기본 실행기예요");
-  if (!names.includes("save_store")) throw new Error("예전 가속 파일이에요. 새로 받은 z4fast.wasm을 골라 주세요");
+  // the accelerated part is a module of its own (aot_side.c) that goes next to the site's core, so the
+  // site's updates reach the player without a new file; a whole core with it linked in is from before that
+  if (!names.includes("aot_side")) {
+    if (names.includes("aot_build") && bytes.length > 1000000) throw new Error("예전 방식의 가속 파일이에요. 새로 받은 z4fast.wasm을 골라 주세요(이번 한 번만 바꾸면 이후 업데이트는 자동으로 돼요)");
+    throw new Error("이건 가속 파일이 아니라 기본 실행기예요");
+  }
   await idbPut("game", "fast", bytes.buffer);
+}
+
+// The accelerated module (aot_side.c): a WebAssembly side module (dylink.0) that shares the core's memory
+// and function table and reaches the interpreter's state through the core's exported addresses (GOT.mem).
+function dylinkInfo(mod) {
+  const sec = WebAssembly.Module.customSections(mod, "dylink.0")[0];
+  if (!sec) return null;
+  const b = new Uint8Array(sec);
+  let i = 0;
+  const leb = () => { let r = 0, sh = 0, c; do { c = b[i++]; r += (c & 127) * 2 ** sh; sh += 7; } while (c & 128); return r; };
+  while (i < b.length) {
+    const type = b[i++], len = leb(), end = i + len;
+    if (type === 1) return { memSize: leb(), memAlign: leb(), tabSize: leb() }; // WASM_DYLINK_MEM_INFO
+    i = end;
+  }
+  return { memSize: 0, memAlign: 0, tabSize: 0 };
+}
+async function attachSide(ex, bytes) {
+  const mod = await WebAssembly.compile(bytes);
+  const info = dylinkInfo(mod);
+  if (!info) throw new Error("가속 파일의 형식이 달라요");
+  const align = 2 ** info.memAlign;
+  const memBase = Math.ceil(ex.host_alloc(info.memSize + align) / align) * align;
+  new Uint8Array(ex.memory.buffer, memBase, info.memSize).fill(0);
+  const table = ex.__indirect_function_table;
+  const tableBase = table.length;
+  table.grow(info.tabSize);
+  const got = {};
+  for (const imp of WebAssembly.Module.imports(mod))
+    if (imp.module === "GOT.mem") got[imp.name] = new WebAssembly.Global({ value: "i32", mutable: true }, ex[imp.name].value);
+  const i32 = v => new WebAssembly.Global({ value: "i32", mutable: false }, v);
+  const env = { memory: ex.memory, __indirect_function_table: table, __memory_base: i32(memBase), __table_base: i32(tableBase), aot_call: ex.aot_call, cow_save_page: ex.cow_save_page };
+  const side = await WebAssembly.instantiate(mod, { env, "GOT.mem": got });
+  side.exports.__wasm_apply_data_relocs?.();
+  const out = ex.host_alloc(24);
+  side.exports.aot_side(out);
+  const v = new Uint32Array(ex.memory.buffer, out, 6);
+  return ex.aot_attach(v[0], v[1], v[2], v[3], v[4], v[5]); // -1: made for another build of the interpreter
 }
 async function importFiles(files, progress) {
   const list = [...files];
@@ -846,28 +887,26 @@ class Core {
       },
       host_text: (op, a, b, ptr, len) => this.text.op(this.mem, op, a, b, ptr, len) | 0,
     };
-    let instance;
-    if (game.fast) {
-      try {
-        ({ instance } = await WebAssembly.instantiate(game.fast, { env }));
-        // a fast core from before the in-between frames does not fit this page: the site's core runs instead
-        // (an older one also keeps saves where the game's start-up conversion removes them)
-        if (!instance.exports.save_store) { instance = null; this.staleFast = true; }
-      } catch (e) {
-        instance = null; // the phone could not open it: the site's core runs instead
-        this.fastError = String(e?.message || e);
-        console.warn("fast core", e);
-      }
-    }
-    if (!instance) {
-      const resp = fetch(`z4core.wasm?v=${VERSION}`);
-      ({ instance } = await (WebAssembly.instantiateStreaming
-        ? WebAssembly.instantiateStreaming(resp, { env })
-        : WebAssembly.instantiate(await (await resp).arrayBuffer(), { env })));
-    }
+    // always the site's core, so its updates apply by themselves; the player's accelerated module joins it
+    const resp = fetch(`z4core.wasm?v=${VERSION}`);
+    const { instance } = await (WebAssembly.instantiateStreaming
+      ? WebAssembly.instantiateStreaming(resp, { env })
+      : WebAssembly.instantiate(await (await resp).arrayBuffer(), { env }));
     this.ex = instance.exports;
     this.mem = this.ex.memory;
     const ex = this.ex;
+    if (game.fast) {
+      if (!wasmExports(new Uint8Array(game.fast))?.includes("aot_side")) this.staleFast = true; // a whole core, from before
+      else {
+        try {
+          if ((await attachSide(ex, game.fast)) !== 0) this.staleFast = "abi"; // the interpreter changed since
+
+        } catch (e) {
+          this.fastError = String(e?.message || e); // the phone could not open it: the core interprets everything
+          console.warn("fast core", e);
+        }
+      }
+    }
     const so = game.so;
     const p = ex.host_alloc(so.length);
     new Uint8Array(this.mem.buffer, p, so.length).set(so);
@@ -1553,10 +1592,12 @@ async function prepareAndWait(game) {
     return;
   }
   $("tap-text").textContent = "화면을 터치하면 시작해요";
-  $("tap-err").textContent = core.fast ? (core.ex.motion_rev?.() >= 3 ? "" : "가속 파일이 이전 버전이에요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꿔 주세요(공격·대시 모션, 데미지 숫자 수정이 들어 있어요).") : core.fastError
+  $("tap-err").textContent = core.fast ? "" : core.fastError
     ? `가속 파일을 이 기기에서 열지 못해서 기본 실행기로 돌아가요. (${core.fastError})`
+    : core.staleFast === "abi"
+    ? "실행기가 바뀌어서 이 가속 파일은 맞지 않아요. 새로 받은 z4fast.wasm을 설정 → 가속 파일에 넣어 주세요."
     : core.staleFast
-    ? "가속 파일이 예전 버전이라 쓰지 않았어요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꾸면 더 빨라져요."
+    ? "가속 파일이 예전 방식이라 쓰지 않았어요. 설정 → 가속 파일에서 새 z4fast.wasm으로 바꿔 주세요(한 번 바꾸면 이후 업데이트는 자동으로 돼요)."
     : game.fast
     ? "가속 파일이 이 게임 파일과 맞지 않아요. 설정 → 가속 파일에서 맞는 파일로 바꾸면 더 빨라져요."
     : "";

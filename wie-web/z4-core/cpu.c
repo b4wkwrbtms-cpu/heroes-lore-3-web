@@ -397,17 +397,20 @@ void aot_call(u32 ret) {
 }
 #include "native_helpers.inc"
 typedef struct { u32 addr; void (*fn)(void); } AotEntry;
+// The translated functions: linked in (AOT, the native test build), or a module of their own (aot_side.c)
+// that the page loads next to this core and hands over with aot_attach.
+static const AotEntry *aot_list;
+static int aot_n;
+static u32 aot_lo, aot_hi, aot_hash;
 #ifdef AOT
 extern const AotEntry aot_entries[];
 extern const int aot_count;
 extern const u32 aot_text_lo, aot_text_hi, aot_text_hash;
-#define AOT_COUNT aot_count
-#define AOT_MAX 4096
-#else
-static const AotEntry aot_entries[] = {{0, 0}};
-#define AOT_COUNT 0
-#define AOT_MAX 0
 #endif
+#ifndef AOT_ABI
+#define AOT_ABI 0
+#endif
+#define AOT_MAX 4096
 #define AOT_LO (LOAD_BASE + 0x00090000u)
 #define AOT_SPAN 0x000f0000u
 static u16 aot_index[AOT_SPAN >> 1];
@@ -415,32 +418,41 @@ typedef void (*AotFn)(void);
 static AotFn aot_fns[AOT_MAX + NATIVE_HELPERS + BLIT_HELPERS + 16];
 static int aot_used; // slots in use, hooks go after them
 static int aot_ready;
-static int aot_text_matches(void) {
+static void aot_linked(void) {
 #ifdef AOT
-  u32 h = 2166136261u;
-  for (u32 a = aot_text_lo; a < aot_text_hi; a++) h = (h ^ rd8(a)) * 16777619u;
-  if (h != aot_text_hash) logf("library differs from the translated build (%08x): interpreting only", h);
-  return h == aot_text_hash;
-#else
-  return 0;
+  if (!aot_list) { aot_list = aot_entries; aot_n = aot_count; aot_lo = aot_text_lo; aot_hi = aot_text_hi; aot_hash = aot_text_hash; }
 #endif
 }
-// 0 for the interpreter-only core, otherwise the checksum of the library the translations were made from
-EXPORT(aot_build) u32 aot_build(void) {
-#ifdef AOT
-  return aot_text_hash;
-#else
+// The translations of a separate module: its table, the library text they were made from (lo, hi and its
+// checksum) and the build of the interpreter they were compiled against (abi: a checksum of its sources,
+// since the translated code has the interpreter's instruction code inside it). -1 if they do not fit.
+EXPORT(aot_attach) int aot_attach(const AotEntry *list, int n, u32 lo, u32 hi, u32 hash, u32 abi) {
+  if (abi != AOT_ABI || n <= 0 || n > AOT_MAX) return -1;
+  aot_list = list; aot_n = n; aot_lo = lo; aot_hi = hi; aot_hash = hash;
   return 0;
-#endif
+}
+EXPORT(aot_abi) u32 aot_abi(void) { return AOT_ABI; }
+static int aot_text_matches(void) {
+  aot_linked();
+  if (!aot_n) return 0;
+  u32 h = 2166136261u;
+  for (u32 a = aot_lo; a < aot_hi; a++) h = (h ^ rd8(a)) * 16777619u;
+  if (h != aot_hash) logf("library differs from the translated build (%08x): interpreting only", h);
+  return h == aot_hash;
+}
+// 0 without translations, otherwise the checksum of the library they were made from
+EXPORT(aot_build) u32 aot_build(void) {
+  aot_linked();
+  return aot_n ? aot_hash : 0;
 }
 EXPORT(aot_active) int aot_active(void) { return aot_ready == 2; }
 EXPORT(aot_enable) void aot_enable(int on) {
   memset(aot_index, 0, sizeof aot_index);
   if ((on & 1) && !aot_text_matches()) on &= ~1;
   int n = 1;
-  if (on & 1) for (int i = 0; i < AOT_COUNT; i++) {
-    u32 off = aot_entries[i].addr - AOT_LO;
-    if (off < AOT_SPAN) { aot_fns[n] = aot_entries[i].fn; aot_index[off >> 1] = (u16)n++; }
+  if (on & 1) for (int i = 0; i < aot_n; i++) {
+    u32 off = aot_list[i].addr - AOT_LO;
+    if (off < AOT_SPAN) { aot_fns[n] = aot_list[i].fn; aot_index[off >> 1] = (u16)n++; }
   }
   if (on & 2) for (int i = 0; i < NATIVE_HELPERS; i++) {
     u32 a = native_helper_addr(i);
@@ -453,7 +465,7 @@ EXPORT(aot_enable) void aot_enable(int on) {
     if (a && off < AOT_SPAN) { aot_fns[n] = blit_helpers[i].fn; aot_index[off >> 1] = (u16)n++; }
   }
   aot_used = n;
-  aot_ready = (on & 1) && AOT_COUNT ? 2 : 1;
+  aot_ready = (on & 1) && aot_n ? 2 : 1;
 }
 
 // Runs `fn` in place of the guest function at `addr` (fn 0 takes it away again); for motion.c.

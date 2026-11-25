@@ -60,11 +60,21 @@ not know go back to the run loop. The functions are listed in `aot_functions.txt
 whatever a profile of menus, cutscenes and the field showed busy); they run about eight times faster.
 
     python3 aot.py libgameDSO.so aot_gen.c aot_functions.txt
-    AOT=1 ./build.sh z4fast.wasm
+    SIDE=1 ./build.sh z4fast.wasm
 
 The output is made from the game's code, so neither `aot_gen.c` nor `z4fast.wasm` is part of this
 repository: the player makes it from their own copy of the library and adds it in the page next to the
 apk. The translations carry a checksum of the library's code and switch themselves off for any other build.
+
+`z4fast.wasm` holds only the translations (`aot_side.c`): a WebAssembly side module (`dylink.0`) that the
+page instantiates next to the site's own `z4core.wasm`, sharing its memory and function table and reaching
+the interpreter's registers, flags and copy-on-write log through addresses the core exports (`GOT.mem`);
+`aot_attach` hands its table to the core. So every other part (and every update of it) comes from the
+site, and the player's file only has to change when the interpreter's instruction code does: both are
+built with `AOT_ABI`, a checksum of `cpu_core.h`, `base.h`, `thumb2.inc` and `vfp.inc`, and the core turns
+down a module made for another one. In the browser the module runs about 15% slower than the same
+translations linked into the core (`AOT=1`, which the native harness uses), still about 40% faster than
+interpreting.
 
 ## Testing on a computer
 
