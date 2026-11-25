@@ -28,7 +28,8 @@ void fs_state(u8 *buf, int save);
 extern u16 *paint_out; // hle.c: glTexSubImage2D copies here instead of the screen while set
 
 static u32 app_draw, gl_draw, map_slot, obj_var;
-static u32 num_update, num_draw, num_init, alpha_begin, alpha_end;
+static u32 num_update, num_draw, num_init, alpha_begin, alpha_end, num_width;
+extern u32 scr_w, scr_h;
 
 // the routines this reads its addresses from, as they were when this was written
 typedef struct { const char *name; u32 size, sig; u32 *addr; } MotionSym;
@@ -43,6 +44,7 @@ static const MotionSym msyms[] = {
     {"_ZN15CMvNumberObject10InitializeEv", 24, 0x8337c2fau, &num_init},
     {"_ZN11CMvGraphics10BeginAlphaEi", 22, 0x1e5666aeu, &alpha_begin},
     {"_ZN11CMvGraphics8EndAlphaEv", 34, 0x2b888343u, &alpha_end},
+    {"_ZN11CMvGraphics20CalcDrawNumbersWidthEiiib", 56, 0x78ab1e04u, &num_width},
 };
 
 static int m_resolve(void) {
@@ -283,18 +285,46 @@ static void m_num_update(void) {
   }
   helper_ret();
 }
+// CMvNumberObject::Draw puts a number's top left at its point less (digits + 1) * 2.5 plus half its width,
+// across and up alike: a long number (a big blow) is drawn far above its target, off the top of the screen.
+// It is put back as high as a three-digit one goes, and kept on the screen (below the bar at the top).
+static s32 num_offset(u32 o, s32 v, s32 *width) {
+  u32 gfx = rd32(rd32(num_draw + 0x78 + rd32(num_draw + 0x13c))); // the CMvGraphics Draw uses
+  u32 a[5] = {gfx, (u32)(s32)(s8)rd8(o + 0x10), (u32)v, (u32)-6, 0};
+  s32 w = (s32)call_guest_unhooked(num_width | 1, 5, a), digits = 0;
+  for (s32 k = v; k; k /= 10) digits++;
+  if (width) *width = w;
+  return (((digits + 1) * 5) >> 1) + (w >> 1);
+}
+#define NUM_TOP 44 // the top bar (buttons, the target's name)
+static void m_num_place(u32 o) {
+  u32 map = m_map();
+  if (!map) return;
+  s32 w, off = num_offset(o, (s32)rd32(o + 8), &w), base = num_offset(o, 100, 0);
+  s32 x = (s32)(s16)rd16(o + 4), y = (s32)(s16)rd16(o + 6) + off - base;
+  s32 cx = (s16)rd16(map + 0x166), cy = (s16)rd16(map + 0x168);
+  s32 top = y - off - cy, left = x - off - cx, right = left + w;
+  if (top < NUM_TOP) y += NUM_TOP - top;
+  if (top > (s32)scr_h - 40) y -= top - ((s32)scr_h - 40);
+  if (left < 4) x += 4 - left;
+  else if (right > (s32)scr_w - 4) x -= right - ((s32)scr_w - 4);
+  wr16(o + 4, (u16)x);
+  wr16(o + 6, (u16)y);
+}
 // CMvNumberObject::Draw: placed and faded for the moment drawn, then as it was
 static void m_num_draw(void) {
   u32 o = R[0];
   s32 e = (s8)rd8(o + 0xc) >= 0 ? (s32)rd8(o + 0xe) : -1;
-  if (e < 1) { call_guest_unhooked(num_draw | 1, 1, &o); helper_ret(); return; }
-  s32 t = (e - 1) * 1024 + num_frac, life = (s32)rd8(o + 0xf) * 1024;
-  u16 y = rd16(o + 6);
+  if (e < 0) { call_guest_unhooked(num_draw | 1, 1, &o); helper_ret(); return; }
+  s32 t = e ? (e - 1) * 1024 + num_frac : 0, life = (s32)rd8(o + 0xf) * 1024;
+  u16 x = rd16(o + 4), y = rd16(o + 6);
   wr16(o + 6, (u16)((s32)(s16)y + num_rise(e * 1024) - num_rise(t)));
-  s32 left = life - t, fade = left < NUM_FADE * 1024 && e > 3; // (frames 1-3 are the game's own pop)
+  m_num_place(o);
+  s32 left = life - t, fade = left < NUM_FADE * 1024 && e > 3 && life > 0; // (frames 1-3 are the game's own pop)
   if (fade) { u32 a[2] = {0, (u32)(left < 0 ? 0 : left * 240 / (NUM_FADE * 1024))}; call_guest_unhooked(alpha_begin | 1, 2, a); }
   call_guest_unhooked(num_draw | 1, 1, &o);
   if (fade) { u32 a[1] = {0}; call_guest_unhooked(alpha_end | 1, 1, a); }
+  wr16(o + 4, x);
   wr16(o + 6, y);
   helper_ret();
 }
