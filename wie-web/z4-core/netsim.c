@@ -378,16 +378,15 @@ static double dpow(double a, u32 n) { double r = 1; while (n--) r *= a; return r
 // counts PIECE[grade] times 0.95-1.05 by its score; wearing several pieces of one grade or better is a
 // set (2/4/6/8/10 pieces), whose bonus is SET; the best set counts. Refining does not count. Ten S
 // pieces with average options come to about 1000 times (better options, more), enough for the
-// challenger at the top (1000 times the measured hero); ten A about 32 (diamond), ten B about 7
-// (platinum), ten C about 2.4 (gold). The S set is where the jump is: 6 S pieces about 90, 8 about 250.
-// Simulated (a win when the rival is at most about 1.2 times the player, a drop every win): the
-// climb meets its wall in master and grandmaster and reaches the top after 130-190 matches with ten S.
+// challenger at the top (1000 times the measured hero); ten A about 100 (the top of master), ten B
+// about 7 (platinum), ten C about 2.4 (gold). From ten A each S piece in their place adds about 1.19
+// times (the A set still counts them), and the tenth S brings the S set: about 1000.
 static const double PIECE[5] = {1.0, 1.04, 1.09, 1.18, 1.4};
 static const double SET[5][5] = {
     {1, 1, 1, 1, 1},
     {1.1, 1.2, 1.3, 1.45, 1.6},
     {1.2, 1.45, 1.8, 2.3, 3},
-    {1.4, 2, 3, 4.5, 6},
+    {1.5, 2.5, 5, 10, 19},
     {1.5, 2.5, 5, 12, 35},
 };
 typedef struct { double power, set_mult; s32 set_grade; u32 set_pieces, count[5], rolls, pieces; } Gear;
