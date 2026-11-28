@@ -111,6 +111,8 @@ const DB = {
   },
   clear(store) { return this.tx(store, 'readwrite', (s) => s.clear()); },
 };
+// a computer: a mouse and no touch. It moves with the keyboard, so the direction pad is not shown there
+const COMPUTER = matchMedia('(pointer: fine)').matches && !matchMedia('(any-pointer: coarse)').matches;
 const settings = { cheat_flags: 0, hide_transform: 0, xbr: 0, mute: 0, arena: 0x7d0000, arena_on: 0, buttons: 1, padui: 0, fill: 2, smooth: 1, impact: 1, controls: 'classic', sides: 0 };
 function saveSettings() { DB.put('settings', 'main', JSON.stringify(settings)).catch(() => {}); }
 
@@ -136,7 +138,7 @@ async function boot() {
     const st = (await DB.all('settings')).main; if (st) Object.assign(settings, JSON.parse(st));
     // a computer (mouse, no touch) shows the game large, where plain pixels grow unevenly: xBR is turned on there once
     // (switching it off later stays off); phones keep their own setting
-    if (!settings.pc_hq && matchMedia('(pointer: fine)').matches && !matchMedia('(any-pointer: coarse)').matches) { settings.pc_hq = 1; settings.xbr = 1; saveSettings(); }
+    if (!settings.pc_hq && COMPUTER) { settings.pc_hq = 1; settings.xbr = 1; saveSettings(); }
     const saves = await DB.all('saves');
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
     // no progress here yet: offer the saves of /darkworld/ (copied; the originals stay as they are)
@@ -153,7 +155,8 @@ async function boot() {
     msg.textContent = '게임 자료를 여는 중…';
     const [mod, pack] = await Promise.all([createDW(), DWDATA.bytes('dw.pack')]);
     M = mod;
-    const classicArt = settings.controls !== 'pad' ? await ClassicArt.load() : null;
+    let classicArt = settings.controls !== 'pad' ? await ClassicArt.load() : null;
+    if (classicArt && COMPUTER) classicArt = { ...classicArt, gmf: ClassicArt.withoutPad(classicArt.gmf) };
     if (!M.setPack(pack, { classicUi: settings.controls !== 'pad', classicArt })) throw new Error(M.UTF8ToString(M._dw_error()));
     M.onEvent = coreEvent;
     for (const [name, bytes] of Object.entries(saves)) addSave(name, bytes);
@@ -441,6 +444,7 @@ function renderInner(t) {
     for (let i = 0; i < 24; i++) {
       const a = areas[i]; if (!a.on || a.key < 0) continue;
       if (padui && (i === 0 || i === 15)) continue;
+      if (COMPUTER && i === 15) continue;
       let tile = -1, rad = 0, rect = false, cx = a.cx, cy = a.cy;
       if (padui && i >= 8 && i <= 13) { cx = padNx(i); cy = PAD_NY; }
       if (a.key === 10 || a.key === 0x40) { tile = 2; rect = true; }

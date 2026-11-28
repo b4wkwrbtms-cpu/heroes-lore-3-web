@@ -263,6 +263,14 @@ window.ClassicArt = {
     } catch (e) {}
     return null;
   },
+  // the same pictures without the direction pad: its picture (frame 13, the pad's place in the game's touch table)
+  // gets no parts. Only when the frame table holds the original's words there
+  withoutPad(gmf) {
+    const at = 0x24 + 13 * 5, was = [0x17, 0x09, 0x04, 0x01, 0x08];
+    if (!was.every((b, i) => gmf[at + i] === b)) return gmf;
+    const out = gmf.slice(); out[at + 4] = 0;
+    return out;
+  },
   async keep(a) { await DWDATA.put('classic/' + this.NAMES[0], a.gmf); await DWDATA.put('classic/' + this.NAMES[1], a.gbm); },
   // /darkworld/: IndexedDB 'darkworld-player', store 'game': 'index' (asset name -> [offset, size]) and 'assets'
   async fromOldPage() {
