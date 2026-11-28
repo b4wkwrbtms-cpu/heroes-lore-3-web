@@ -333,6 +333,8 @@ function resize() {
   Object.assign(view, { x: Math.floor((W - vw) / 2), y: Math.floor((H - vh) / 2), w: vw, h: vh, dpr });
 }
 window.addEventListener('resize', resize); resize();
+// the iPhone can report the new size only a little after a turn
+window.addEventListener('orientationchange', () => { setTimeout(resize, 300); setTimeout(resize, 1000); });
 // in play on the field, with the game's own buttons on screen: the 1.57 build marks this as mode 1 in its button layer
 // (0x10296000), which it writes only when it draws its own buttons, not the original ones. So the original drawing's
 // own test (DrawTouchUI) is used: field state 4000 (4001 is its menus, 4004 the map), no script such as a talk running

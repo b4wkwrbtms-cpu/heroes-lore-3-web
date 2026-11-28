@@ -15,7 +15,13 @@ window.Layout = {
   },
   apply() {
     const vw = window.innerWidth, vh = window.innerHeight, ins = this.insets();
-    const rotated = vh > vw, fw = rotated ? vh : vw, fh = rotated ? vw : vh;
+    // a home screen app covers the whole screen; there the screen's own size and turn are used, as the iPhone (iOS 26)
+    // can give the window a turn late or short (852 x 393 reported as 734 long: the landscape size inside its side margins)
+    const full = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+    const type = full && screen.orientation && screen.orientation.type;
+    const rotated = type ? type.startsWith('portrait') : vh > vw;
+    const sl = full ? Math.max(screen.width, screen.height) : 0, ss = full ? Math.min(screen.width, screen.height) : 0;
+    const fw = Math.max(rotated ? vh : vw, sl), fh = Math.max(rotated ? vw : vh, ss);
     // the game uses the whole screen, as the build itself does, unless the setting 화면 여백 leaves the camera side (1)
     // or both sides (2) free, or gives it the Zenonia 4 page's proportions (3): held upright or sideways the same
     const s = window.DWInternals && window.DWInternals.settings, sides = (s && s.sides) || 0;
@@ -27,7 +33,7 @@ window.Layout = {
     const r = sides >= 2 || (sides === 1 && !camLeft) ? inset : 0;
     // 제노니아처럼: a black border all round, both sides as 양쪽 비우기 and 7.5% at the top and the bottom
     const t = sides === 3 ? Math.round(fh * 0.075) : 0, b = t;
-    const key = [vw, vh, l, r, t, b].join();
+    const key = [fw, fh, rotated, l, r, t, b].join();
     if (key === this.key) return;
     this.key = key;
     const frame = document.getElementById('frame');
@@ -36,7 +42,7 @@ window.Layout = {
     // the frame's size for the boot screen and the menus inside it: vw and vh are the screen's, not the turned frame's
     frame.style.setProperty('--fw', fw + 'px');
     frame.style.setProperty('--fh', fh + 'px');
-    frame.style.transform = rotated ? `translate(${vw}px, 0) rotate(90deg)` : 'none';
+    frame.style.transform = rotated ? `translate(${fh}px, 0) rotate(90deg)` : 'none';
     frame.style.setProperty('--ml', l + 'px');
     frame.style.setProperty('--mr', r + 'px');
     frame.style.setProperty('--mt', t + 'px');
