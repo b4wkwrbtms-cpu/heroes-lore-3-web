@@ -37,6 +37,13 @@ export interface PadProfile {
    * their cursor once per press.
    */
   windowed?: (api: CheatApi | undefined) => boolean;
+  /** Keyboard keys this game adds (`KeyboardEvent.code` → key), so that every pad button has one. */
+  keyboard?: Record<string, string>;
+  /**
+   * The game has a layout for a computer (a mouse and no touch): the screen in the middle at full height with the pad
+   * on both sides for the mouse, every pad button's keyboard key shown on it, and a fullscreen button.
+   */
+  computer?: boolean;
 }
 
 const DEFAULT_PROFILE: PadProfile = {
@@ -44,8 +51,11 @@ const DEFAULT_PROFILE: PadProfile = {
   buttons: {},
 };
 
-/** 영웅서기3: the default keys; the name only selects its own pad sizes (bigger quick slots and stick). */
-const HEROES_LORE_3_PROFILE: PadProfile = { ...DEFAULT_PROFILE, name: "hl3" };
+/**
+ * 영웅서기3: the default keys; the name only selects its own pad sizes (bigger quick slots and stick). On a computer
+ * V is 퀵세이브, the only pad button without a key of its own.
+ */
+const HEROES_LORE_3_PROFILE: PadProfile = { ...DEFAULT_PROFILE, name: "hl3", keyboard: { KeyV: "CALL" }, computer: true };
 
 /**
  * 이노티아 연대기 (Com2uS, 2007): every screen (title menus, pop-ups, dialogs with 승낙/거절, the field and its menus)

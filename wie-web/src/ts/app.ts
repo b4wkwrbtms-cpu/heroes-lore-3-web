@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Ellipsis, Keyboard, Map as MapIcon, Save, Settings, Sparkles, X, createIcons } from "lucide";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Ellipsis, Keyboard, Map as MapIcon, Maximize, Save, Settings, Sparkles, X, createIcons } from "lucide";
 
 import { recordPageView } from "./analytics";
 import type { LibraryApp, PlayerSession, Wie } from "./backend";
@@ -16,7 +16,7 @@ import { Hl4Feedback } from "./hl4_feedback";
 import { Hl4SlotIcons } from "./hl4_slots";
 import { InotiaHunt } from "./inotia_hunt";
 import { InBetweenFrames } from "./motion";
-import { type Direction, HL4_DODGE_KEY, applyPadProfile, isHeroesLore4, isInotia, isZero, padProfileFor, remapKey } from "./pad_profile";
+import { type Direction, HL4_DODGE_KEY, type PadProfile, applyPadProfile, isHeroesLore4, isInotia, isZero, padProfileFor, remapKey } from "./pad_profile";
 import type { SettingsController } from "./settings";
 import { OCTANT_DIRECTIONS, pickOctant, pickStraight } from "./stick";
 import { type SaveResult, ZERO_SAVE_KEY, readZeroState, saveZero } from "./zero";
@@ -56,10 +56,32 @@ const icons = {
   Ellipsis,
   Keyboard,
   Map: MapIcon,
+  Maximize,
   Save,
   Settings,
   Sparkles,
   X,
+};
+
+const keyName = (code: string): string =>
+  ({ Space: "Space", Enter: "Enter", Backspace: "Back", ShiftLeft: "Shift", ShiftRight: "Shift" })[code] ?? code.replace(/^(Key|Digit)/, "");
+
+/**
+ * On a computer, each pad button shows the keyboard key that presses the same key (Space before Enter for 공격); off
+ * a computer the labels are taken away again.
+ */
+const showKeyboardKeys = (buttons: Iterable<HTMLButtonElement>, keyMap: Record<string, string>, profile: PadProfile, on: boolean) => {
+  for (const button of buttons) {
+    button.querySelector(":scope > kbd.key-hint")?.remove();
+    if (!on || !button.closest(".pad") || !button.dataset.key) continue;
+    const codes = Object.keys(keyMap).filter(code => !DIRECTION_KEYS.has(keyMap[code]) && remapKey(profile, keyMap[code]) === button.dataset.key);
+    const code = codes.find(c => c === "Space") ?? codes.find(c => !c.startsWith("Numpad"));
+    if (!code) continue;
+    const hint = document.createElement("kbd");
+    hint.className = "key-hint";
+    hint.textContent = keyName(code);
+    button.append(hint);
+  }
 };
 
 export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsController): Promise<boolean> => new Promise((resolve, reject) => {
@@ -83,6 +105,15 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   else delete playerView.dataset.padProfile;
   if (padProfile.layout) playerView.dataset.padLayout = padProfile.layout;
   else delete playerView.dataset.padLayout;
+  // The keyboard: the shared keys and the ones this game adds.
+  const keyMap: Record<string, string> = { ...KEY_MAP, ...padProfile.keyboard };
+  // A computer (a mouse and no touch) playing a game that has a computer layout (see PadProfile.computer).
+  const computer = !!padProfile.computer && matchMedia("(pointer: fine)").matches && !matchMedia("(any-pointer: coarse)").matches;
+  if (computer) playerView.dataset.computer = "";
+  else delete playerView.dataset.computer;
+  showKeyboardKeys(buttons, keyMap, padProfile, computer);
+  const fullscreenButton = document.getElementById("app-fullscreen") as HTMLButtonElement | null;
+  if (fullscreenButton) fullscreenButton.hidden = !computer;
   // Landscape sizes the screen column from the game's own aspect (240×320, 176×220, ...).
   const gameCanvas = document.getElementById("canvas") as HTMLCanvasElement;
   const questGuide = backend.rendering === "canvas" && isHeroesLore3(app.id) ? new Hl3QuestGuide(gameCanvas, app.id) : undefined;
@@ -116,6 +147,10 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   updateScreenRatio();
 
   const abortController = new AbortController();
+  fullscreenButton?.addEventListener("click", () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen?.().catch(() => {});
+  }, { signal: abortController.signal });
   const inputs = new Map<string, string>();
   let session: PlayerSession | undefined;
   let motion: { dispose(): void } | undefined;
@@ -604,7 +639,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
         return;
       }
 
-      const mapped = KEY_MAP[event.code];
+      const mapped = keyMap[event.code];
       // Arrow keys walk like the joystick does.
       const key = mapped && DIRECTION_KEYS.has(mapped) ? padProfile.directions[mapped as Direction] : mapped && remapKey(padProfile, mapped);
       if (key) {
@@ -619,7 +654,7 @@ export const runApp = (backend: Wie, app: LibraryApp, settings: SettingsControll
   document.addEventListener(
     "keyup",
     (event) => {
-      const key = KEY_MAP[event.code];
+      const key = keyMap[event.code];
       if (key) {
         event.preventDefault();
         setKey(`keyboard:${event.code}`);

@@ -2041,3 +2041,70 @@ html[data-screen-fit="contain"] #canvas {
     scroll-behavior: auto;
   }
 }
+
+/* ---- Computer (a mouse and no touch; PadProfile.computer, set as data-computer) ----
+   In a wide window, the landscape phone arrangement at any size: the screen in the middle at full height in the
+   game's own aspect, the stick zone on the left and the attack cluster on the right for the mouse (a tall window
+   keeps the screen above the pad). Every pad button shows the keyboard key that presses it. */
+#app-fullscreen[hidden] { display: none; }
+@media (orientation: landscape) {
+  .player-view[data-computer] {
+    background: var(--pad-bg);
+  }
+  .player-view[data-computer] .player-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) calc(100dvh * var(--screen-ratio, 0.75)) minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr);
+    gap: 6px 12px;
+  }
+  .player-view[data-computer] .canvas-wrapper {
+    width: 100%;
+    height: 100%;
+    flex: none;
+    aspect-ratio: auto;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .player-view[data-computer] .pad { display: contents; }
+  .player-view[data-computer] .pad-macros { grid-column: 1; grid-row: 1; padding: 6px 0 0 8px; }
+  .player-view[data-computer] .pad-tools-bar { grid-column: 3; grid-row: 1; padding: 6px 8px 0; }
+  .player-view[data-computer] .pad-tools { right: 8px; bottom: auto; top: 52px; }
+  .player-view[data-computer] .pad-left { grid-column: 1; grid-row: 1 / span 2; }
+  .player-view[data-computer] .action-cluster {
+    height: min(100%, 360px);
+    align-self: end;
+    grid-column: 3;
+    grid-row: 2;
+    margin: 0 12px 12px 0;
+  }
+}
+.player-view[data-computer] .pad button { cursor: pointer; }
+.player-view[data-computer] .joystick-zone::after {
+  content: "← ↑ ↓ →  방향키";
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  color: #9ca3af;
+  font: 12px/1 system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* the key's corner for its hint (the ring keys are placed absolutely already) */
+.player-view[data-computer] .pad button:not(.key-ring) { position: relative; }
+.key-hint {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  min-width: 14px;
+  padding: 1px 3px;
+  border: 1px solid #ffffff40;
+  border-radius: 4px;
+  background: #000a;
+  color: #e5e7eb;
+  font: 600 10px/1.2 system-ui, sans-serif;
+  text-align: center;
+  pointer-events: none;
+}
+/* Hit effects are squares of whole game pixels: keep their edges on a large screen. */
+.player-view[data-computer] #hit-effects-canvas { image-rendering: pixelated; }
