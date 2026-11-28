@@ -23,9 +23,9 @@ u32 call_guest(u32 addr, int nargs, const u32 *args);
 u32 call_guest_unhooked(u32 addr, int nargs, const u32 *args);
 
 static u32 n_connect, n_send, n_char_data, n_apply_stat, n_reg_result, n_stat_total, n_xor_byte, n_partner_cnt;
-static u32 n_item_tid, n_to_base, n_to_class, n_layout;
+static u32 n_item_tid, n_to_base, n_to_class, n_layout, n_get_tbl, n_get_val, n_item_cls, n_hp_max, n_pvp_draw;
 static int n_on;
-static u32 n_game, n_save, n_objs, n_items;
+static u32 n_game, n_save, n_objs, n_items, n_xls;
 
 typedef struct { const char *name; u32 size, sig; u32 *addr; } NetSym;
 static const NetSym nsyms[] = {
@@ -40,6 +40,12 @@ static const NetSym nsyms[] = {
     {"_ZN10CMvItemMgr14ConvertItemTIDE17EnumCharClassTypeibb", 244, 0x7940d5abu, &n_item_tid},
     {"_ZN10CMvItemMgr31ConvertClassItemToBaseClassItemEi", 104, 0x4b422414u, &n_to_base},
     {"_ZN10CMvItemMgr31ConvertBaseClassItemToClassItemE17EnumCharClassTypei", 104, 0x8e793081u, &n_to_class},
+    {"_ZN9CMvXlsMgr6GetTblEi", 40, 0x2529598eu, &n_get_tbl},
+    {"_ZN10GVXLLoader6GetValEii", 180, 0x576ba6beu, &n_get_val},
+    {"_ZN7CMvItem16GetCharClassTypeEv", 52, 0xcb3fd8e3u, &n_item_cls},
+    {"_ZN12CMvCharacter8GetHPMaxEv", 148, 0x49296bfeu, &n_hp_max},
+    {"_ZN10CZnPvpMenu6DoDrawEv", 68, 0xe03fa5c2u, &n_pvp_draw},
+    {"_ZN10CMvItemMgr12GetPvpRewordEb", 348, 0xe65dd23du, &n_layout},
     // the replies are laid out the way these read them
     {"_ZN6CMvNet18API_ZN4_SC_CONNECTEv", 508, 0xc1ca12a7u, &n_layout},
     {"_ZN6CMvNet20SetCharacterDataInfoEbb", 410, 0xe86c2e87u, &n_layout},
@@ -72,6 +78,8 @@ static int n_resolve(void) {
   n_objs = rd32(n_partner_cnt + 0x1e + 4 + rd32(n_partner_cnt + 0x50));
   // ConvertItemTID: ldr r5, [pc, #0x80]; add r5, pc; ldr r5, [r5] -> the variable holding the item manager
   n_items = rd32(n_item_tid + 0x78 + 4 + rd32(n_item_tid + 0xf0));
+  // CMvItem::GetCharClassType: ldr r3, [pc, #0x20]; add r3, pc; ldr r3, [r3] -> the variable holding the tables
+  n_xls = rd32(n_item_cls + 0x12 + 4 + rd32(n_item_cls + 0x30));
   resolved = 1;
   return 1;
 }
@@ -125,44 +133,102 @@ static u32 partner(u32 me) {
 static u32 level_of(u32 who) { u32 a = rd8(who + 0x593); return call_guest(n_xor_byte | 1, 1, &a) & 0xff; }
 static u32 stat_of(u32 who, u32 stat) { u32 a[4] = {who, stat, 0, 0}; return call_guest(n_stat_total | 1, 4, a); }
 
-// The arena's hundred: rank 0 (weakest) to 99. A rival fights with the player's own hero's battle data,
-// its four main stats (and HP, SP) scaled by the rank's strength: from a quarter of the player's at rank 0
-// up to the player's own at rank 84, then the top fifteen from 1.6 to 5 times the player's. Their level
-// is a little under the player's at the bottom and well over it at the top. The player meets rivals near
-// their points (a tenth of them, give or take two ranks), so winning brings ever stronger ones.
-#define RANKS 100
+// The arena's ladder: eight tiers (bronze to challenger) of a hundred rivals each, ranks 0 to 799. A rival
+// fights with the player's own hero's battle data, its four main stats (and HP, SP) scaled by the rank:
+// from half the player's at rank 0, growing by the same step every rank, to 31.6 times at rank 799. Attack
+// and staying power both grow that way, so a rival's fighting strength ("전투력", attack plus defence times
+// most HP) goes from a quarter of the player's to a thousand times it, about 2.8 times a tier. Their level
+// is a little under the player's at the bottom and far over it at the top. The player meets rivals near
+// their points (a fifth of them, give or take two ranks; a tier is 500 points), so wins bring stronger
+// ones; a win pays more the higher the tier, and gives a piece of equipment for the player's class near
+// their level, better the higher the tier.
+#define TIERS 8
+#define PER_TIER 100
+#define RANKS (TIERS * PER_TIER)
 #define TOP 15
-typedef struct { u32 id; char name[0x30]; u8 cls, rank; s8 dlv; u16 pct, win, lose; } Opp;
+#define TIER_PTS 500
+typedef struct { u32 id; char name[0x30]; u8 cls; s8 dlv; u16 rank, pct, win, lose; } Opp;
 static Opp cur, revenge[4];
 static u32 n_revenge, opp_serial = 1000, seed = 12345;
 
-static const char *const adj[13] = {
-    "\xec\x9e\x91\xec\x9d\x80", "\xeb\xb0\x94\xeb\x9e\x8c", "\xec\x88\xb2\xec\x9d\x98", "\xed\x91\xb8\xeb\xa5\xb8",
-    "\xec\x83\x88\xeb\xb2\xbd", "\xeb\xb6\x89\xec\x9d\x80", "\xec\xa1\xb0\xec\x9a\xa9\xed\x95\x9c", "\xeb\x8b\xac\xeb\xb9\x9b",
-    "\xeb\xb9\xa0\xeb\xa5\xb8", "\xed\x95\x98\xec\x96\x80", "\xea\xb0\x95\xec\xb2\xa0", "\xec\x9a\xa9\xea\xb0\x90\xed\x95\x9c",
+static const char *const adj[25] = {
+    "\xec\x9e\x91\xec\x9d\x80",
+    "\xeb\xb0\x94\xeb\x9e\x8c",
+    "\xec\x88\xb2\xec\x9d\x98",
+    "\xed\x91\xb8\xeb\xa5\xb8",
+    "\xec\x83\x88\xeb\xb2\xbd",
+    "\xeb\xb6\x89\xec\x9d\x80",
+    "\xec\xa1\xb0\xec\x9a\xa9\xed\x95\x9c",
+    "\xeb\x8b\xac\xeb\xb9\x9b",
+    "\xeb\xb9\xa0\xeb\xa5\xb8",
+    "\xed\x95\x98\xec\x96\x80",
+    "\xea\xb0\x95\xec\xb2\xa0",
+    "\xec\x9a\xa9\xea\xb0\x90\xed\x95\x9c",
     "\xea\xb2\x80\xec\x9d\x80",
-}; // 작은 바람 숲의 푸른 새벽 붉은 조용한 달빛 빠른 하얀 강철 용감한 검은
-static const char *const noun[7] = {
-    "\xeb\xb0\xa9\xeb\x9e\x91\xec\x9e\x90", "\xec\x82\xac\xeb\x83\xa5\xea\xbe\xbc", "\xea\xb6\x81\xec\x88\x98",
-    "\xec\xa0\x84\xec\x82\xac", "\xeb\x8a\x91\xeb\x8c\x80", "\xea\xb8\xb0\xec\x82\xac", "\xea\xb2\x80\xec\x82\xac",
-}; // 방랑자 사냥꾼 궁수 전사 늑대 기사 검사
-static const char *const top[TOP] = {
-    "\xeb\xb0\x94\xeb\x9e\x8c\xec\x9d\x98\xea\xb2\x80\xed\x9d\x94", // 바람의검흔 (85)
-    "\xec\x9d\x80\xed\x95\x98\xec\x9d\x98\xea\xb6\x81\xec\x88\x98", // 은하의궁수
-    "\xea\xb0\x95\xec\xb2\xa0\xec\x9d\x98\xeb\xb0\x94\xec\x9c\x84", // 강철의바위
-    "\xeb\xb6\x88\xeb\xa9\xb8\xec\x9d\x98\xec\xb0\xbd",             // 불멸의창
-    "\xec\x8b\xac\xec\x97\xb0\xec\x9d\x98\xea\xb8\xb0\xec\x82\xac", // 심연의기사
-    "\xed\x8f\xad\xed\x92\x8d\xec\x9d\x98\xec\x82\xac\xec\x88\x98", // 폭풍의사수
-    "\xeb\xb6\x89\xec\x9d\x80\xeb\x8b\xac\xea\xb5\xb0\xec\xa3\xbc", // 붉은달군주
-    "\xec\x98\x81\xec\x9b\x90\xec\x9d\x98\xec\x88\x98\xed\x98\xb8\xec\x9e\x90", // 영원의수호자
-    "\xed\x9d\x91\xec\x97\xbc\xec\x9d\x98\xea\xb5\xb0\xec\xa3\xbc", // 흑염의군주
-    "\xed\x94\xbc\xec\x9d\x98\xeb\x8c\x80\xea\xb3\xb5",             // 피의대공
-    "\xec\xb2\x9c\xeb\xb2\x8c\xec\x9d\x98\xec\x82\xac\xeb\x8f\x84", // 천벌의사도
-    "\xed\x98\xbc\xeb\x8f\x88\xec\x9d\x98\xeb\xa7\x88\xec\x99\x95", // 혼돈의마왕
-    "\xeb\xac\xb4\xed\x8c\xa8\xec\x9d\x98\xea\xb2\x80\xec\x84\xb1", // 무패의검성
-    "\xec\x8b\xa0\xec\x82\xb4\xec\x9e\x90",                         // 신살자
-    "\xea\xb2\xb0\xed\x88\xac\xec\x9e\xa5\xec\x9d\x98\xec\xa0\x84\xec\x84\xa4", // 결투장의전설 (99)
-};
+    "\xed\x99\xa9\xea\xb8\x88",
+    "\xec\x9d\x80\xeb\xb9\x9b",
+    "\xec\x84\x9c\xeb\xa6\xac",
+    "\xeb\xb6\x88\xea\xbd\x83",
+    "\xeb\xb2\x88\xea\xb0\x9c",
+    "\xea\xb7\xb8\xeb\xa6\xbc\xec\x9e\x90",
+    "\xeb\xb3\x84\xeb\xb9\x9b",
+    "\xed\x8f\xad\xed\x92\x8d",
+    "\xec\x8b\xac\xec\x97\xb0",
+    "\xec\xb2\x9c\xeb\x91\xa5",
+    "\xec\xb9\xa0\xed\x9d\x91",
+    "\xed\x83\x9c\xec\x96\x91"
+}; // 작은 바람 숲의 푸른 새벽 붉은 조용한 달빛 빠른 하얀 강철 용감한 검은 황금 은빛 서리 불꽃 번개 그림자 별빛 폭풍 심연 천둥 칠흑 태양
+static const char *const noun[32] = {
+    "\xeb\xb0\xa9\xeb\x9e\x91\xec\x9e\x90",
+    "\xec\x82\xac\xeb\x83\xa5\xea\xbe\xbc",
+    "\xea\xb6\x81\xec\x88\x98",
+    "\xec\xa0\x84\xec\x82\xac",
+    "\xeb\x8a\x91\xeb\x8c\x80",
+    "\xea\xb8\xb0\xec\x82\xac",
+    "\xea\xb2\x80\xec\x82\xac",
+    "\xeb\xa7\x88\xeb\xb2\x95\xec\x82\xac",
+    "\xec\x88\x98\xed\x98\xb8\xec\x9e\x90",
+    "\xec\xb9\xbc\xeb\x82\xa0",
+    "\xeb\xa7\xa4",
+    "\xea\xb3\xb0",
+    "\xec\x97\xac\xec\x9a\xb0",
+    "\xec\x9a\xa9\xeb\xb3\x91",
+    "\xea\xb8\xb0\xec\x88\x98",
+    "\xeb\x8f\x84\xec\xa0\x81",
+    "\xec\x82\xac\xeb\x8f\x84",
+    "\xed\x88\xac\xec\x82\xac",
+    "\xed\x8c\x8c\xec\x88\x98\xea\xbe\xbc",
+    "\xec\x88\x9c\xeb\xa1\x80\xec\x9e\x90",
+    "\xea\xb2\x80\xea\xb0\x9d",
+    "\xec\xb0\xbd\xec\x88\xa0\xec\x82\xac",
+    "\xed\x95\x99\xec\x9e\x90",
+    "\xec\x88\x98\xeb\x8f\x84\xec\x8a\xb9",
+    "\xec\xa0\x95\xec\xb0\xb0\xeb\xb3\x91",
+    "\xed\x8f\xac\xec\x88\x98",
+    "\xea\xb1\xb0\xec\x9d\xb8",
+    "\xea\xb5\xb0\xec\xa3\xbc",
+    "\xec\x98\x81\xec\x9b\x85",
+    "\xeb\xa7\xb9\xec\x88\x98",
+    "\xed\x95\xb4\xec\xa0\x81",
+    "\xec\x84\xb1\xea\xb8\xb0\xec\x82\xac"
+}; // 방랑자 사냥꾼 궁수 전사 늑대 기사 검사 마법사 수호자 칼날 매 곰 여우 용병 기수 도적 사도 투사 파수꾼 순례자 검객 창술사 학자 수도승 정찰병 포수 거인 군주 영웅 맹수 해적 성기사
+static const char *const top[15] = {
+    "\xeb\xb0\x94\xeb\x9e\x8c\xec\x9d\x98\xea\xb2\x80\xed\x9d\x94",
+    "\xec\x9d\x80\xed\x95\x98\xec\x9d\x98\xea\xb6\x81\xec\x88\x98",
+    "\xea\xb0\x95\xec\xb2\xa0\xec\x9d\x98\xeb\xb0\x94\xec\x9c\x84",
+    "\xeb\xb6\x88\xeb\xa9\xb8\xec\x9d\x98\xec\xb0\xbd",
+    "\xec\x8b\xac\xec\x97\xb0\xec\x9d\x98\xea\xb8\xb0\xec\x82\xac",
+    "\xed\x8f\xad\xed\x92\x8d\xec\x9d\x98\xec\x82\xac\xec\x88\x98",
+    "\xeb\xb6\x89\xec\x9d\x80\xeb\x8b\xac\xea\xb5\xb0\xec\xa3\xbc",
+    "\xec\x98\x81\xec\x9b\x90\xec\x9d\x98\xec\x88\x98\xed\x98\xb8\xec\x9e\x90",
+    "\xed\x9d\x91\xec\x97\xbc\xec\x9d\x98\xea\xb5\xb0\xec\xa3\xbc",
+    "\xed\x94\xbc\xec\x9d\x98\xeb\x8c\x80\xea\xb3\xb5",
+    "\xec\xb2\x9c\xeb\xb2\x8c\xec\x9d\x98\xec\x82\xac\xeb\x8f\x84",
+    "\xed\x98\xbc\xeb\x8f\x88\xec\x9d\x98\xeb\xa7\x88\xec\x99\x95",
+    "\xeb\xac\xb4\xed\x8c\xa8\xec\x9d\x98\xea\xb2\x80\xec\x84\xb1",
+    "\xec\x8b\xa0\xec\x82\xb4\xec\x9e\x90",
+    "\xea\xb2\xb0\xed\x88\xac\xec\x9e\xa5\xec\x9d\x98\xec\xa0\x84\xec\x84\xa4"
+}; // 바람의검흔 은하의궁수 강철의바위 불멸의창 심연의기사 폭풍의사수 붉은달군주 영원의수호자 흑염의군주 피의대공 천벌의사도 혼돈의마왕 무패의검성 신살자 결투장의전설
 
 static void copy_str(char *d, const char *a, const char *b) {
   int n = 0;
@@ -170,23 +236,24 @@ static void copy_str(char *d, const char *a, const char *b) {
   while (b && *b && n < 0x2f) d[n++] = *b++;
   while (n < 0x30) d[n++] = 0;
 }
+// the stat scale of rank r in percent: 50 x 1.0052039^r (63.25 times over the 799 steps)
+static u32 rank_pct(u32 r) {
+  double v = 50.0;
+  for (u32 i = 0; i < r; i++) v *= 1.0052039;
+  return (u32)(v + 0.5);
+}
 // rank r's rival (its number is left to the caller)
 static void rival(u32 r, Opp *o) {
   if (r >= RANKS) r = RANKS - 1;
-  o->rank = (u8)r;
+  u32 tier = r / PER_TIER;
+  o->rank = (u16)r;
   o->cls = (u8)((r * 3 + 1) % 4);
-  if (r < RANKS - TOP) {
-    copy_str(o->name, adj[(r * 5) % 13], noun[r / 13]);
-    o->pct = (u16)(25 + 75 * r / (RANKS - TOP - 1));
-    o->dlv = (s8)(-6 + (s32)(10 * r / (RANKS - TOP - 1)));
-  } else {
-    u32 t = r - (RANKS - TOP);
-    copy_str(o->name, top[t], 0);
-    o->pct = (u16)(160 + 340 * t / (TOP - 1));
-    o->dlv = (s8)(5 + t);
-  }
-  o->win = (u16)(15 + r / 5);
-  o->lose = 10;
+  if (r >= RANKS - TOP) copy_str(o->name, top[r - (RANKS - TOP)], 0);
+  else copy_str(o->name, adj[(r % 25) * 7 % 25], noun[r / 25]);
+  o->pct = (u16)rank_pct(r);
+  o->dlv = (s8)(-6 + (s32)(36 * r / (RANKS - 1)));
+  o->win = (u16)(20 + 5 * tier);
+  o->lose = (u16)(10 + 3 * tier);
 }
 static u32 rank_of_name(const char *name) {
   Opp o;
@@ -198,13 +265,17 @@ static u32 rank_of_name(const char *name) {
   }
   return 0;
 }
-// the rank the player's points reach: a tenth of them
-static u32 player_rank(void) {
-  s32 pts = (s32)rd32(slot_addr(ev_net) + 0x58);
+static s32 points_now(void) {
+  u32 save = rd32(n_save);
+  s32 pts = save ? (s32)rd32(save + 0x18c + 0x1d48 * rd32(save + 0x7f40) + 0x58) : 0;
 #ifdef NATIVE
   if (getenv("NETPTS")) pts = atoi(getenv("NETPTS"));
 #endif
-  s32 r = pts / 10;
+  return pts;
+}
+// the rank the player's points reach: a fifth of them
+static u32 player_rank(void) {
+  s32 r = points_now() / (TIER_PTS / PER_TIER);
   return r < 0 ? 0 : r >= RANKS ? RANKS - 1 : (u32)r;
 }
 static void new_opp(u32 r) {
@@ -242,7 +313,7 @@ static void put_rival_data(u32 who, s32 cls, s32 dlv, u32 pct) {
   wr32(d + 0x6c, scaled(rd32(d + 0x6c), pct));
   wr32(d + 0x70, scaled(rd32(d + 0x70), pct));
   if (cls >= 0 && (u32)cls != rd8(d + 1)) {
-    u32 mgr = rd32(rd32(n_items));
+    u32 mgr = rd32(n_items);
     wr8(d + 1, (u8)cls);
     for (u32 k = 0; k < 10 && mgr; k++) {
       u32 it = d + 0x134 + 0x2c * k;
@@ -274,6 +345,44 @@ static void list_entry(const Opp *o, int is_revenge) {
   w2(mate ? u16max(scaled(stat_of(mate, 4), o->pct)) : 0); w2(mate ? u16max(scaled(stat_of(mate, 5), o->pct)) : 0);
 }
 
+// The prize for beating `cur`: a piece of equipment near the player's level, of the player's class, its
+// quality (0 to 4) by tier; from platinum it needs five levels less (the game's own reward flag), from
+// diamond one of its numbers is raised (the other flag). The item table (5): column 7 the type (0 weapon,
+// 1 armour, 4 accessory), 9 the class (0: made the class's own by the game's own conversion), 12 the
+// level needed. Only items below 0x7d0 are items of the table.
+static u16 cand_tid[0x7d0];
+static u8 cand_lv[0x7d0];
+static u32 n_cand;
+static u32 tbl_val(u32 tbl, u32 col, u32 row) { u32 a[3] = {tbl, col, row}; return call_guest(n_get_val | 1, 3, a); }
+static void prize(u32 *tid, u32 *quality, u32 *less_level, u32 *boost) {
+  static const u8 q[TIERS] = {1, 1, 2, 2, 3, 3, 4, 4};
+  u32 tier = cur.rank / PER_TIER, me = hero();
+  *tid = 0xffff; *quality = q[tier]; *less_level = tier >= 3; *boost = tier >= 4;
+  u32 xls = rd32(n_xls), mgr = rd32(n_items);
+  if (!me || !xls || !mgr) return;
+  u32 a[2] = {xls, 5};
+  u32 tbl = call_guest(n_get_tbl | 1, 2, a);
+  if (!tbl) return;
+  if (!n_cand) {
+    u32 rows = rd16(tbl + 0xa);
+    if (rows > 0x7d0) rows = 0x7d0;
+    for (u32 t = 0; t < rows; t++) {
+      u32 type = tbl_val(tbl, 7, t), lv = tbl_val(tbl, 12, t);
+      if ((type <= 1 || type == 4) && tbl_val(tbl, 9, t) == 0 && lv > 0 && lv < 200) { cand_tid[n_cand] = (u16)t; cand_lv[n_cand++] = (u8)lv; }
+    }
+  }
+  if (!n_cand) return;
+  // the best a player of this level may use (five more with the flag), then one of the dozen closest below
+  u32 limit = level_of(me) + (*less_level ? 5 : 0), best[12], nb = 0;
+  for (u32 pass = 0; pass < 2 && !nb; pass++, limit = 255)
+    for (s32 lv = (s32)limit; lv > 0 && nb < 12; lv--)
+      for (u32 i = 0; i < n_cand && nb < 12; i++) if (cand_lv[i] == (u32)lv) best[nb++] = cand_tid[i];
+  if (!nb) return;
+  seed = seed * 1103515245u + 12345u;
+  u32 c[3] = {mgr, class_of(me), best[(seed >> 16) % nb]};
+  *tid = call_guest(n_to_class | 1, 3, c) & 0xffff;
+}
+
 // the offer of `cur`: CMvNet::SetCharacterDataInfo's data, with or without each fighter's small header
 static int opp_reply(u32 team, int headers, int with_id) {
   u32 me = hero();
@@ -281,8 +390,12 @@ static int opp_reply(u32 team, int headers, int with_id) {
   u32 mate = partner(me);
   w1(0);
   if (with_id) w4(cur.id); // (a revenge match keeps the number from the list)
-  w2(cur.win); w2(cur.lose); w2(0); w2(0xffff); // points won, points lost, -, reward item (none)
-  w1(0); w1(0); w1(0);
+  u32 tid, quality, less, boost;
+  prize(&tid, &quality, &less, &boost);
+  w2(cur.win); w2(cur.lose); w2(0); w2(tid); // points won, points lost, -, the prize
+  w1(quality); w1(less); w1(boost);
+  // the gold a win pays (CMvItemMgr::GetPvpReword reads the connection's +0xc12, which no reply sets)
+  wr32(ev_net + 0xc12, 2000u * (cur.rank / PER_TIER + 1) * (cur.rank % PER_TIER + 10));
   wn(cur.name, 0x30);
   w4(0); w4(0); w4(0); w4(0);
   w1(0);
@@ -422,8 +535,42 @@ static void n_t_send(void) {
   n_return(0);
 }
 
+// the arena screen (CZnPvpMenu) drawn: when, by the frames counted here
+static u32 n_frame, arena_seen;
+static void n_t_pvp_draw(void) {
+  arena_seen = n_frame;
+  u32 a = R[0];
+  n_return(call_guest_unhooked(n_pvp_draw | 1, 1, &a));
+}
+
+// For the page's badge on the arena screen: [0] whether it shows, [1] the player's points, [2] wins,
+// [3] losses, [4] the player's rank (0-799, a hundred a tier), [5] the offered rival's rank or -1,
+// [6] that rival's stat scale in percent, [7]/[8] the player's fighting strength (attack plus defence,
+// times most HP, over 10000) low and high 32 bits.
+EXPORT(arena_info) int arena_info(u32 *out) {
+  if (!n_on || !n_resolve()) return -1;
+  out[0] = arena_seen && n_frame - arena_seen < 8;
+  u32 save = rd32(n_save), slot = save ? save + 0x18c + 0x1d48 * rd32(save + 0x7f40) : 0;
+  out[1] = (u32)points_now();
+  out[2] = slot ? rd32(slot + 0x50) : 0;
+  out[3] = slot ? rd32(slot + 0x54) : 0;
+  out[4] = player_rank();
+  out[5] = cur.id ? cur.rank : 0xffffffffu;
+  out[6] = cur.pct;
+  u32 me = hero();
+  u64 cp = 0;
+  if (me && out[0]) {
+    u32 h = me;
+    cp = (u64)(stat_of(me, 4) + (u64)stat_of(me, 5)) * call_guest(n_hp_max | 1, 1, &h) / 10000u;
+  }
+  out[7] = (u32)cp;
+  out[8] = (u32)(cp >> 32);
+  return 0;
+}
+
 // once a frame, before the game's frame: what the server has for the game
 EXPORT(net_poll) void net_poll(void) {
+  n_frame++;
   if (!n_on || !ev_kind) return;
   int kind = ev_kind;
   u32 net = ev_net;
@@ -451,7 +598,8 @@ EXPORT(net_enable) int net_enable(int on) {
   if (!n_resolve()) return -1;
   n_on = on;
   ev_kind = EV_NONE;
-  if (aot_hook(n_connect, on ? n_t_connect : 0) || aot_hook(n_send, on ? n_t_send : 0)) return -1;
+  if (aot_hook(n_connect, on ? n_t_connect : 0) || aot_hook(n_send, on ? n_t_send : 0) ||
+      aot_hook(n_pvp_draw, on ? n_t_pvp_draw : 0)) return -1;
   return 0;
 }
 

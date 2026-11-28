@@ -1,7 +1,7 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "17";
+const VERSION = "18";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -1327,6 +1327,7 @@ function frameLoop(t) {
     deliverInput();
     if (core.frame() !== 0) return crashed();
     skillRule();
+    arenaBadge();
     acc -= frameInterval;
     ran++;
   }
@@ -1535,6 +1536,42 @@ function applyRules() {
   core.ex.damage_uncapped(prefs.damage === "uncapped" ? 1 : 0);
   skillsTick = 0;
 }
+// The PvP arena's badge (the server inside the core keeps the ladder): the player's tier, points and
+// record, and the fighting strength of the rival on offer next to the player's
+const TIERS = [["브론즈", "#d08a4c"], ["실버", "#d6dde6"], ["골드", "#ffd24a"], ["플래티넘", "#5fe0c8"],
+  ["다이아", "#8fd0ff"], ["마스터", "#d08cff"], ["그랜드마스터", "#ff6b6b"], ["챌린저", "#ffe9a8"]];
+const arena = { tick: 0, buf: 0, shown: "" };
+function korNum(n) {
+  const units = [[1e16, "경"], [1e12, "조"], [1e8, "억"], [1e4, "만"]];
+  for (const [v, u] of units) if (n >= v) return (n / v >= 100 ? Math.round(n / v) : Math.round(n / v * 10) / 10).toLocaleString("ko-KR") + u;
+  return Math.round(n).toLocaleString("ko-KR");
+}
+function arenaBadge() {
+  if (!core.ex.arena_info || --arena.tick > 0) return;
+  arena.tick = 10;
+  if (!arena.buf) arena.buf = core.ex.host_alloc(40);
+  const el = $("arena");
+  if (core.ex.arena_info(arena.buf) !== 0) return;
+  const v = new Int32Array(core.ex.memory.buffer, arena.buf, 9);
+  if (!v[0]) { if (arena.shown) { el.style.display = "none"; arena.shown = ""; } return; }
+  const pts = Math.max(0, v[1]), rank = v[4], tier = Math.floor(rank / 100), [tn, tc] = TIERS[tier];
+  const next = tier < 7 ? ` (다음 티어까지 ${((tier + 1) * 500 - pts).toLocaleString("ko-KR")})` : ` (${rank % 100 + 1}/100)`;
+  const cp = (v[7] >>> 0) + (v[8] >>> 0) * 4294967296;
+  let html = `<span class="tier" style="color:${tc}">${tn}</span> · 승점 ${pts.toLocaleString("ko-KR")}${next} · ${v[2]}승 ${v[3]}패` +
+    `<br><span class="sub">내 전투력 ${korNum(cp)}`;
+  if (v[5] >= 0) {
+    const ot = TIERS[Math.floor(v[5] / 100)], ratio = (v[6] / 100) ** 2;
+    html += ` · 상대 <span class="tier" style="color:${ot[1]}">${ot[0]}</span> ${korNum(cp * ratio)} (${ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)}배)`;
+  }
+  html += "</span>";
+  if (html !== arena.shown) {
+    el.innerHTML = html;
+    el.style.fontSize = Math.max(8, $("stage").clientHeight * 0.026) + "px";
+    el.style.display = "block";
+    arena.shown = html;
+  }
+}
+
 // the skills are raised on the field (the keypad's dial on screen), checked about every two seconds
 let skillsTick = 0;
 function skillRule() {
