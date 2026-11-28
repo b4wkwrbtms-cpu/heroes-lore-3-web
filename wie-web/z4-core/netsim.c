@@ -158,9 +158,16 @@ static u32 seed = 12345;
 // when the arena first measured it (its battle data, attack, defence, most HP and the equipment bonus
 // then), which every rival is built from from then on, so whatever the player gains afterwards counts;
 // and the revenge list.
-#define KEEP_MAGIC 0x33413a5au
+#define KEEP_MAGIC 0x34413a5au
+// The ladder's standard, the player's choice: their blader at level 38 with attack 9,061,703 and defence
+// 2,148,126 (the arena's screen, 2026-11-28). Whatever the hero is when measured (its equipment, skills
+// and class are taken from it), the rivals' stats are scaled so that the measured hero would have this
+// attack and defence; the player's own strength keeps changing as it does.
+#define PIN_ATT 9061703.0
+#define PIN_DEF 2148126.0
 typedef struct {
   u32 magic, slot, att, def, hp, n_revenge, serial, best_tier, pity, promo, streak, pad;
+  double scale; // the measured hero's stats times this give the ladder's standard (PIN_ATT, PIN_DEF)
   u8 blob[0x3e4];
   Opp revenge[4];
 } Keep;
@@ -432,9 +439,13 @@ static void measure(u32 me) {
   if (keep.magic == KEEP_MAGIC && keep.slot == cur_slot()) return;
   u32 d = char_data(me);
   for (u32 i = 0; i < 0x3e4; i++) keep.blob[i] = rd8(d + i);
-  keep.att = stat_of(me, 4);
-  keep.def = stat_of(me, 5);
-  keep.hp = hp_of(me);
+  double att = stat_of(me, 4), def = stat_of(me, 5);
+  if (att < 1) att = 1;
+  if (def < 1) def = 1;
+  keep.scale = dsqrt(PIN_ATT / att * (PIN_DEF / def));
+  keep.att = (u32)PIN_ATT;
+  keep.def = (u32)PIN_DEF;
+  keep.hp = (u32)(hp_of(me) * keep.scale);
   keep.pity = keep.promo = keep.streak = 0;
   keep.best_tier = player_rank() / PER_TIER;
   keep.slot = cur_slot();
@@ -446,7 +457,7 @@ static void measure(u32 me) {
 static double gain_of(u32 me) { double g = gear_mult(me); return g < 1 ? 1 : g; }
 static u32 eff_pct(u32 pct, u32 me) {
   double gain = gain_of(me);
-  double p = pct / dsqrt(gain);
+  double p = pct * (keep.scale > 0 ? keep.scale : 1) / dsqrt(gain);
   return p < 1 ? 1 : (u32)(p + 0.5);
 }
 
