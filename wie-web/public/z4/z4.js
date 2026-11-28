@@ -1,7 +1,7 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "15";
+const VERSION = "16";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -1624,6 +1624,7 @@ async function startGame() {
   }
   showOverlay(null);
   try { core.ex.fx_enable(1); core.ex.dpad_enable(); } catch {}
+  try { core.ex.net_enable?.(1); } catch {} // the PvP arena's server, inside the core
   applyRules();
   motion.on = prefs.motion === "smooth" && core.motionOn(true);
   running = true;

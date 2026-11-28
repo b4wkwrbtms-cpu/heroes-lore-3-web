@@ -117,6 +117,7 @@ static void write_ppm(const char *path) {
 }
 
 // script: lines "frame action args" read from a file: t x y (tap), d/m/u x y (touch down/move/up), s N (shot)
+u32 find_symbol(const char *);
 typedef void (*sighandler_t)(int);
 sighandler_t signal(int, sighandler_t);
 static void on_int(int sig) {
@@ -141,7 +142,24 @@ static void dump_samples(void) {
   fwrite(samples, 4, 0x200000 >> 2, f);
   fclose(f);
 }
+u32 find_symbol(const char *);
+typedef void (*sighandler_t)(int);
+sighandler_t signal(int, sighandler_t);
+unsigned alarm(unsigned);
+static void watchdog(int sig) {
+  (void)sig;
+  extern u32 cpu_pc;
+  u32 lb = (find_symbol("JNI_OnLoad") & ~1u) - 0x94764;
+  printf("watchdog: pc %x lr %x sp %x r0 %x r1 %x r2 %x r3 %x\n", cpu_pc - lb, (R[14] & ~1u) - lb, R[13], R[0], R[1], R[2], R[3]);
+  printf("r4 %x r5 %x r6 %x r7 %x r8 %x:", R[4], R[5], R[6], R[7], R[8]);
+  for (int i = 0; i < 48; i++) printf(" %02x", rd8(R[6] + i));
+  printf("\n");
+  for (int i = 0; i < 200; i++) { u32 v = rd32(R[13] + 4 * i); if (v - lb < 0x200000) printf("  stack %x\n", v - lb); }
+  fflush(stdout);
+  exit(3);
+}
 int main(int argc, char **argv) {
+  if (getenv("WATCHDOG")) { signal(14, watchdog); alarm(atoi(getenv("WATCHDOG"))); }
   signal(2, on_int);
   int sample_from = getenv("SAMPLE") ? atoi(getenv("SAMPLE")) : -1;
   signal(27, on_prof);
@@ -192,6 +210,8 @@ int main(int argc, char **argv) {
   if (getenv("DPAD")) { int dpad_enable(void); printf("dpad_enable %d\n", dpad_enable()); }
   if (getenv("REFINE")) { int refine_easy(int); printf("refine_easy %d\n", refine_easy(1)); }
   if (getenv("CRITZOOM")) { int crit_zoom(int); printf("crit_zoom %d\n", crit_zoom(atoi(getenv("CRITZOOM")))); }
+  { void net_trace_setup(void); net_trace_setup(); }
+  if (getenv("NET")) { int net_enable(int); printf("net_enable %d\n", net_enable(1)); }
   if (getenv("SPMAX")) { int sp_unlimited(int); printf("sp_unlimited %d\n", sp_unlimited(1)); }
   if (getenv("DAMAGE")) { int damage_uncapped(int); printf("damage_uncapped %d\n", damage_uncapped(1)); }
   if (getenv("STATS")) { int stat_rules(int, int); printf("stat_rules %d\n", stat_rules(1, atoi(getenv("STATS")))); }

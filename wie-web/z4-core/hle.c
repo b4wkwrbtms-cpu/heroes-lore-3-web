@@ -8,6 +8,7 @@ void jni_init(u32 (*data_alloc)(u32));
 void jni_end_frame(void);
 u32 jni_this_object(void);
 void java_timers_run(void);
+void net_poll(void);
 extern u32 jni_env_addr, jni_vm_addr;
 extern u32 guest_errno_addr;
 u32 guest_heap_in_use(void);
@@ -604,6 +605,8 @@ EXPORT(app_start) int app_start(int w, int h) {
 EXPORT(app_frame) int app_frame(void) {
   if (cpu_halt) return -1;
   java_timers_run();
+  if (cpu_halt) return -1;
+  net_poll();
   if (cpu_halt) return -1;
   call_native(n_render, 0, 0);
   return cpu_halt ? -1 : 0;

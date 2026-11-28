@@ -37,6 +37,12 @@ library directly:
   picture and restores every page and the host-side tables, so the game never sees the extra frame (checked
   the same way: identical frame checksums with paints after every frame). `CMvCharacter::SetDamage` reports
   where a blow landed (host event 10) for the page's hit effects.
+- `netsim.c` — the PvP arena's server, inside the core: `CGsNetCore::Connect` and `CGsNetCore::Send` are
+  replaced so nothing touches a socket, and each request the game built is answered a frame later through
+  the game's own receive path (`net_poll`, called before every frame). Connect, match result, the
+  player's fighters, random/search/revenge opponents get real answers (opponents are the player's own
+  battle data from `SetPVPCharData`, turned into one of four classes with the equipment converted by the
+  game's item manager); anything else gets the server's failure byte. `net_enable` installs it.
 - `tweaks.c` — rules the player can switch in the page: unlimited Zen and gold (each look at the money first
   fills it to the game's own limit through the game's setter, which keeps its checksum right) and easier
   refining (a success chance of at least 80, the helper item kept), stat points that do not run out and a

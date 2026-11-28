@@ -16,7 +16,7 @@ LINK="-Wl,--no-entry -Wl,-z,stack-size=2097152 -Wl,--strip-all"
 # what a translations module takes from the core
 SHARE="-Wl,--export-table -Wl,--growable-table -Wl,--export=__stack_pointer"
 for s in G R V cpu_pc fN fZ fC fV fQ fT t_in_it cow_on cow_bits aot_call cow_save_page; do SHARE="$SHARE -Wl,--export=$s"; done
-SRC="cpu.c util.c fs.c jni.c hle.c cow.c motion.c tweaks.c input.c"
+SRC="cpu.c util.c fs.c jni.c hle.c cow.c motion.c tweaks.c input.c netsim.c"
 stale() { [ ! -f "$1" ] || [ aot_gen.c -nt "$1" ] || [ cpu_core.h -nt "$1" ] || [ thumb2.inc -nt "$1" ] || [ vfp.inc -nt "$1" ] || [ base.h -nt "$1" ]; }
 if [ -n "$SIDE" ]; then
   if stale aot_gen.pic.o; then clang $FLAGS -fPIC -DAOT -w -c aot_gen.c -o aot_gen.pic.o; fi

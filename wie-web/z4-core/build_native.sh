@@ -10,4 +10,4 @@ case "$CFLAGS" in *-DAOT*)
   fi
   EXTRA=aot_gen.native.o ;;
 esac
-clang $FLAGS -o ${1:-z4native} cpu.c util.c fs.c jni.c hle.c cow.c motion.c tweaks.c input.c native_main.c $EXTRA -lm
+clang $FLAGS -o ${1:-z4native} cpu.c util.c fs.c jni.c hle.c cow.c motion.c tweaks.c input.c netsim.c native_main.c $EXTRA -lm
