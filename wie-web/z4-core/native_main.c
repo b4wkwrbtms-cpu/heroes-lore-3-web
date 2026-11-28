@@ -211,6 +211,7 @@ int main(int argc, char **argv) {
   if (getenv("REFINE")) { int refine_easy(int); printf("refine_easy %d\n", refine_easy(1)); }
   if (getenv("CRITZOOM")) { int crit_zoom(int); printf("crit_zoom %d\n", crit_zoom(atoi(getenv("CRITZOOM")))); }
   { void net_trace_setup(void); net_trace_setup(); }
+  if (getenv("WIDETEXT")) { int wide_text(void); printf("wide_text %d\n", wide_text()); }
   if (getenv("NET")) { int net_enable(int); printf("net_enable %d\n", net_enable(1)); }
   if (getenv("SPMAX")) { int sp_unlimited(int); printf("sp_unlimited %d\n", sp_unlimited(1)); }
   if (getenv("DAMAGE")) { int damage_uncapped(int); printf("damage_uncapped %d\n", damage_uncapped(1)); }

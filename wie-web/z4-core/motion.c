@@ -368,3 +368,25 @@ EXPORT(live_cam) u32 live_cam(void) {
 // drawn (the log covers the whole frame; before, a dash could stop them and effects showed the next frame
 // early), 3 = also damage numbers that float up and fade out smoothly.
 EXPORT(motion_rev) int motion_rev(void) { return 3; }
+
+// Text clipping on the wide screen: CGxBFont keeps the screen size it was made with (800 x 480, before
+// the page widens the screen) and clamps every clip rectangle to it, so a scrolling name drawn right of
+// x 800 (the PvP arena's opponent, for one) was cut short. Each SetClipRect first gets the real size.
+static u32 font_clip;
+static void m_font_clip(void) {
+  u32 font = R[0];
+  wr32(font + 0x50, scr_w);
+  wr32(font + 0x54, scr_h);
+  u32 a[2] = {font, R[1]};
+  call_guest_unhooked(font_clip | 1, 2, a);
+  helper_ret();
+}
+EXPORT(wide_text) int wide_text(void) {
+  u32 a = find_symbol("_ZN8CGxBFont11SetClipRectEPK7TGXRECT") & ~1u;
+  if (!a) return -1;
+  u32 h = 2166136261u;
+  for (u32 k = 0; k < 226; k++) h = (h ^ rd8(a + k)) * 16777619u;
+  if (h != 0xaca5bd9cu) { logf("motion: SetClipRect %08x", h); return -1; }
+  font_clip = a;
+  return aot_hook(a, m_font_clip);
+}

@@ -5,11 +5,12 @@
 // (connect, the last match's result, the player's fighters, a random, searched or revenge opponent) get
 // real answers; any other network menu gets the server's "failed" answer, as when it could not connect.
 //
-// Opponents are a roster of eight under names of their own, of all four classes: each fights with the
-// player's own hero's stats and skill levels (so a match is even), in their class with the hero's
-// equipment turned into their class's (as the game turns drops), at a level a little off the hero's. The
-// player's wins, losses and points are counted the way the game shows them; whoever beat the player is
-// on the revenge list until beaten back (kept while the page runs).
+// Opponents are a ranked roster of a hundred under names of their own, of all four classes (see `rival`):
+// each fights with the player's own hero's battle data, scaled by its rank, in its class with the hero's
+// equipment turned into its class's (as the game turns drops). The player meets rivals near their points,
+// so wins bring stronger ones; the top fifteen are well beyond the player. The player's wins, losses and
+// points are counted the way the game shows them; whoever beat the player is on the revenge list until
+// beaten back (kept while the page runs).
 #include "base.h"
 #ifdef NATIVE
 char *getenv(const char *);
@@ -122,45 +123,93 @@ static u32 partner(u32 me) {
   return 0;
 }
 static u32 level_of(u32 who) { u32 a = rd8(who + 0x593); return call_guest(n_xor_byte | 1, 1, &a) & 0xff; }
-static u32 stat_of(u32 who, u32 stat) { u32 a[4] = {who, stat, 0, 0}; return call_guest(n_stat_total | 1, 4, a) & 0xffff; }
+static u32 stat_of(u32 who, u32 stat) { u32 a[4] = {who, stat, 0, 0}; return call_guest(n_stat_total | 1, 4, a); }
 
-// a win is worth WIN_PTS and a loss costs LOSE_PTS of the player's points
-#define WIN_PTS 20
-#define LOSE_PTS 10
-typedef struct { u32 id; char name[0x30]; u8 cls; s8 dlv; } Opp;
+// The arena's hundred: rank 0 (weakest) to 99. A rival fights with the player's own hero's battle data,
+// its four main stats (and HP, SP) scaled by the rank's strength: from a quarter of the player's at rank 0
+// up to the player's own at rank 84, then the top fifteen from 1.6 to 5 times the player's. Their level
+// is a little under the player's at the bottom and well over it at the top. The player meets rivals near
+// their points (a tenth of them, give or take two ranks), so winning brings ever stronger ones.
+#define RANKS 100
+#define TOP 15
+typedef struct { u32 id; char name[0x30]; u8 cls, rank; s8 dlv; u16 pct, win, lose; } Opp;
 static Opp cur, revenge[4];
-static u32 n_revenge, opp_serial = 1000, search_page;
+static u32 n_revenge, opp_serial = 1000, seed = 12345;
 
-// the roster: a name, a class (0 slayer, 1 blader, 2 ranger, 3 druid) and how many levels from the player's
-typedef struct { const char *name; u8 cls; s8 dlv; } Rival;
-static const Rival rivals[] = {
-    {"\xea\xb7\xb8\xeb\xa6\xbc\xec\x9e\x90\xea\xb2\x80\xec\x82\xac", 0, 1},        // 그림자검사
-    {"Noctis77", 1, 0},
-    {"\xeb\x8b\xac\xeb\xb9\x9b\xeb\xa0\x88\xec\x9d\xb8\xec\xa0\x80", 2, 2},        // 달빛레인저
-    {"\xec\x88\xb2\xec\x9d\x98\xec\x88\x98\xed\x98\xb8\xec\x9e\x90", 3, -1},       // 숲의수호자
-    {"BladeQueen", 1, 3},
-    {"\xeb\xb6\x89\xec\x9d\x80\xec\x82\xac\xeb\x83\xa5\xea\xbe\xbc", 2, -2},       // 붉은사냥꾼
-    {"druid_rain", 3, 1},
-    {"\xea\xb2\xb0\xed\x88\xac\xec\x9e\xa5\xec\x9d\x98\xec\xa0\x84\xec\x84\xa4", 0, 4}, // 결투장의전설
+static const char *const adj[13] = {
+    "\xec\x9e\x91\xec\x9d\x80", "\xeb\xb0\x94\xeb\x9e\x8c", "\xec\x88\xb2\xec\x9d\x98", "\xed\x91\xb8\xeb\xa5\xb8",
+    "\xec\x83\x88\xeb\xb2\xbd", "\xeb\xb6\x89\xec\x9d\x80", "\xec\xa1\xb0\xec\x9a\xa9\xed\x95\x9c", "\xeb\x8b\xac\xeb\xb9\x9b",
+    "\xeb\xb9\xa0\xeb\xa5\xb8", "\xed\x95\x98\xec\x96\x80", "\xea\xb0\x95\xec\xb2\xa0", "\xec\x9a\xa9\xea\xb0\x90\xed\x95\x9c",
+    "\xea\xb2\x80\xec\x9d\x80",
+}; // 작은 바람 숲의 푸른 새벽 붉은 조용한 달빛 빠른 하얀 강철 용감한 검은
+static const char *const noun[7] = {
+    "\xeb\xb0\xa9\xeb\x9e\x91\xec\x9e\x90", "\xec\x82\xac\xeb\x83\xa5\xea\xbe\xbc", "\xea\xb6\x81\xec\x88\x98",
+    "\xec\xa0\x84\xec\x82\xac", "\xeb\x8a\x91\xeb\x8c\x80", "\xea\xb8\xb0\xec\x82\xac", "\xea\xb2\x80\xec\x82\xac",
+}; // 방랑자 사냥꾼 궁수 전사 늑대 기사 검사
+static const char *const top[TOP] = {
+    "\xeb\xb0\x94\xeb\x9e\x8c\xec\x9d\x98\xea\xb2\x80\xed\x9d\x94", // 바람의검흔 (85)
+    "\xec\x9d\x80\xed\x95\x98\xec\x9d\x98\xea\xb6\x81\xec\x88\x98", // 은하의궁수
+    "\xea\xb0\x95\xec\xb2\xa0\xec\x9d\x98\xeb\xb0\x94\xec\x9c\x84", // 강철의바위
+    "\xeb\xb6\x88\xeb\xa9\xb8\xec\x9d\x98\xec\xb0\xbd",             // 불멸의창
+    "\xec\x8b\xac\xec\x97\xb0\xec\x9d\x98\xea\xb8\xb0\xec\x82\xac", // 심연의기사
+    "\xed\x8f\xad\xed\x92\x8d\xec\x9d\x98\xec\x82\xac\xec\x88\x98", // 폭풍의사수
+    "\xeb\xb6\x89\xec\x9d\x80\xeb\x8b\xac\xea\xb5\xb0\xec\xa3\xbc", // 붉은달군주
+    "\xec\x98\x81\xec\x9b\x90\xec\x9d\x98\xec\x88\x98\xed\x98\xb8\xec\x9e\x90", // 영원의수호자
+    "\xed\x9d\x91\xec\x97\xbc\xec\x9d\x98\xea\xb5\xb0\xec\xa3\xbc", // 흑염의군주
+    "\xed\x94\xbc\xec\x9d\x98\xeb\x8c\x80\xea\xb3\xb5",             // 피의대공
+    "\xec\xb2\x9c\xeb\xb2\x8c\xec\x9d\x98\xec\x82\xac\xeb\x8f\x84", // 천벌의사도
+    "\xed\x98\xbc\xeb\x8f\x88\xec\x9d\x98\xeb\xa7\x88\xec\x99\x95", // 혼돈의마왕
+    "\xeb\xac\xb4\xed\x8c\xa8\xec\x9d\x98\xea\xb2\x80\xec\x84\xb1", // 무패의검성
+    "\xec\x8b\xa0\xec\x82\xb4\xec\x9e\x90",                         // 신살자
+    "\xea\xb2\xb0\xed\x88\xac\xec\x9e\xa5\xec\x9d\x98\xec\xa0\x84\xec\x84\xa4", // 결투장의전설 (99)
 };
 
-#define NAMES (sizeof rivals / sizeof rivals[0])
-
-static const Rival *rival_named(const char *name) {
-  for (u32 i = 0; i < NAMES; i++) {
-    const char *a = rivals[i].name;
-    int k = 0;
-    while (a[k] && a[k] == name[k]) k++;
-    if (!a[k] && !name[k]) return &rivals[i];
-  }
-  return &rivals[0];
+static void copy_str(char *d, const char *a, const char *b) {
+  int n = 0;
+  while (*a && n < 0x2f) d[n++] = *a++;
+  while (b && *b && n < 0x2f) d[n++] = *b++;
+  while (n < 0x30) d[n++] = 0;
 }
-static void new_opp(const Rival *r) {
+// rank r's rival (its number is left to the caller)
+static void rival(u32 r, Opp *o) {
+  if (r >= RANKS) r = RANKS - 1;
+  o->rank = (u8)r;
+  o->cls = (u8)((r * 3 + 1) % 4);
+  if (r < RANKS - TOP) {
+    copy_str(o->name, adj[(r * 5) % 13], noun[r / 13]);
+    o->pct = (u16)(25 + 75 * r / (RANKS - TOP - 1));
+    o->dlv = (s8)(-6 + (s32)(10 * r / (RANKS - TOP - 1)));
+  } else {
+    u32 t = r - (RANKS - TOP);
+    copy_str(o->name, top[t], 0);
+    o->pct = (u16)(160 + 340 * t / (TOP - 1));
+    o->dlv = (s8)(5 + t);
+  }
+  o->win = (u16)(15 + r / 5);
+  o->lose = 10;
+}
+static u32 rank_of_name(const char *name) {
+  Opp o;
+  for (u32 r = 0; r < RANKS; r++) {
+    rival(r, &o);
+    int k = 0;
+    while (k < 0x30 && o.name[k] == name[k] && name[k]) k++;
+    if (k < 0x30 && !o.name[k] && !name[k]) return r;
+  }
+  return 0;
+}
+// the rank the player's points reach: a tenth of them
+static u32 player_rank(void) {
+  s32 pts = (s32)rd32(slot_addr(ev_net) + 0x58);
+#ifdef NATIVE
+  if (getenv("NETPTS")) pts = atoi(getenv("NETPTS"));
+#endif
+  s32 r = pts / 10;
+  return r < 0 ? 0 : r >= RANKS ? RANKS - 1 : (u32)r;
+}
+static void new_opp(u32 r) {
+  rival(r, &cur);
   cur.id = ++opp_serial;
-  for (int i = 0; i < 0x30; i++) cur.name[i] = 0;
-  for (int i = 0; r->name[i] && i < 0x2f; i++) cur.name[i] = r->name[i];
-  cur.cls = r->cls;
-  cur.dlv = r->dlv;
 }
 static void revenge_drop(u32 id) {
   for (u32 i = 0; i < n_revenge; i++)
@@ -181,11 +230,17 @@ static u32 char_data(u32 who) {
   call_guest(n_char_data | 1, 3, a);
   return tmp;
 }
+static u32 u16max(u32 v) { return v > 0xffff ? 0xffff : v; } // the lists carry 16 bits
 static u32 lv_shift(u32 lv, s32 d) { s32 v = (s32)lv + d; return v < 1 ? 1 : v > 99 ? 99 : (u32)v; }
-// the same, turned into a rival's: their class (the equipment made the class's own, as the game's
-// CMvItemMgr does for drops) and their level
-static void put_rival_data(u32 who, s32 cls, s32 dlv) {
+// the same, turned into a rival's: their strength, their class (the equipment made the class's own, as
+// the game's CMvItemMgr does for drops) and their level
+static u32 scaled(u32 v, u32 pct) { u64 x = (u64)v * pct / 100; return x < 1 ? 1 : x > 0x7fffffff ? 0x7fffffff : (u32)x; }
+static void put_rival_data(u32 who, s32 cls, s32 dlv, u32 pct) {
   u32 d = char_data(who);
+  // tagSavePlayerData: +0xc the four main stats, +0x6c HP, +0x70 SP
+  for (u32 k = 0; k < 4; k++) wr32(d + 0xc + 4 * k, scaled(rd32(d + 0xc + 4 * k), pct));
+  wr32(d + 0x6c, scaled(rd32(d + 0x6c), pct));
+  wr32(d + 0x70, scaled(rd32(d + 0x70), pct));
   if (cls >= 0 && (u32)cls != rd8(d + 1)) {
     u32 mgr = rd32(rd32(n_items));
     wr8(d + 1, (u8)cls);
@@ -214,9 +269,9 @@ static void list_entry(const Opp *o, int is_revenge) {
   if (is_revenge) { w4(o->id); wn(o->name, 0x30); w1(0); wn(0, 6); } // -, the date of the match
   else { w1(0); wn(o->name, 0x30); }
   w1(o->cls); w1(lv_shift(me ? level_of(me) : 1, o->dlv));
-  w2(me ? stat_of(me, 4) : 0); w2(me ? stat_of(me, 5) : 0);
+  w2(me ? u16max(scaled(stat_of(me, 4), o->pct)) : 0); w2(me ? u16max(scaled(stat_of(me, 5), o->pct)) : 0);
   w1(mate ? class_of(mate) : 0); w1(mate ? lv_shift(level_of(mate), o->dlv) : 0);
-  w2(mate ? stat_of(mate, 4) : 0); w2(mate ? stat_of(mate, 5) : 0);
+  w2(mate ? u16max(scaled(stat_of(mate, 4), o->pct)) : 0); w2(mate ? u16max(scaled(stat_of(mate, 5), o->pct)) : 0);
 }
 
 // the offer of `cur`: CMvNet::SetCharacterDataInfo's data, with or without each fighter's small header
@@ -226,7 +281,7 @@ static int opp_reply(u32 team, int headers, int with_id) {
   u32 mate = partner(me);
   w1(0);
   if (with_id) w4(cur.id); // (a revenge match keeps the number from the list)
-  w2(WIN_PTS); w2(LOSE_PTS); w2(0); w2(0xffff); // points won, points lost, -, reward item (none)
+  w2(cur.win); w2(cur.lose); w2(0); w2(0xffff); // points won, points lost, -, reward item (none)
   w1(0); w1(0); w1(0);
   wn(cur.name, 0x30);
   w4(0); w4(0); w4(0); w4(0);
@@ -234,8 +289,8 @@ static int opp_reply(u32 team, int headers, int with_id) {
   w1(2); // the opponent and a partner
   for (int k = 0; k < 2; k++) {
     if (headers) { w1(0); w1(0); w2(0); w2(0); }
-    if (k && mate) put_rival_data(mate, -1, cur.dlv);
-    else put_rival_data(me, cur.cls, cur.dlv);
+    if (k && mate) put_rival_data(mate, -1, cur.dlv, cur.pct);
+    else put_rival_data(me, cur.cls, cur.dlv, cur.pct);
     w2(0); w2(0);
   }
   return 1;
@@ -272,8 +327,8 @@ static void serve(u32 id) {
     u32 opp = r4(), kind = r1();
     s32 win = (s32)rd32(slot + 0x50), lose = (s32)rd32(slot + 0x54), pts = (s32)rd32(slot + 0x58);
     if (opp && opp == cur.id) {
-      if (kind == 1 || kind == 3) { win++; pts += WIN_PTS; }
-      if (kind == 2 || kind == 4) { lose++; pts -= LOSE_PTS; }
+      if (kind == 1 || kind == 3) { win++; pts += cur.win; }
+      if (kind == 2 || kind == 4) { lose++; pts -= cur.lose; }
       if (kind == 2) revenge_add(&cur);
       if (kind == 3) revenge_drop(cur.id);
       cur.id = 0;
@@ -283,34 +338,29 @@ static void serve(u32 id) {
     w4(win); w4(lose); w4(pts);
     break;
   }
-  case 0x818: { // CS_GET_MATCH_RANDOM_OPP -> someone from the arena's roster
+  case 0x818: { // CS_GET_MATCH_RANDOM_OPP -> a rival near the player's rank
     u32 team = r1() == 2;
-    static u32 turn;
-#ifdef NATIVE
-    if (getenv("NETRIVAL") && !turn) turn = atoi(getenv("NETRIVAL"));
-#endif
-    new_opp(&rivals[turn++ % NAMES]);
+    seed = seed * 1103515245u + 12345u + opp_serial;
+    s32 r = (s32)player_rank() + (s32)((seed >> 16) % 5) - 2;
+    new_opp(r < 0 ? 0 : r >= RANKS ? RANKS - 1 : (u32)r);
     if (!opp_reply(team, 1, 1)) { op = reply + 4; w1(0xff); }
     break;
   }
-  case 0x81e: // CS_GET_MATCH_SEARCH_OPP_LIST -> the whole roster, whatever was typed
+  case 0x81e: { // CS_GET_MATCH_SEARCH_OPP_LIST -> four rivals around the player's rank, whatever was typed
+    s32 from = (s32)player_rank() - 1;
+    if (from < 0) from = 0;
+    if (from > RANKS - 4) from = RANKS - 4;
     w1(0);
-    w1(NAMES < 4 ? NAMES : 4);
-    for (u32 i = 0; i < NAMES && i < 4; i++) {
-      Opp o = {0};
-      const Rival *r = &rivals[(search_page + i) % NAMES];
-      for (int k = 0; r->name[k] && k < 0x2f; k++) o.name[k] = r->name[k];
-      o.cls = r->cls; o.dlv = r->dlv;
-      list_entry(&o, 0);
-    }
-    search_page = (search_page + 4) % NAMES;
+    w1(4);
+    for (u32 i = 0; i < 4; i++) { Opp o; rival((u32)from + i, &o); list_entry(&o, 0); }
     break;
+  }
   case 0x820: { // CS_GET_MATCH_SEARCH_OPP_DATA (mode, name) -> that one
     u32 team = r1() == 2;
     char name[0x30];
     for (int i = 0; i < 0x30; i++) name[i] = (char)r1();
     name[0x2f] = 0;
-    new_opp(rival_named(name));
+    new_opp(rank_of_name(name));
     if (!opp_reply(team, 0, 1)) { op = reply + 4; w1(0xff); }
     break;
   }
@@ -321,7 +371,7 @@ static void serve(u32 id) {
     break;
   case 0x81c: { // CS_GET_REVENGE_DATA (mode, id) -> that one again
     u32 team = r1() == 2, id = r4();
-    new_opp(&rivals[0]);
+    new_opp(0);
     for (u32 i = 0; i < n_revenge; i++) if (revenge[i].id == id) cur = revenge[i];
     cur.id = id;
     if (!opp_reply(team, 1, 0)) { op = reply + 4; w1(0xff); }
