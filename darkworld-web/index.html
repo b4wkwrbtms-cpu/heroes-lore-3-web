@@ -1,0 +1,25 @@
+<!doctype html><html lang=ko><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name=apple-mobile-web-app-capable content=yes><meta name=mobile-web-app-capable content=yes><meta name=apple-mobile-web-app-status-bar-style content=black-translucent><meta name=apple-mobile-web-app-title content="다크월드 1.57"><meta name=theme-color content=#000000><link rel=manifest href=manifest.json><link rel=apple-touch-icon href=icon-192.png><title>다크월드 1.57</title><style>body,html{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;background:#000;height:100%;margin:0;overflow:hidden}body{color:#eee7d1;font-family:NeoDunggeunmo,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Noto Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif}#frame{position:fixed;left:0;top:0;overflow:hidden;transform-origin:0 0}#probe{visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);position:fixed}#screen{width:calc(100% - var(--ml,0px) - var(--mr,0px));height:calc(100% - var(--mt,0px) - var(--mb,0px));display:block;position:absolute;top:var(--mt,0px);left:var(--ml,0px)}#boot{z-index:10;text-align:center;background:#000;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:16px;display:flex;position:absolute;top:0;right:0;bottom:0;left:0}#boot h1{color:#ffdf72;letter-spacing:2px;margin:0;font-size:34px;font-weight:400}#boot .bar{background:#101d16;border:2px solid #d4b66b;width:min(320px,(var(--fw,100vw) *.8));height:10px}#boot .bar i{background:#ffdf72;height:100%;width:0;display:block}#boot button{color:#ffe064;background:#304333;border:2px solid #d4b66b;padding:10px 28px;font:inherit;font-size:22px;display:none}#boot .msg{color:#9ca994;white-space:pre-wrap;min-height:1.2em;max-width:calc(var(--fw,100vw) *.9);font-size:15px}#gear{z-index:5;color:#d4b66b;text-align:center;background:rgba(16,29,22,.55);border-radius:17px;border:1px solid rgba(212,182,107,.5);width:34px;height:34px;padding:0;font-size:18px;line-height:32px;position:absolute;right:calc(var(--mr,0px) + 6px);top:6px}#dwchatbtn{position:absolute!important;right:calc(var(--mr,0px) + 46px)!important;top:6px!important}#boot .pick{display:block}#boot .credit,#boot .hint{color:#768366;max-width:calc(var(--fw,100vw) *.9);font-size:13px;font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Noto Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif}#boot .credit a{color:inherit}.panel{z-index:8;background:rgba(0,0,0,.55);align-items:center;justify-content:center;display:none;position:absolute;top:0;right:0;bottom:0;left:0}.panel.open{display:flex}.box{box-sizing:border-box;background:#1f2c23;border:3px solid #d4b66b;outline:2px solid #768366;outline-offset:-9px;width:min(560px,(var(--fw,100vw) *.94));max-height:calc(var(--fh,100vh) *.92);padding:18px;overflow:auto}.box h2{color:#ffdf72;background:#304333;border:2px solid #d4b66b;justify-content:space-between;margin:0 0 12px;padding:8px 12px;font-weight:400;font-size:22px;display:flex}.box h2 small{color:#9ca994;align-self:center;font-size:15px}.row{cursor:pointer;background:#25392e;border:2px solid #73816b;justify-content:space-between;align-items:center;gap:10px;margin:6px 0;padding:9px 12px;font-size:17px;display:flex}.navsel{outline:3px solid #ffdf72!important;outline-offset:-3px}.row.sel,.row:active{color:#ffe064;background:#40523a;border-color:#ffdf72}.row .v{color:#ffe064;white-space:nowrap}.note{white-space:pre-wrap;background:#101d16;border:2px solid #768366;min-height:2.6em;margin-top:10px;padding:10px 12px;font-size:15px}.btns{gap:8px;margin-top:12px;display:flex}.btns button{color:#eee7d1;background:#304333;border:2px solid #d4b66b;flex:1;padding:8px;font:inherit;font-size:17px}.status{color:#9ca994;min-height:1.2em;margin-top:8px;font-size:14px}</style></head><body>
+<div id=probe></div>
+<div id=frame>
+<canvas id=screen></canvas>
+<button id=gear aria-label=설정 style=display:none>⚙</button>
+<div id=boot>
+  <h1>다크월드</h1>
+  <div class=bar><i id=prog></i></div>
+  <div class=msg id=bootmsg>불러오는 중…</div>
+  <button id=start>시작하기</button>
+  <p class=hint id=turn-hint hidden>아이폰 제어 센터에서 화면 방향 잠금을 끄고 폰을 가로로 들면, 시계·배터리가 사라지고 홈 바도 화면 아래로 가요.</p>
+  <p class=credit>This project is based on <a href=https://github.com/dlunch/wie>wie</a>, created by Inseok Lee.</p>
+</div>
+<div class=panel id=menu><div class=box id=menubox></div></div>
+</div>
+<input type=file id=file style=display:none>
+<script src="data.js?v=28"></script>
+<script src="core.js?v=28"></script>
+<script src="plus.js?v=28"></script>
+<script src="input.js?v=28"></script>
+<script src="cheat.js?v=28"></script>
+<script src="dw.js?v=28"></script>
+
+
+</body></html>

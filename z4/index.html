@@ -1,0 +1,97 @@
+<!doctype html><html lang=ko><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name=apple-mobile-web-app-capable content=yes><meta name=mobile-web-app-capable content=yes><meta name=apple-mobile-web-app-status-bar-style content=black-translucent><meta name=apple-mobile-web-app-title content=제노니아4><meta name=theme-color content=#000000><meta name=format-detection content="telephone=no"><title>제노니아4</title><link rel=manifest href=manifest.webmanifest><link rel=apple-touch-icon href=icon-180.png><link rel=icon href=icon-192.png><style>:root{--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--accent:#4f86d9}*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}body,html{color:#eee;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;touch-action:none;background:#000;height:100%;margin:0;font-family:-apple-system,Apple SD Gothic Neo,Noto Sans KR,sans-serif;overflow:hidden}#probe{visibility:hidden;padding:var(--sat) var(--sar) var(--sab) var(--sal);position:fixed}#frame{position:fixed;left:0;top:0;transform-origin:0 0}#stage{background:#000;position:absolute}#stage canvas{width:100%;height:100%;position:absolute;left:0;top:0}#fx{pointer-events:none}#arena{z-index:4;pointer-events:none;white-space:nowrap;color:#f3e6c8;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:.25em .6em;line-height:1.35;font-weight:600;display:none;position:absolute;left:12.6%;top:1.4%}#arena .tier{font-weight:800}#arena .sub{color:#cfc3a6;font-weight:500}#perf{z-index:5;color:#9f9;pointer-events:none;white-space:nowrap;background:rgba(0,0,0,.6);border-radius:8px;padding:3px 8px;font:11px/1.3 ui-monospace,Menlo,monospace;display:none;position:absolute;left:50%;bottom:4px;transform:translate(-50%)}.side{flex-direction:column;gap:10px;align-items:center;display:flex;position:absolute}.side.split{justify-content:space-between;padding-top:10px}.side-group{flex-direction:column;gap:10px;display:flex}.chip,.side button{color:#ddd;background:rgba(30,30,34,.72);border-radius:12px;border:1px solid rgba(255,255,255,.18);align-items:center;justify-items:center;width:40px;height:40px;padding:0;font-size:15px;font-weight:600;display:grid}.side button:active{color:#fff;background:rgba(79,134,217,.85)}.side button svg{width:20px;height:20px}.side.mini button{opacity:.55;border-radius:9px;width:30px;height:30px}.side.mini button svg{width:16px;height:16px}.overlay{z-index:10;background:radial-gradient(ellipse,#121a2b 0%,#05070c 70%);align-items:center;justify-content:center;padding:max(16px,var(--sat)) max(16px,var(--sar)) max(16px,var(--sab)) max(16px,var(--sal));display:none;position:fixed;top:0;right:0;bottom:0;left:0}.overlay.show{display:flex}.card{text-align:center;max-width:520px;width:100%}.card h1{letter-spacing:1px;margin:0 0 6px;font-size:26px}.card h1 small{color:#9aa9c4;letter-spacing:0;margin-top:4px;font-size:13px;font-weight:500;display:block}.card p{color:#bbb;margin:10px 0;font-size:14px;line-height:1.55}.btn{color:#fff;background:var(--accent);border:0;border-radius:14px;margin:6px;padding:13px 22px;font-size:16px;font-weight:700;display:inline-block}.btn.ghost{color:#ddd;background:rgba(255,255,255,.1);font-weight:600}.btn:active{filter:brightness(1.2)}.err{color:#ff8a7a;white-space:pre-wrap;text-align:left;font-size:13px}#progress{background:rgba(255,255,255,.1);border-radius:3px;height:6px;max-width:300px;margin:14px auto;overflow:hidden}#progress div{background:var(--accent);height:100%;width:0;transition:width.2s}#tap .card h2{margin:0 0 6px;font-size:20px}#settings{z-index:20;background:rgba(0,0,0,.72)}#settings .panel{touch-action:pan-y;background:#1c1b1f;border:1px solid rgba(255,255,255,.1);border-radius:18px;width:min(560px,100%);max-height:100%;padding:14px 16px 10px;overflow-y:auto;-webkit-overflow-scrolling:touch}.panel h3{justify-content:space-between;align-items:center;margin:2px 0 10px;font-size:17px;display:flex}.row{border-top:1px solid rgba(255,255,255,.07);align-items:center;justify-content:space-between;gap:10px;padding:8px 0;display:flex}.row label{color:#ddd;font-size:14px}.row .hint{color:#8f8f96;margin-top:2px;font-size:11.5px;display:block}.seg{background:rgba(255,255,255,.07);border-radius:10px;flex-shrink:0;padding:3px;display:flex}.seg button{color:#bbb;white-space:nowrap;background:none;border:0;border-radius:8px;padding:7px 10px;font-size:13px}.seg button.on{color:#fff;background:var(--accent);font-weight:700}.credits{color:#7d7d84;margin-top:8px;font-size:11px;line-height:1.5}#toast{z-index:30;color:#fff;opacity:0;pointer-events:none;background:rgba(20,20,22,.9);border-radius:12px;padding:9px 14px;font-size:13px;transition:opacity.25s;position:fixed;left:50%;top:calc(12px + var(--sat));transform:translate(-50%)}#toast.show{opacity:1}</style></head><body>
+    <div id=probe></div>
+    <div id=frame>
+      <div id=stage><canvas id=screen></canvas><canvas id=fx></canvas><div id=arena></div></div>
+      <div id=perf></div>
+      <div class=side id=side>
+        <div class=side-group>
+        <button id=btn-settings aria-label=설정>
+          <svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2><circle cx=12 cy=12 r=3 /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        </button>
+        </div>
+      </div>
+    </div>
+
+    <div class=overlay id=home>
+      <div class=card>
+        <h1>제노니아4<small>안드로이드판 · 아이폰 플레이어</small></h1>
+        <p id=home-text>갖고 있는 제노니아4 게임 파일(apk 또는 apk를 담은 zip)과 가속 파일(z4fast.wasm)을 함께 골라 한 번만 넣어 주세요.<br>이 기기에 저장돼서 다음부터는 바로 시작돼요.<br>조작은 게임 화면에 원래 있는 터치 패드와 버튼을 그대로 써요.</p>
+        <div id=progress><div></div></div>
+        <button class=btn id=btn-import>게임 파일 넣기</button>
+        <input type=file id=file multiple hidden>
+        <p class=err id=home-err></p>
+      </div>
+    </div>
+
+    <div class=overlay id=tap>
+      <div class=card>
+        <h2>제노니아4</h2>
+        <p id=tap-text>화면을 터치하면 시작해요</p>
+        <p class=err id=tap-err></p>
+      </div>
+    </div>
+
+    <div class=overlay id=settings>
+      <div class=panel>
+        <h3>설정 <button class="btn ghost" id=btn-close style="padding:8px 14px;margin:0">닫기</button></h3>
+        <div class=row><label>화질<span class=hint>HD는 대각선 계단을 매끈한 선으로 다듬어 두 배로 키워요 · 부드럽게는 매끈하게, 선명하게는 픽셀 경계를 또렷하게</span></label>
+          <div class=seg data-pref=quality><button data-v=hd>HD</button><button data-v=smooth>부드럽게</button><button data-v=sharp>선명하게</button><button data-v=pixel>원본 픽셀</button></div></div>
+        <div class=row><label>색감<span class=hint>색을 조금 더 또렷하게</span></label>
+          <div class=seg data-pref=color><button data-v=vivid>또렷하게</button><button data-v=original>원본</button></div></div>
+        <div class=row><label>빛 번짐<span class=hint>스킬·불꽃처럼 밝은 부분이 은은하게 빛나요</span></label>
+          <div class=seg data-pref=glow><button data-v=strong>강하게</button><button data-v=soft>은은하게</button><button data-v=off>끄기</button></div></div>
+        <div class=row><label>움직임<span class=hint>게임이 1초에 23번 그리는 사이사이를 채워서 걷기·카메라·몬스터가 매끄럽게 움직여요</span></label>
+          <div class=seg data-pref=motion><button data-v=smooth>부드럽게</button><button data-v=original>원래대로</button></div></div>
+        <div class=row><label>방향 패드<span class=hint>패드 바깥에서 눌러도·밖으로 미끄러져도 계속 걷고, 대각선에서 방향이 덜 흔들려요 · 같은 방향을 빠르게 두 번 누르면 대시</span></label>
+          <div class=seg data-pref=dpad><button data-v=smooth>부드럽게</button><button data-v=original>원래대로</button></div></div>
+        <div class=row><label>크리티컬 화면 확대<span class=hint>크리티컬마다 화면이 150%까지 확 당겨지는 게임 연출 · 끄면 화면이 흔들리지 않고 데미지 숫자도 화면 안에 있어요</span></label>
+          <div class=seg data-pref=critZoom><button data-v=off>끄기</button><button data-v=on>켜기</button></div></div>
+        <div class=row><label>타격감<span class=hint>맞힐 때 불꽃·베기 자국·화면 흔들림, 큰 한 방엔 잠깐 멈칫 · 강하게는 더 크고 길게</span></label>
+          <div class=seg data-pref=impact><button data-v=strong>강하게</button><button data-v=normal>보통</button><button data-v=off>끄기</button></div></div>
+        <div class=row><label>성능 표시<span class=hint>화면 아래에 초당 프레임·게임 계산 시간·중간 프레임을 보여 줘요 (끊길 때 알려 주시면 고치는 데 써요)</span></label>
+          <div class=seg data-pref=perf><button data-v=on>켜기</button><button data-v=off>끄기</button></div></div>
+        <div class=row><label>젠·골드<span class=hint>캐시 상점의 젠과 골드가 늘 가득 차 있어요 (젠 999,999 · 골드 999,999,999)</span></label>
+          <div class=seg data-pref=money><button data-v=max>무제한</button><button data-v=original>원래대로</button></div></div>
+        <div class=row><label>제련(강화)<span class=hint>대장장이 제련 성공 확률이 80% 아래로 내려가지 않고, 함께 넣는 보조 아이템이 줄지 않아요</span></label>
+          <div class=seg data-pref=refine><button data-v=easy>쉽게</button><button data-v=original>원래대로</button></div></div>
+        <div class=row><label>스탯 포인트<span class=hint>능력치 창의 포인트가 줄지 않아요</span></label>
+          <div class=seg data-pref=statPoints><button data-v=max>무제한</button><button data-v=off>원래대로</button></div></div>
+        <div class=row><label>스탯 한 번에<span class=hint>능력치 창에서 +를 한 번 누를 때 올라가는 양 · 누를수록 계속 올라가요</span></label>
+          <div class=seg data-pref=statStep><button data-v=1>1</button><button data-v=100>100</button><button data-v=1000>1천</button><button data-v=10000>1만</button></div></div>
+        <div class=row><label>데미지 한계<span class=hint>스탯이 아주 높으면 계산이 넘쳐 데미지가 0이나 엉뚱한 값이 되던 것을 풀어요</span></label>
+          <div class=seg data-pref=damage><button data-v=uncapped>풀기</button><button data-v=off>원래대로</button></div></div>
+        <div class=row><label>스킬<span class=hint>모든 스킬을 최고 레벨로(필드에서 바로 적용) · 원래대로로 바꿔도 올린 레벨은 그대로예요</span></label>
+          <div class=seg data-pref=skills><button data-v=max>전부 만렙</button><button data-v=off>원래대로</button></div></div>
+        <div class=row><label>SP<span class=hint>스킬을 쓸 때 SP가 모자라면 바로 가득 채워서 "SP가 부족합니다" 없이 스킬이 늘 나가요</span></label>
+          <div class=seg data-pref=sp><button data-v=max>무제한</button><button data-v=original>원래대로</button></div></div>
+        <div class=row><label>화면 크기<span class=hint>카메라에 가리지 않게 그쪽만 비워요 · 게임을 다시 시작하면 맞춰져요</span></label>
+          <div class=seg data-pref=screen><button data-v=notch>카메라 쪽만 비움</button><button data-v=full>가장자리까지</button><button data-v=safe>양쪽 비움</button></div></div>
+        <div class=row><label>소리</label>
+          <div class=seg data-pref=sound><button data-v=on>켜기</button><button data-v=off>끄기</button></div></div>
+        <div class=row><label>가속 파일 <span id=fast-state></span><span class=hint>z4fast.wasm · 게임 파일에서 만든 거라 사이트에는 없어요. 한 번 넣어 두면 이후 업데이트는 자동으로 적용돼요</span></label>
+          <div class=seg><button id=btn-fast>넣기·바꾸기</button></div></div>
+        <input type=file id=fast-file hidden>
+        <div class=row><label>세이브 백업<span class=hint>홈 화면 앱을 지우기 전에 내보내 두세요</span></label>
+          <div class=seg><button id=btn-export>내보내기</button><button id=btn-import-save>가져오기</button></div></div>
+        <div class=row><label>PvP 아레나 기준<span class=hint>상대 800명의 세기는 공격력 9,061,703·방어력 2,148,126 블레이더가 기준이에요. 다시 재면 장비·스킬 모양만 지금 캐릭터로 다시 가져와요</span></label>
+          <div class=seg><button id=btn-arena-rebase>지금 캐릭터로 다시 재기</button></div></div>
+        <div class=row><label>이전 세이브로 되돌리기<span class=hint>세이브가 지워지거나 잘못 덮였을 때, 바뀌기 바로 전 세이브로 돌아가요</span></label>
+          <div class=seg><button id=btn-undo-save>되돌리기</button></div></div>
+        <div class=row><label>게임 파일</label>
+          <div class=seg><button id=btn-restart>다시 시작</button><button id=btn-replace>다시 넣기</button></div></div>
+        <input type=file id=save-file accept=.json,application/json hidden>
+        <p class=credits>
+          제노니아4 © GAMEVIL. 게임 파일은 이 기기에만 저장되고 어디로도 보내지 않아요.<br>
+          ARM·Thumb-2·VFP 실행기와 안드로이드 대체층은 이 페이지에 맞춰 새로 만들었어요.<br>
+          게임 언어는 게임 안 옵션(OPTION → LANGUAGE)에서 바꿀 수 있어요.<br>
+          This project is based on <a href=https://github.com/dlunch/wie style=color:#9aa>wie</a>, created by Inseok Lee.<br>
+          <span id=version></span>
+        </p>
+      </div>
+    </div>
+
+    <div id=toast></div>
+    <script type=module src="z4.js?v=22"></script>
+  
+
+</body></html>

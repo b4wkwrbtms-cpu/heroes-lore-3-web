@@ -1,0 +1,75 @@
+<!doctype html><html lang=ko><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name=apple-mobile-web-app-capable content=yes><meta name=mobile-web-app-capable content=yes><meta name=apple-mobile-web-app-status-bar-style content=black-translucent><meta name=apple-mobile-web-app-title content=다크월드><meta name=theme-color content=#000000><meta name=format-detection content="telephone=no"><title>다크월드</title><link rel=manifest href=manifest.webmanifest><link rel=apple-touch-icon href=icon-180.png><link rel=icon href=icon-192.png><style>:root{--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--ft:var(--sat);--fr:var(--sar);--fb:var(--sab);--fl:var(--sal);--accent:#4f86d9}*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}body,html{color:#eee;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;touch-action:none;background:#000;height:100%;margin:0;font-family:-apple-system,Apple SD Gothic Neo,Noto Sans KR,sans-serif;overflow:hidden}#probe{visibility:hidden;padding:var(--sat) var(--sar) var(--sab) var(--sal);position:fixed}#frame{position:fixed;left:0;top:0;transform-origin:0 0}#stage{background:#000;position:absolute}#stage canvas{width:100%;height:100%;position:absolute;left:0;top:0}#fx{pointer-events:none}.side{flex-direction:column;gap:10px;align-items:center;display:flex;position:absolute}.side.split{justify-content:space-between;padding-top:10px}.side-group{flex-direction:column;gap:10px;display:flex}.chip,.side button{color:#ddd;background:rgba(30,30,34,.72);border-radius:12px;border:1px solid rgba(255,255,255,.18);align-items:center;justify-items:center;width:40px;height:40px;padding:0;font-size:15px;font-weight:600;display:grid}.side button:active{color:#fff;background:rgba(79,134,217,.85)}.side button svg{width:20px;height:20px}.side.mini button{opacity:.55;border-radius:9px;width:30px;height:30px}.side.mini button svg{width:16px;height:16px}.overlay{z-index:10;background:radial-gradient(ellipse,#121a2b 0%,#05070c 70%);align-items:center;justify-content:center;padding:max(16px,var(--ft)) max(16px,var(--fr)) max(16px,var(--fb)) max(16px,var(--fl));display:none;position:fixed;top:0;right:0;bottom:0;left:0}.overlay.show{display:flex}.card{text-align:center;max-width:520px;width:100%}.card h1{letter-spacing:1px;margin:0 0 6px;font-size:26px}.card h1 small{color:#9aa9c4;letter-spacing:0;margin-top:4px;font-size:13px;font-weight:500;display:block}.card p{color:#bbb;margin:10px 0;font-size:14px;line-height:1.55}.btn{color:#fff;background:var(--accent);border:0;border-radius:14px;margin:6px;padding:13px 22px;font-size:16px;font-weight:700;display:inline-block}.btn.ghost{color:#ddd;background:rgba(255,255,255,.1);font-weight:600}.btn:active{filter:brightness(1.2)}.err{color:#ff8a7a;white-space:pre-wrap;text-align:left;font-size:13px}#progress{background:rgba(255,255,255,.1);border-radius:3px;height:6px;max-width:300px;margin:14px auto;overflow:hidden}#progress div{background:var(--accent);height:100%;width:0;transition:width.2s}#tap .card h2{margin:0 0 6px;font-size:20px}#settings{z-index:20;background:rgba(0,0,0,.72)}#settings .panel{touch-action:pan-x pan-y;background:#1c1b1f;border:1px solid rgba(255,255,255,.1);border-radius:18px;width:min(560px,100%);max-height:100%;padding:14px 16px 10px;overflow-y:auto;-webkit-overflow-scrolling:touch}.panel h3{justify-content:space-between;align-items:center;margin:2px 0 10px;font-size:17px;display:flex}.row{border-top:1px solid rgba(255,255,255,.07);align-items:center;justify-content:space-between;gap:10px;padding:8px 0;display:flex}.row label{color:#ddd;font-size:14px}.row.muted{opacity:.4;pointer-events:none}.row .hint{color:#8f8f96;margin-top:2px;font-size:11.5px;display:block}.seg{background:rgba(255,255,255,.07);border-radius:10px;flex-shrink:0;padding:3px;display:flex}.seg button{color:#bbb;white-space:nowrap;background:none;border:0;border-radius:8px;padding:7px 10px;font-size:13px}.seg button.on{color:#fff;background:var(--accent);font-weight:700}.credits{color:#7d7d84;margin-top:8px;font-size:11px;line-height:1.5}#toast{z-index:30;text-align:center;color:#fff;opacity:0;pointer-events:none;background:rgba(20,20,22,.9);border-radius:12px;max-width:90%;padding:9px 14px;font-size:13px;transition:opacity.25s;position:fixed;left:50%;top:calc(12px + var(--ft));transform:translate(-50%)}#toast.show{opacity:1}</style></head><body>
+    <div id=probe></div>
+    <div id=frame>
+      <div id=stage><canvas id=screen></canvas><canvas id=fx></canvas></div>
+      <div class=side id=side>
+        <div class=side-group>
+        <button id=btn-settings aria-label=설정>
+          <svg viewBox="0 0 24 24" fill=none stroke=currentColor stroke-width=2><circle cx=12 cy=12 r=3 /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        </button>
+        </div>
+      </div>
+      <div class=overlay id=home>
+        <div class=card>
+          <h1>다크월드<small>안드로이드판 · 아이폰 플레이어</small></h1>
+          <p id=home-text>갖고 있는 다크월드 게임 파일(apk 또는 apk를 담은 zip)을 한 번만 넣어 주세요.<br>이 기기에 저장돼서 다음부터는 바로 시작돼요.</p>
+          <div id=progress><div></div></div>
+          <button class=btn id=btn-import>게임 파일 넣기</button>
+          <input type=file id=file hidden>
+          <p class=err id=home-err></p>
+        </div>
+      </div>
+
+      <div class=overlay id=tap>
+        <div class=card>
+          <h2>다크월드</h2>
+          <p id=tap-text>화면을 터치하면 시작해요</p>
+          <p id=tap-hint hidden>아이폰 제어 센터에서 <b>화면 방향 잠금</b>을 끄고 폰을 가로로 들면, 시계·배터리가 사라지고 홈 바도 화면 아래로 가요.</p>
+          <p class=err id=tap-err></p>
+        </div>
+      </div>
+
+      <div class=overlay id=settings>
+        <div class=panel>
+          <h3>설정 <button class="btn ghost" id=btn-close style="padding:8px 14px;margin:0">닫기</button></h3>
+          <div class=row><label>화질<span class=hint>원본 픽셀이 이 게임 그림에 가장 잘 맞아요 · HD는 테두리를 매끈하게 다듬어요</span></label>
+            <div class=seg data-pref=quality><button data-v=pixel>원본 픽셀</button><button data-v=sharp>선명</button><button data-v=smooth>부드럽게</button><button data-v=hd>HD</button></div></div>
+          <div class=row><label>조작<span class=hint>원본은 연타 보정도, 화면 지연도 없이 누르는 대로 게임에 그대로 들어가요(원래 게임과 같아요)</span></label>
+            <div class=seg data-pref=controls><button data-v=tuned>보정</button><button data-v=original>원본</button></div></div>
+          <div class=row><label>움직임<span class=hint>게임은 1초에 16번 그려요 · 부드럽게는 그 사이 장면을 더 그려 걷기·카메라가 매끄러워요</span></label>
+          <div class=seg data-pref=motion><button data-v=smooth>부드럽게</button><button data-v=original>원래대로</button></div></div>
+          <div class=row><label>공격 연타 보정<span class=hint>빨리 연타해도 누른 만큼 좌베기→우베기→찌르기로 이어져요</span></label>
+            <div class=seg data-pref=combo><button data-v=on>켜기</button><button data-v=off>끄기</button></div></div>
+          <div class=row><label>타격 효과<span class=hint>몬스터를 때리면 불꽃·섬광, 큰 일격엔 별빛과 흔들림 · 게임 판정과 데미지는 그대로예요</span></label>
+            <div class=seg data-pref=impact><button data-v=strong>강하게</button><button data-v=normal>보통</button><button data-v=off>끄기</button></div></div>
+          <div class=row><label>색감<span class=hint>색을 조금 더 또렷하게</span></label>
+            <div class=seg data-pref=color><button data-v=vivid>또렷하게</button><button data-v=original>원본</button></div></div>
+          <div class=row><label>빛 번짐<span class=hint>마법·불꽃처럼 밝은 부분이 은은하게 빛나요</span></label>
+            <div class=seg data-pref=glow><button data-v=strong>강하게</button><button data-v=soft>은은하게</button><button data-v=off>끄기</button></div></div>
+          <div class=row><label>화면 크기<span class=hint>카메라에 가리지 않게 그쪽만 비워요 · 게임을 다시 시작하면 맞춰져요</span></label>
+            <div class=seg data-pref=screen><button data-v=notch>카메라 쪽만 비움</button><button data-v=full>가장자리까지</button><button data-v=safe>양쪽 비움</button></div></div>
+          <div class=row><label>소리</label>
+            <div class=seg data-pref=sound><button data-v=on>켜기</button><button data-v=off>끄기</button></div></div>
+          <div class=row><label>개조<span class=hint>연금장인 제작에 캐시 아이템 41종(각 100골드) · 워킹홀리데이 주문서 250%·240분 · 현자의 보주·행운의 장신구 250% · 게임을 다시 시작하면 적용돼요</span></label>
+            <div class=seg data-pref=mod><button data-v=on>켜기</button><button data-v=off>끄기</button></div></div>
+          <div class=row><label>세이브 백업<span class=hint>홈 화면 앱을 지우기 전에 내보내 두세요</span></label>
+            <div class=seg><button id=btn-export>내보내기</button><button id=btn-import-save>가져오기</button></div></div>
+          <div class=row><label>게임 파일</label>
+            <div class=seg><button id=btn-restart>다시 시작</button><button id=btn-replace>다시 넣기</button></div></div>
+          <input type=file id=save-file accept=.json,application/json hidden>
+          <p class=credits>
+            다크월드 © 겜돌이소프트. 게임 파일은 이 기기에만 저장되고 어디로도 보내지 않아요.<br>
+            ARM·Thumb 실행기와 안드로이드 대체층은 이 페이지에 맞춰 새로 만들었어요.<br>
+            This project is based on <a href=https://github.com/dlunch/wie style=color:#9aa>wie</a>, created by Inseok Lee.<br>
+            <span id=version></span>
+          </p>
+        </div>
+      </div>
+
+      <div id=toast></div>
+    </div>
+
+    <script type=module src="dw.js?v=10"></script>
+  
+
+</body></html>
