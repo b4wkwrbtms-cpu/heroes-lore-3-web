@@ -134,6 +134,9 @@ async function boot() {
   try {
     await DB.open();
     const st = (await DB.all('settings')).main; if (st) Object.assign(settings, JSON.parse(st));
+    // a computer (mouse, no touch) shows the game large, where plain pixels grow unevenly: xBR is turned on there once
+    // (switching it off later stays off); phones keep their own setting
+    if (!settings.pc_hq && matchMedia('(pointer: fine)').matches && !matchMedia('(any-pointer: coarse)').matches) { settings.pc_hq = 1; settings.xbr = 1; saveSettings(); }
     const saves = await DB.all('saves');
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
     // no progress here yet: offer the saves of /darkworld/ (copied; the originals stay as they are)
