@@ -1,7 +1,7 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "19";
+const VERSION = "20";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -1499,7 +1499,7 @@ function bindSettings() {
   $("btn-export").addEventListener("click", exportSaves);
   $("btn-arena-rebase").addEventListener("click", () => {
     if (!core?.ex?.arena_rebase) return toast("게임을 시작한 뒤에 할 수 있어요");
-    if (!confirm("PvP 아레나 기준을 지금 캐릭터로 다시 잴까요? 증표 레벨도 처음부터 시작해요.")) return;
+    if (!confirm("PvP 아레나 기준을 지금 캐릭터로 다시 잴까요?")) return;
     core.ex.arena_rebase();
     arenaSave();
     toast("다음 대전부터 지금 캐릭터가 기준이에요");
@@ -1585,7 +1585,7 @@ function arenaBadge() {
   if (!arena.buf) arena.buf = (core.ex.host_alloc(128) + 7) & ~7;
   const el = $("arena");
   if (core.ex.arena_info(arena.buf) !== 0) return;
-  const v = new Float64Array(core.ex.memory.buffer, arena.buf, 13);
+  const v = new Float64Array(core.ex.memory.buffer, arena.buf, 21);
   if (!v[0]) { if (arena.shown) { el.style.display = "none"; arena.shown = ""; } return; }
   const pts = Math.max(0, v[1]), rank = v[4], tier = Math.floor(rank / 100), [tn, tc] = TIERS[tier];
   const next = tier < 7 ? ` (다음 티어까지 ${((tier + 1) * 500 - pts).toLocaleString("ko-KR")})` : ` (${rank % 100 + 1}/100)`;
@@ -1596,10 +1596,14 @@ function arenaBadge() {
     const ot = TIERS[Math.floor(v[5] / 100)];
     html += ` · 상대 <span class="tier" style="color:${ot[1]}">${ot[0]}</span> ${korNum(v[7])} (${times(v[6] > 0 ? v[7] / v[6] : 0)}배)`;
   }
-  const notes = [`증표 Lv.${v[9]}`, `장비 ×${times(v[8])}`];
-  if (v[11]) notes.push("승급 보상: 다음 승리 최고 등급");
-  else notes.push(v[12] >= 4 ? "다음 승리: 한 등급 위 보상" : `${5 - v[12]}번째 승리에 한 등급 위 보상`);
-  if (v[10] >= 2) notes.push("연패 보호: 쉬운 상대");
+  const GRADES = ["D", "C", "B", "A", "S"], GCOL = ["#bbb", "#7fd17f", "#6fb0ff", "#d08cff", "#ffcc33"];
+  const worn = [4, 3, 2, 1, 0].filter(g => v[16 + g]).map(g => `<span style="color:${GCOL[g]}">${GRADES[g]}${v[16 + g]}</span>`).join(" ") || "없음";
+  const set = v[12] >= 1 ? ` · <span style="color:${GCOL[v[12]]}">${GRADES[v[12]]}급 ${v[13]}세트</span> ×${times(v[14])}` : "";
+  html += `<br>장비 ${worn}${set} · 옵션 ${Math.round(v[15])}점 · 장비 힘 ×${times(v[8])}`;
+  const notes = [];
+  if (v[10]) notes.push("승급 보상: 다음 승리 최고 등급");
+  else notes.push(v[11] >= 4 ? "다음 승리: 한 등급 위 보상" : `${5 - v[11]}번째 승리에 한 등급 위 보상`);
+  if (v[9] >= 2) notes.push("연패 보호: 쉬운 상대");
   html += `<br>${notes.join(" · ")}</span>`;
   if (html !== arena.shown) {
     el.innerHTML = html;

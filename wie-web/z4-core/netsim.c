@@ -158,10 +158,9 @@ static u32 seed = 12345;
 // when the arena first measured it (its battle data, attack, defence, most HP and the equipment bonus
 // then), which every rival is built from from then on, so whatever the player gains afterwards counts;
 // and the revenge list.
-#define KEEP_MAGIC 0x32413a5au
+#define KEEP_MAGIC 0x33413a5au
 typedef struct {
-  u32 magic, slot, att, def, hp, n_revenge, serial, medal, best_tier, pity, promo, streak;
-  double gear0;
+  u32 magic, slot, att, def, hp, n_revenge, serial, best_tier, pity, promo, streak, pad;
   u8 blob[0x3e4];
   Opp revenge[4];
 } Keep;
@@ -366,26 +365,66 @@ static double dsqrt(double x) {
   return r;
 }
 static double dpow(double a, u32 n) { double r = 1; while (n--) r *= a; return r; }
-// The equipment bonus: every piece worn counts 10% a quality step (0 to 4) and 4% a refining step, all
-// multiplied together; better pieces (the arena's prizes) and refining make the player stronger against
-// the rivals, who keep the hero measured first. Tuned by simulating the climb (a win when the rival is at
-// most about 1.2 times the player): refining the prizes to +3 stalls in master, to +8 reaches the top
-// after a long climb, to +12 in about 120 wins.
-static double gear_mult(u32 me) {
+// The arena's equipment power. Each piece worn has a grade, its quality in the game (0 D, 1 C, 2 B, 3 A,
+// 4 S: the arena's prizes come in these, with the options the game rolls for that quality), and an option
+// score of 0-99 read from its own options (a hash of the piece's data, so a piece keeps its score). A piece
+// counts PIECE[grade] times 0.95-1.05 by its score; wearing several pieces of one grade or better is a
+// set (2/4/6/8/10 pieces), whose bonus is SET; the best set counts. Refining does not count. Ten S
+// pieces with average options come to about 1000 times (better options, more), enough for the
+// challenger at the top (1000 times the measured hero); ten A about 32 (diamond), ten B about 7
+// (platinum), ten C about 2.4 (gold). The S set is where the jump is: 6 S pieces about 90, 8 about 250.
+// Simulated (a win when the rival is at most about 1.2 times the player, a drop every win): the
+// climb meets its wall in master and grandmaster and reaches the top after 130-190 matches with ten S.
+static const double PIECE[5] = {1.0, 1.04, 1.09, 1.18, 1.4};
+static const double SET[5][5] = {
+    {1, 1, 1, 1, 1},
+    {1.1, 1.2, 1.3, 1.45, 1.6},
+    {1.2, 1.45, 1.8, 2.3, 3},
+    {1.4, 2, 3, 4.5, 6},
+    {1.5, 2.5, 5, 12, 35},
+};
+typedef struct { double power, set_mult; s32 set_grade; u32 set_pieces, count[5], rolls, pieces; } Gear;
+static u32 piece_grade(u32 it) {
+  u32 q = rd16(it + 8);
+  s32 g = (s16)call_guest(n_xor_short | 1, 1, &q);
+  return g < 0 || g > 4 ? 0 : (u32)g;
+}
+static u32 piece_roll(u32 it) {
+  u32 h = 2166136261u;
+  for (u32 k = 0; k < 0x2a; k++) {
+    if (k == 2 || k == 3 || k == 7) continue; // durability, refining
+    h = (h ^ rd8(it + k)) * 16777619u;
+  }
+  return (h >> 8) % 100;
+}
+static void gear_of(u32 me, Gear *g) {
   double m = 1;
+  u32 *n = g->count;
+  for (u32 k = 0; k < 5; k++) n[k] = 0;
+  g->rolls = g->pieces = 0;
   for (u32 pos = 0; pos < 10 && me; pos++) {
     u32 a[2] = {me, pos};
     u32 it = call_guest(n_equip | 1, 2, a);
     if (!it || (s16)rd16(it) < 0) continue;
-    u32 q = rd16(it + 8), r = rd8(it + 7);
-    s32 quality = (s16)call_guest(n_xor_short | 1, 1, &q);
-    u32 refine = call_guest(n_xor_byte | 1, 1, &r) & 0xff;
-    if (quality < 0 || quality > 4) quality = 0;
-    if (refine > 40) refine = 0;
-    m *= (1 + 0.10 * quality) * dpow(1.04, refine);
+    u32 grade = piece_grade(it), roll = piece_roll(it);
+    m *= PIECE[grade] * (0.95 + 0.1 * roll / 99.0);
+    n[grade]++;
+    g->rolls += roll;
+    g->pieces++;
   }
-  return m;
+  g->set_mult = 1;
+  g->set_grade = -1;
+  g->set_pieces = 0;
+  for (s32 grade = 1; grade <= 4; grade++) {
+    u32 have = 0;
+    for (s32 k = grade; k <= 4; k++) have += n[k];
+    if (have < 2) continue;
+    u32 step = (have >= 10 ? 10 : have) / 2 - 1;
+    if (SET[grade][step] > g->set_mult) { g->set_mult = SET[grade][step]; g->set_grade = grade; g->set_pieces = (step + 1) * 2; }
+  }
+  g->power = m * g->set_mult;
 }
+static double gear_mult(u32 me) { Gear g; gear_of(me, &g); return g.power; }
 static u32 cur_slot(void) { u32 save = rd32(n_save); return save ? rd32(save + 0x7f40) : 0; }
 static u32 hp_of(u32 who) { return call_guest(n_hp_max | 1, 1, &who); }
 // the hero measured once (again after arena_rebase, or for another save slot)
@@ -396,24 +435,15 @@ static void measure(u32 me) {
   keep.att = stat_of(me, 4);
   keep.def = stat_of(me, 5);
   keep.hp = hp_of(me);
-  keep.gear0 = gear_mult(me);
-  keep.medal = keep.pity = keep.promo = keep.streak = 0;
+  keep.pity = keep.promo = keep.streak = 0;
   keep.best_tier = player_rank() / PER_TIER;
   keep.slot = cur_slot();
   keep.magic = KEEP_MAGIC;
   keep_rev++;
 }
-// a rank's stat scale against the measured hero, less by the root of what the player gained since (the
-// equipment and the duelist's mark; attack and HP both shrink by it, so the fighting strength by all)
-// The duelist's mark: 1.5% a level; a win gives a level (up to 15 a tier reached), each new tier 8.
-#define MARK_STEP 1.015
-#define MARK_PER_TIER 15
-#define MARK_PROMOTION 8
-static double gain_of(u32 me) {
-  double gain = keep.gear0 > 0 ? gear_mult(me) / keep.gear0 : 1;
-  if (gain < 1) gain = 1;
-  return gain * dpow(MARK_STEP, keep.medal);
-}
+// a rank's stat scale against the measured hero, less by the root of the player's equipment power (attack
+// and HP both shrink by it, so the fighting strength by all of it)
+static double gain_of(u32 me) { double g = gear_mult(me); return g < 1 ? 1 : g; }
 static u32 eff_pct(u32 pct, u32 me) {
   double gain = gain_of(me);
   double p = pct / dsqrt(gain);
@@ -433,23 +463,34 @@ static void list_entry(const Opp *o, int is_revenge) {
   w2(mate ? u16max(scaled(stat_of(mate, 4), pct)) : 0); w2(mate ? u16max(scaled(stat_of(mate, 5), pct)) : 0);
 }
 
-// The prize for beating `cur`: a piece of equipment near the player's level, of the player's class, its
-// quality (0 to 4) by tier; from platinum it needs five levels less (the game's own reward flag), from
-// diamond one of its numbers is raised (the other flag). The item table (5): column 7 the type (0 weapon,
-// 1 armour, 4 accessory), 9 the class (0: made the class's own by the game's own conversion), 12 the
-// level needed. Only items below 0x7d0 are items of the table.
+// The prize for beating `cur`: a piece of equipment of the player's class near their level, its grade
+// (the game's quality, 0 D to 4 S) drawn from the rival's tier's table (DROP, in percent), so the game
+// rolls options to match. A promotion's first win gives the tier's best grade; otherwise every fifth win
+// is a grade better. The piece goes to a place where the player wears something of a lower grade, if
+// there is one, so a set fills up. From platinum it needs five levels less, from diamond one of its
+// numbers is raised (the game's own reward flags). The item table (5): column 7 the type (0 weapon,
+// 1 armour, 4 accessory), 8 where it is worn, 9 the class (0: made the class's own by the game's own
+// conversion), 12 the level needed. Only items below 0x7d0 are items of the table.
+static const u8 DROP[TIERS][5] = {
+    {60, 35, 5, 0, 0}, {35, 45, 18, 2, 0}, {15, 40, 35, 10, 0}, {5, 25, 45, 25, 0},
+    {0, 15, 42, 40, 3}, {0, 5, 35, 52, 8}, {0, 0, 25, 60, 15}, {0, 0, 10, 65, 25},
+};
 static u16 cand_tid[0x7d0];
-static u8 cand_lv[0x7d0];
+static u8 cand_lv[0x7d0], cand_pos[0x7d0];
 static u32 n_cand;
 static u32 tbl_val(u32 tbl, u32 col, u32 row) { u32 a[3] = {tbl, col, row}; return call_guest(n_get_val | 1, 3, a); }
+static u32 rnd(u32 n) { seed = seed * 1103515245u + 12345u; return (seed >> 16) % n; }
 static void prize(u32 *tid, u32 *quality, u32 *less_level, u32 *boost) {
-  static const u8 q[TIERS] = {1, 1, 2, 2, 3, 3, 4, 4};
   u32 tier = cur.rank / PER_TIER, me = hero();
-  *tid = 0xffff; *quality = q[tier]; *less_level = tier >= 3; *boost = tier >= 4;
-  // a promotion's prize is the best quality; otherwise every fifth win's prize is a step better
+  u32 roll = rnd(100), grade = 0, acc = 0;
+  for (u32 g = 0; g < 5; g++) { acc += DROP[tier][g]; if (roll < acc) { grade = g; break; } }
+  u32 top = 0;
+  for (u32 g = 0; g < 5; g++) if (DROP[tier][g]) top = g;
+  if (top < 2) top = 2;
   cur.boost = 0;
-  if (keep.promo) { *quality = 4; cur.boost = 1; }
-  else if (keep.pity >= 4 && *quality < 4) { (*quality)++; cur.boost = 2; }
+  if (keep.promo) { grade = top; cur.boost = 1; }
+  else if (keep.pity >= 4 && grade < 4) { grade++; cur.boost = 2; }
+  *tid = 0xffff; *quality = grade; *less_level = tier >= 3; *boost = tier >= 4;
   u32 xls = rd32(n_xls), mgr = rd32(n_items);
   if (!me || !xls || !mgr) return;
   u32 a[2] = {xls, 5};
@@ -459,19 +500,30 @@ static void prize(u32 *tid, u32 *quality, u32 *less_level, u32 *boost) {
     u32 rows = rd16(tbl + 0xa);
     if (rows > 0x7d0) rows = 0x7d0;
     for (u32 t = 0; t < rows; t++) {
-      u32 type = tbl_val(tbl, 7, t), lv = tbl_val(tbl, 12, t);
-      if ((type <= 1 || type == 4) && tbl_val(tbl, 9, t) == 0 && lv > 0 && lv < 200) { cand_tid[n_cand] = (u16)t; cand_lv[n_cand++] = (u8)lv; }
+      u32 type = tbl_val(tbl, 7, t), lv = tbl_val(tbl, 12, t), pos = tbl_val(tbl, 8, t);
+      if ((type <= 1 || type == 4) && tbl_val(tbl, 9, t) == 0 && lv > 0 && lv < 200 && pos < 10) {
+        cand_tid[n_cand] = (u16)t; cand_lv[n_cand] = (u8)lv; cand_pos[n_cand++] = (u8)pos;
+      }
     }
   }
   if (!n_cand) return;
+  // places worn below this grade (or empty)
+  u32 want = 0;
+  for (u32 pos = 0; pos < 10; pos++) {
+    u32 b[2] = {me, pos};
+    u32 it = call_guest(n_equip | 1, 2, b);
+    if (!it || (s16)rd16(it) < 0 || piece_grade(it) < grade) want |= 1u << pos;
+  }
   // the best a player of this level may use (five more with the flag), then one of the dozen closest below
-  u32 limit = level_of(me) + (*less_level ? 5 : 0), best[12], nb = 0;
-  for (u32 pass = 0; pass < 2 && !nb; pass++, limit = 255)
+  u32 lv0 = level_of(me) + (*less_level ? 5 : 0), best[12], nb = 0;
+  for (u32 pass = 0; pass < 4 && !nb; pass++) {
+    u32 limit = pass & 1 ? 255 : lv0, mask = pass < 2 && want ? want : 0x3ff;
     for (s32 lv = (s32)limit; lv > 0 && nb < 12; lv--)
-      for (u32 i = 0; i < n_cand && nb < 12; i++) if (cand_lv[i] == (u32)lv) best[nb++] = cand_tid[i];
+      for (u32 i = 0; i < n_cand && nb < 12; i++)
+        if (cand_lv[i] == (u32)lv && (mask >> cand_pos[i] & 1)) best[nb++] = cand_tid[i];
+  }
   if (!nb) return;
-  seed = seed * 1103515245u + 12345u;
-  u32 c[3] = {mgr, class_of(me), best[(seed >> 16) % nb]};
+  u32 c[3] = {mgr, class_of(me), best[rnd(nb)]};
   *tid = call_guest(n_to_class | 1, 3, c) & 0xffff;
 }
 
@@ -540,10 +592,9 @@ static void serve(u32 id) {
         if (cur.boost == 1) keep.promo = 0;
         if (cur.boost == 2) keep.pity = 0;
         else keep.pity++;
-        if (keep.medal < (keep.best_tier + 1) * MARK_PER_TIER) keep.medal++;
         u32 t = (u32)(pts / (TIER_PTS / PER_TIER)) / PER_TIER;
         if (t >= TIERS) t = TIERS - 1;
-        if (t > keep.best_tier) { keep.best_tier = t; keep.medal += MARK_PROMOTION; keep.promo = 1; }
+        if (t > keep.best_tier) { keep.best_tier = t; keep.promo = 1; }
       }
       if (kind == 2 || kind == 4) { lose++; pts -= cur.lose; keep.streak++; }
       keep_rev++;
@@ -652,9 +703,12 @@ static void n_t_pvp_draw(void) {
 // For the page's badge on the arena screen (doubles): [0] whether it shows, [1] the player's points,
 // [2] wins, [3] losses, [4] the player's rank (0-799, a hundred a tier), [5] the offered rival's rank or
 // -1, [6] the player's fighting strength (attack plus defence, times most HP, over 10000) with the
-// equipment bonus, [7] the rival's, [8] the equipment bonus gained since the hero was measured.
+// equipment power, [7] the rival's, [8] the equipment power, [9] losses in a row, [10] whether a
+// promotion prize waits, [11] wins towards the better prize, [12] the best set's grade (-1 none),
+// [13] its pieces, [14] its bonus, [15] the average option score, [16-20] pieces worn of grade D-S.
 EXPORT(arena_info) int arena_info(double *out) {
   if (!n_on || !n_resolve()) return -1;
+  for (u32 i = 0; i < 21; i++) out[i] = 0;
   out[0] = arena_seen && n_frame - arena_seen < 8;
   u32 save = rd32(n_save), slot = save ? save + 0x18c + 0x1d48 * rd32(save + 0x7f40) : 0;
   out[1] = points_now();
@@ -662,18 +716,24 @@ EXPORT(arena_info) int arena_info(double *out) {
   out[3] = slot ? (s32)rd32(slot + 0x54) : 0;
   out[4] = player_rank();
   out[5] = cur.id ? cur.rank : -1;
-  out[6] = out[7] = 0;
   out[8] = 1;
-  out[9] = keep.medal;
-  out[10] = keep.streak;
-  out[11] = keep.promo;
-  out[12] = keep.pity;
+  out[9] = keep.streak;
+  out[10] = keep.promo;
+  out[11] = keep.pity;
+  out[12] = -1;
   u32 me = hero();
   if (me && out[0]) {
     measure(me);
-    double gear = keep.gear0 > 0 ? gear_mult(me) / keep.gear0 : 1;
-    out[8] = gear < 1 ? 1 : gear;
-    out[6] = ((double)stat_of(me, 4) + stat_of(me, 5)) * hp_of(me) / 10000.0 * gain_of(me);
+    Gear g;
+    gear_of(me, &g);
+    double power = g.power < 1 ? 1 : g.power;
+    out[8] = power;
+    out[12] = g.set_grade;
+    out[13] = g.set_pieces;
+    out[14] = g.set_mult;
+    out[15] = g.pieces ? (double)g.rolls / g.pieces : 0;
+    for (u32 k = 0; k < 5; k++) out[16 + k] = g.count[k];
+    out[6] = ((double)stat_of(me, 4) + stat_of(me, 5)) * hp_of(me) / 10000.0 * power;
     if (cur.id) {
       double p = eff_pct(cur.pct, me) / 100.0;
       out[7] = ((double)keep.att + keep.def) * keep.hp / 10000.0 * p * p;
