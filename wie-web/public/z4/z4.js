@@ -1,7 +1,7 @@
 // 제노니아4 player: runs the game's ARM library (Thumb-2, VFP) in z4core.wasm and presents it on an
 // iPhone in landscape. The game draws its own touch controls (d-pad, attack and skill buttons); the page
 // hands it the fingers with their pointer ids, like Android's multi-touch view did.
-const VERSION = "18";
+const VERSION = "19";
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------------------------------------
@@ -1497,6 +1497,13 @@ function bindSettings() {
     }
   });
   $("btn-export").addEventListener("click", exportSaves);
+  $("btn-arena-rebase").addEventListener("click", () => {
+    if (!core?.ex?.arena_rebase) return toast("게임을 시작한 뒤에 할 수 있어요");
+    if (!confirm("PvP 아레나 기준을 지금 캐릭터로 다시 잴까요? 증표 레벨도 처음부터 시작해요.")) return;
+    core.ex.arena_rebase();
+    arenaSave();
+    toast("다음 대전부터 지금 캐릭터가 기준이에요");
+  });
   $("btn-undo-save").addEventListener("click", async () => {
     await saves.flush();
     const old = await idbEntries("backup");
@@ -1540,33 +1547,63 @@ function applyRules() {
 // record, and the fighting strength of the rival on offer next to the player's
 const TIERS = [["브론즈", "#d08a4c"], ["실버", "#d6dde6"], ["골드", "#ffd24a"], ["플래티넘", "#5fe0c8"],
   ["다이아", "#8fd0ff"], ["마스터", "#d08cff"], ["그랜드마스터", "#ff6b6b"], ["챌린저", "#ffe9a8"]];
-const arena = { tick: 0, buf: 0, shown: "" };
+const arena = { tick: 0, buf: 0, shown: "", rev: -1 };
 function korNum(n) {
   const units = [[1e16, "경"], [1e12, "조"], [1e8, "억"], [1e4, "만"]];
   for (const [v, u] of units) if (n >= v) return (n / v >= 100 ? Math.round(n / v) : Math.round(n / v * 10) / 10).toLocaleString("ko-KR") + u;
   return Math.round(n).toLocaleString("ko-KR");
 }
+// what the arena keeps between visits (the hero it measured, the mark, the revenge list), in this page
+function arenaLoad() {
+  try {
+    const ex = core.ex;
+    if (!ex.arena_keep) return;
+    const raw = localStorage.getItem("z4.arena");
+    if (!raw) return;
+    const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
+    if (bytes.length !== ex.arena_keep_size()) return;
+    new Uint8Array(ex.memory.buffer, ex.arena_keep(), bytes.length).set(bytes);
+    ex.arena_keep_check();
+  } catch {}
+  arena.rev = core.ex.arena_keep_rev?.();
+}
+function arenaSave() {
+  const ex = core.ex;
+  if (!ex.arena_keep_rev || ex.arena_keep_rev() === arena.rev) return;
+  arena.rev = ex.arena_keep_rev();
+  try {
+    const bytes = new Uint8Array(ex.memory.buffer, ex.arena_keep(), ex.arena_keep_size());
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    localStorage.setItem("z4.arena", btoa(bin));
+  } catch {}
+}
 function arenaBadge() {
   if (!core.ex.arena_info || --arena.tick > 0) return;
   arena.tick = 10;
-  if (!arena.buf) arena.buf = core.ex.host_alloc(40);
+  arenaSave();
+  if (!arena.buf) arena.buf = (core.ex.host_alloc(128) + 7) & ~7;
   const el = $("arena");
   if (core.ex.arena_info(arena.buf) !== 0) return;
-  const v = new Int32Array(core.ex.memory.buffer, arena.buf, 9);
+  const v = new Float64Array(core.ex.memory.buffer, arena.buf, 13);
   if (!v[0]) { if (arena.shown) { el.style.display = "none"; arena.shown = ""; } return; }
   const pts = Math.max(0, v[1]), rank = v[4], tier = Math.floor(rank / 100), [tn, tc] = TIERS[tier];
   const next = tier < 7 ? ` (다음 티어까지 ${((tier + 1) * 500 - pts).toLocaleString("ko-KR")})` : ` (${rank % 100 + 1}/100)`;
-  const cp = (v[7] >>> 0) + (v[8] >>> 0) * 4294967296;
+  const times = r => r >= 10 ? Math.round(r).toLocaleString("ko-KR") : r.toFixed(1);
   let html = `<span class="tier" style="color:${tc}">${tn}</span> · 승점 ${pts.toLocaleString("ko-KR")}${next} · ${v[2]}승 ${v[3]}패` +
-    `<br><span class="sub">내 전투력 ${korNum(cp)}`;
+    `<br><span class="sub">내 전투력 ${korNum(v[6])}`;
   if (v[5] >= 0) {
-    const ot = TIERS[Math.floor(v[5] / 100)], ratio = (v[6] / 100) ** 2;
-    html += ` · 상대 <span class="tier" style="color:${ot[1]}">${ot[0]}</span> ${korNum(cp * ratio)} (${ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)}배)`;
+    const ot = TIERS[Math.floor(v[5] / 100)];
+    html += ` · 상대 <span class="tier" style="color:${ot[1]}">${ot[0]}</span> ${korNum(v[7])} (${times(v[6] > 0 ? v[7] / v[6] : 0)}배)`;
   }
-  html += "</span>";
+  const notes = [`증표 Lv.${v[9]}`, `장비 ×${times(v[8])}`];
+  if (v[11]) notes.push("승급 보상: 다음 승리 최고 등급");
+  else notes.push(v[12] >= 4 ? "다음 승리: 한 등급 위 보상" : `${5 - v[12]}번째 승리에 한 등급 위 보상`);
+  if (v[10] >= 2) notes.push("연패 보호: 쉬운 상대");
+  html += `<br>${notes.join(" · ")}</span>`;
   if (html !== arena.shown) {
     el.innerHTML = html;
-    el.style.fontSize = Math.max(8, $("stage").clientHeight * 0.026) + "px";
+    el.style.fontSize = Math.max(8, $("stage").clientHeight * 0.024) + "px";
     el.style.display = "block";
     arena.shown = html;
   }
@@ -1661,7 +1698,7 @@ async function startGame() {
   }
   showOverlay(null);
   try { core.ex.fx_enable(1); core.ex.dpad_enable(); } catch {}
-  try { core.ex.net_enable?.(1); } catch {} // the PvP arena's server, inside the core
+  try { core.ex.net_enable?.(1); arenaLoad(); } catch {} // the PvP arena's server, inside the core
   try { core.ex.wide_text?.(); } catch {} // text clipped to the whole wide screen, not the first 800
   applyRules();
   motion.on = prefs.motion === "smooth" && core.motionOn(true);

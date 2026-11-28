@@ -24,6 +24,7 @@ u32 call_guest_unhooked(u32 addr, int nargs, const u32 *args);
 
 static u32 n_connect, n_send, n_char_data, n_apply_stat, n_reg_result, n_stat_total, n_xor_byte, n_partner_cnt;
 static u32 n_item_tid, n_to_base, n_to_class, n_layout, n_get_tbl, n_get_val, n_item_cls, n_hp_max, n_pvp_draw;
+static u32 n_equip, n_xor_short;
 static int n_on;
 static u32 n_game, n_save, n_objs, n_items, n_xls;
 
@@ -44,6 +45,8 @@ static const NetSym nsyms[] = {
     {"_ZN10GVXLLoader6GetValEii", 180, 0x576ba6beu, &n_get_val},
     {"_ZN7CMvItem16GetCharClassTypeEv", 52, 0xcb3fd8e3u, &n_item_cls},
     {"_ZN12CMvCharacter8GetHPMaxEv", 148, 0x49296bfeu, &n_hp_max},
+    {"_ZN9CMvPlayer12GetEquipItemE21EnumItemEquipPosition", 84, 0x2a4ece71u, &n_equip},
+    {"_Z13GsGetXorValueIsET_S0_", 26, 0x276f78ffu, &n_xor_short},
     {"_ZN10CZnPvpMenu6DoDrawEv", 68, 0xe03fa5c2u, &n_pvp_draw},
     {"_ZN10CMvItemMgr12GetPvpRewordEb", 348, 0xe65dd23du, &n_layout},
     // the replies are laid out the way these read them
@@ -147,9 +150,26 @@ static u32 stat_of(u32 who, u32 stat) { u32 a[4] = {who, stat, 0, 0}; return cal
 #define RANKS (TIERS * PER_TIER)
 #define TOP 15
 #define TIER_PTS 500
-typedef struct { u32 id; char name[0x30]; u8 cls; s8 dlv; u16 rank, pct, win, lose; } Opp;
-static Opp cur, revenge[4];
-static u32 n_revenge, opp_serial = 1000, seed = 12345;
+typedef struct { u32 id; char name[0x30]; u8 cls; s8 dlv; u16 rank, pct, win, lose; u8 boost, pad[3]; } Opp;
+static Opp cur;
+static u32 seed = 12345;
+
+// What the arena keeps between visits (the page stores it, see arena_keep): the player's hero as it was
+// when the arena first measured it (its battle data, attack, defence, most HP and the equipment bonus
+// then), which every rival is built from from then on, so whatever the player gains afterwards counts;
+// and the revenge list.
+#define KEEP_MAGIC 0x32413a5au
+typedef struct {
+  u32 magic, slot, att, def, hp, n_revenge, serial, medal, best_tier, pity, promo, streak;
+  double gear0;
+  u8 blob[0x3e4];
+  Opp revenge[4];
+} Keep;
+static Keep keep;
+static u32 keep_rev;
+#define revenge keep.revenge
+#define n_revenge keep.n_revenge
+#define opp_serial keep.serial
 
 static const char *const adj[25] = {
     "\xec\x9e\x91\xec\x9d\x80",
@@ -280,13 +300,17 @@ static u32 player_rank(void) {
 }
 static void new_opp(u32 r) {
   rival(r, &cur);
+  if (opp_serial < 1000) opp_serial = 1000;
   cur.id = ++opp_serial;
+  keep_rev++;
 }
 static void revenge_drop(u32 id) {
+  keep_rev++;
   for (u32 i = 0; i < n_revenge; i++)
     if (revenge[i].id == id) { for (u32 k = i + 1; k < n_revenge; k++) revenge[k - 1] = revenge[k]; n_revenge--; return; }
 }
 static void revenge_add(const Opp *o) {
+  keep_rev++;
   revenge_drop(o->id);
   if (n_revenge == 4) revenge_drop(revenge[0].id);
   revenge[n_revenge++] = *o;
@@ -306,8 +330,9 @@ static u32 lv_shift(u32 lv, s32 d) { s32 v = (s32)lv + d; return v < 1 ? 1 : v >
 // the same, turned into a rival's: their strength, their class (the equipment made the class's own, as
 // the game's CMvItemMgr does for drops) and their level
 static u32 scaled(u32 v, u32 pct) { u64 x = (u64)v * pct / 100; return x < 1 ? 1 : x > 0x7fffffff ? 0x7fffffff : (u32)x; }
-static void put_rival_data(u32 who, s32 cls, s32 dlv, u32 pct) {
+static void put_rival_data(u32 who, const u8 *src, s32 cls, s32 dlv, u32 pct) {
   u32 d = char_data(who);
+  if (src) for (u32 i = 0; i < 0x3e4; i++) wr8(d + i, src[i]);
   // tagSavePlayerData: +0xc the four main stats, +0x6c HP, +0x70 SP
   for (u32 k = 0; k < 4; k++) wr32(d + 0xc + 4 * k, scaled(rd32(d + 0xc + 4 * k), pct));
   wr32(d + 0x6c, scaled(rd32(d + 0x6c), pct));
@@ -334,15 +359,78 @@ static u32 class_of(u32 who) { // tagSavePlayerData: +1 the class
   return rd8(d + 1);
 }
 
+static double dsqrt(double x) {
+  if (x <= 0) return 0;
+  double r = x > 1 ? x : 1;
+  for (int i = 0; i < 64; i++) r = 0.5 * (r + x / r);
+  return r;
+}
+static double dpow(double a, u32 n) { double r = 1; while (n--) r *= a; return r; }
+// The equipment bonus: every piece worn counts 10% a quality step (0 to 4) and 4% a refining step, all
+// multiplied together; better pieces (the arena's prizes) and refining make the player stronger against
+// the rivals, who keep the hero measured first. Tuned by simulating the climb (a win when the rival is at
+// most about 1.2 times the player): refining the prizes to +3 stalls in master, to +8 reaches the top
+// after a long climb, to +12 in about 120 wins.
+static double gear_mult(u32 me) {
+  double m = 1;
+  for (u32 pos = 0; pos < 10 && me; pos++) {
+    u32 a[2] = {me, pos};
+    u32 it = call_guest(n_equip | 1, 2, a);
+    if (!it || (s16)rd16(it) < 0) continue;
+    u32 q = rd16(it + 8), r = rd8(it + 7);
+    s32 quality = (s16)call_guest(n_xor_short | 1, 1, &q);
+    u32 refine = call_guest(n_xor_byte | 1, 1, &r) & 0xff;
+    if (quality < 0 || quality > 4) quality = 0;
+    if (refine > 40) refine = 0;
+    m *= (1 + 0.10 * quality) * dpow(1.04, refine);
+  }
+  return m;
+}
+static u32 cur_slot(void) { u32 save = rd32(n_save); return save ? rd32(save + 0x7f40) : 0; }
+static u32 hp_of(u32 who) { return call_guest(n_hp_max | 1, 1, &who); }
+// the hero measured once (again after arena_rebase, or for another save slot)
+static void measure(u32 me) {
+  if (keep.magic == KEEP_MAGIC && keep.slot == cur_slot()) return;
+  u32 d = char_data(me);
+  for (u32 i = 0; i < 0x3e4; i++) keep.blob[i] = rd8(d + i);
+  keep.att = stat_of(me, 4);
+  keep.def = stat_of(me, 5);
+  keep.hp = hp_of(me);
+  keep.gear0 = gear_mult(me);
+  keep.medal = keep.pity = keep.promo = keep.streak = 0;
+  keep.best_tier = player_rank() / PER_TIER;
+  keep.slot = cur_slot();
+  keep.magic = KEEP_MAGIC;
+  keep_rev++;
+}
+// a rank's stat scale against the measured hero, less by the root of what the player gained since (the
+// equipment and the duelist's mark; attack and HP both shrink by it, so the fighting strength by all)
+// The duelist's mark: 1.5% a level; a win gives a level (up to 15 a tier reached), each new tier 8.
+#define MARK_STEP 1.015
+#define MARK_PER_TIER 15
+#define MARK_PROMOTION 8
+static double gain_of(u32 me) {
+  double gain = keep.gear0 > 0 ? gear_mult(me) / keep.gear0 : 1;
+  if (gain < 1) gain = 1;
+  return gain * dpow(MARK_STEP, keep.medal);
+}
+static u32 eff_pct(u32 pct, u32 me) {
+  double gain = gain_of(me);
+  double p = pct / dsqrt(gain);
+  return p < 1 ? 1 : (u32)(p + 0.5);
+}
+
 // a line of the search or revenge list: the opponent's name and what the list shows of the two fighters
 static void list_entry(const Opp *o, int is_revenge) {
   u32 me = hero(), mate = partner(me);
   if (is_revenge) { w4(o->id); wn(o->name, 0x30); w1(0); wn(0, 6); } // -, the date of the match
   else { w1(0); wn(o->name, 0x30); }
-  w1(o->cls); w1(lv_shift(me ? level_of(me) : 1, o->dlv));
-  w2(me ? u16max(scaled(stat_of(me, 4), o->pct)) : 0); w2(me ? u16max(scaled(stat_of(me, 5), o->pct)) : 0);
+  if (me) measure(me);
+  u32 pct = me ? eff_pct(o->pct, me) : o->pct;
+  w1(o->cls); w1(lv_shift(keep.blob[0] ? keep.blob[0] : 1, o->dlv));
+  w2(u16max(scaled(keep.att, pct))); w2(u16max(scaled(keep.def, pct)));
   w1(mate ? class_of(mate) : 0); w1(mate ? lv_shift(level_of(mate), o->dlv) : 0);
-  w2(mate ? u16max(scaled(stat_of(mate, 4), o->pct)) : 0); w2(mate ? u16max(scaled(stat_of(mate, 5), o->pct)) : 0);
+  w2(mate ? u16max(scaled(stat_of(mate, 4), pct)) : 0); w2(mate ? u16max(scaled(stat_of(mate, 5), pct)) : 0);
 }
 
 // The prize for beating `cur`: a piece of equipment near the player's level, of the player's class, its
@@ -358,6 +446,10 @@ static void prize(u32 *tid, u32 *quality, u32 *less_level, u32 *boost) {
   static const u8 q[TIERS] = {1, 1, 2, 2, 3, 3, 4, 4};
   u32 tier = cur.rank / PER_TIER, me = hero();
   *tid = 0xffff; *quality = q[tier]; *less_level = tier >= 3; *boost = tier >= 4;
+  // a promotion's prize is the best quality; otherwise every fifth win's prize is a step better
+  cur.boost = 0;
+  if (keep.promo) { *quality = 4; cur.boost = 1; }
+  else if (keep.pity >= 4 && *quality < 4) { (*quality)++; cur.boost = 2; }
   u32 xls = rd32(n_xls), mgr = rd32(n_items);
   if (!me || !xls || !mgr) return;
   u32 a[2] = {xls, 5};
@@ -388,6 +480,8 @@ static int opp_reply(u32 team, int headers, int with_id) {
   u32 me = hero();
   if (!me) return 0;
   u32 mate = partner(me);
+  measure(me);
+  u32 pct = eff_pct(cur.pct, me);
   w1(0);
   if (with_id) w4(cur.id); // (a revenge match keeps the number from the list)
   u32 tid, quality, less, boost;
@@ -402,8 +496,8 @@ static int opp_reply(u32 team, int headers, int with_id) {
   w1(2); // the opponent and a partner
   for (int k = 0; k < 2; k++) {
     if (headers) { w1(0); w1(0); w2(0); w2(0); }
-    if (k && mate) put_rival_data(mate, -1, cur.dlv, cur.pct);
-    else put_rival_data(me, cur.cls, cur.dlv, cur.pct);
+    if (k && mate) put_rival_data(mate, 0, -1, cur.dlv, pct);
+    else put_rival_data(me, keep.blob, cur.cls, cur.dlv, pct);
     w2(0); w2(0);
   }
   return 1;
@@ -440,8 +534,19 @@ static void serve(u32 id) {
     u32 opp = r4(), kind = r1();
     s32 win = (s32)rd32(slot + 0x50), lose = (s32)rd32(slot + 0x54), pts = (s32)rd32(slot + 0x58);
     if (opp && opp == cur.id) {
-      if (kind == 1 || kind == 3) { win++; pts += cur.win; }
-      if (kind == 2 || kind == 4) { lose++; pts -= cur.lose; }
+      if (kind == 1 || kind == 3) {
+        win++; pts += cur.win;
+        keep.streak = 0;
+        if (cur.boost == 1) keep.promo = 0;
+        if (cur.boost == 2) keep.pity = 0;
+        else keep.pity++;
+        if (keep.medal < (keep.best_tier + 1) * MARK_PER_TIER) keep.medal++;
+        u32 t = (u32)(pts / (TIER_PTS / PER_TIER)) / PER_TIER;
+        if (t >= TIERS) t = TIERS - 1;
+        if (t > keep.best_tier) { keep.best_tier = t; keep.medal += MARK_PROMOTION; keep.promo = 1; }
+      }
+      if (kind == 2 || kind == 4) { lose++; pts -= cur.lose; keep.streak++; }
+      keep_rev++;
       if (kind == 2) revenge_add(&cur);
       if (kind == 3) revenge_drop(cur.id);
       cur.id = 0;
@@ -454,7 +559,8 @@ static void serve(u32 id) {
   case 0x818: { // CS_GET_MATCH_RANDOM_OPP -> a rival near the player's rank
     u32 team = r1() == 2;
     seed = seed * 1103515245u + 12345u + opp_serial;
-    s32 r = (s32)player_rank() + (s32)((seed >> 16) % 5) - 2;
+    // from three ranks under the player to one over; after two losses in a row, five ranks lower
+    s32 r = (s32)player_rank() + (s32)((seed >> 16) % 5) - 3 - (keep.streak >= 2 ? 5 : 0);
     new_opp(r < 0 ? 0 : r >= RANKS ? RANKS - 1 : (u32)r);
     if (!opp_reply(team, 1, 1)) { op = reply + 4; w1(0xff); }
     break;
@@ -543,30 +649,54 @@ static void n_t_pvp_draw(void) {
   n_return(call_guest_unhooked(n_pvp_draw | 1, 1, &a));
 }
 
-// For the page's badge on the arena screen: [0] whether it shows, [1] the player's points, [2] wins,
-// [3] losses, [4] the player's rank (0-799, a hundred a tier), [5] the offered rival's rank or -1,
-// [6] that rival's stat scale in percent, [7]/[8] the player's fighting strength (attack plus defence,
-// times most HP, over 10000) low and high 32 bits.
-EXPORT(arena_info) int arena_info(u32 *out) {
+// For the page's badge on the arena screen (doubles): [0] whether it shows, [1] the player's points,
+// [2] wins, [3] losses, [4] the player's rank (0-799, a hundred a tier), [5] the offered rival's rank or
+// -1, [6] the player's fighting strength (attack plus defence, times most HP, over 10000) with the
+// equipment bonus, [7] the rival's, [8] the equipment bonus gained since the hero was measured.
+EXPORT(arena_info) int arena_info(double *out) {
   if (!n_on || !n_resolve()) return -1;
   out[0] = arena_seen && n_frame - arena_seen < 8;
   u32 save = rd32(n_save), slot = save ? save + 0x18c + 0x1d48 * rd32(save + 0x7f40) : 0;
-  out[1] = (u32)points_now();
-  out[2] = slot ? rd32(slot + 0x50) : 0;
-  out[3] = slot ? rd32(slot + 0x54) : 0;
+  out[1] = points_now();
+  out[2] = slot ? (s32)rd32(slot + 0x50) : 0;
+  out[3] = slot ? (s32)rd32(slot + 0x54) : 0;
   out[4] = player_rank();
-  out[5] = cur.id ? cur.rank : 0xffffffffu;
-  out[6] = cur.pct;
+  out[5] = cur.id ? cur.rank : -1;
+  out[6] = out[7] = 0;
+  out[8] = 1;
+  out[9] = keep.medal;
+  out[10] = keep.streak;
+  out[11] = keep.promo;
+  out[12] = keep.pity;
   u32 me = hero();
-  u64 cp = 0;
   if (me && out[0]) {
-    u32 h = me;
-    cp = (u64)(stat_of(me, 4) + (u64)stat_of(me, 5)) * call_guest(n_hp_max | 1, 1, &h) / 10000u;
+    measure(me);
+    double gear = keep.gear0 > 0 ? gear_mult(me) / keep.gear0 : 1;
+    out[8] = gear < 1 ? 1 : gear;
+    out[6] = ((double)stat_of(me, 4) + stat_of(me, 5)) * hp_of(me) / 10000.0 * gain_of(me);
+    if (cur.id) {
+      double p = eff_pct(cur.pct, me) / 100.0;
+      out[7] = ((double)keep.att + keep.def) * keep.hp / 10000.0 * p * p;
+    }
   }
-  out[7] = (u32)cp;
-  out[8] = (u32)(cp >> 32);
   return 0;
 }
+
+// What the page stores between visits: where, how big, and a number that changes whenever it should be
+// stored again; after the page puts stored bytes back, arena_keep_check drops them if they are not a keep.
+EXPORT(arena_keep) u8 *arena_keep(void) { return (u8 *)&keep; }
+EXPORT(arena_keep_size) u32 arena_keep_size(void) { return sizeof keep; }
+EXPORT(arena_keep_rev) u32 arena_keep_rev(void) { return keep_rev; }
+EXPORT(arena_keep_check) int arena_keep_check(void) {
+  if (keep.magic != KEEP_MAGIC || n_revenge > 4) {
+    u8 *p = (u8 *)&keep;
+    for (u32 i = 0; i < sizeof keep; i++) p[i] = 0;
+    return 0;
+  }
+  return 1;
+}
+// measure the hero again at the next match (the page's "measure again" button)
+EXPORT(arena_rebase) void arena_rebase(void) { keep.magic = 0; keep_rev++; }
 
 // once a frame, before the game's frame: what the server has for the game
 EXPORT(net_poll) void net_poll(void) {
