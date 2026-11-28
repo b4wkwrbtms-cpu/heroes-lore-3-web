@@ -9,6 +9,26 @@ window.createDW = async function createDW() {
   const utf = new TextDecoder(), euc = new TextDecoder('euc-kr'), enc = new TextEncoder();
   let ex = null, memory = null, pack = null, index = null, title1 = null;
   const overrides = new Map(); // asset name -> bytes used instead of the pack's
+  // items added to a shop's list: the shop's table, then [item kind, item number, stock] per item. The game shows them
+  // from the shop's next new stock (a new day in the game), after the friend build's own random items
+  const SHOP_ADD = [['res/shop_dark.xdt', [[16, 73, 99]]]]; // 암흑 상인: 혼돈의 파편
+  // a shop table (.xdt) with rows added: u32 column count, u32 type per column (0 text, 4 byte, 5 16-bit), u32 row
+  // count, then the rows; a row is its number as text, the item kind, the item number, its other columns 0, the stock
+  const shopWith = (src, rows) => {
+    const dv = new DataView(src.buffer, src.byteOffset, src.byteLength), ncol = dv.getUint32(0, true);
+    const types = [], size = { 4: 1, 5: 2 };
+    for (let i = 0; i < ncol; i++) types.push(dv.getUint32(4 + 4 * i, true));
+    if (types[0] !== 0 || types.slice(1).some((t) => !size[t]) || ncol < 4) return null;
+    const at = 4 + 4 * ncol, count = dv.getUint32(at, true), out = [...src];
+    rows.forEach(([kind, number, stock], r) => {
+      const id = String(count + r), vals = [kind, number, ...new Array(ncol - 4).fill(0), stock];
+      out.push(id.length, ...[...id].map((c) => c.charCodeAt(0)));
+      vals.forEach((v, i) => { out.push(v & 0xff); if (size[types[i + 1]] === 2) out.push((v >> 8) & 0xff); });
+    });
+    const b = new Uint8Array(out);
+    new DataView(b.buffer).setUint32(at, count + rows.length, true);
+    return b;
+  };
   let sounds = [], editbox = 0, error = '', scratch = 0, rgba = 0, icons = 0, mid = 0;
   const logs = [];
   const u8 = () => new Uint8Array(memory.buffer);
@@ -120,6 +140,10 @@ window.createDW = async function createDW() {
       M.classic = !!opts.classicUi; // the game's own touch
       M.classicArt = !!art && M.classicUi();
       if (M.classicArt) { overrides.set('res/UI_Touch.GMF', art.gmf); overrides.set('res/touch.GBM', art.gbm); }
+      for (const [name, rows] of SHOP_ADD) {
+        const e = entry('game/' + name + '.png'), b = e && shopWith(pack.subarray(e[0], e[0] + e[1]), rows);
+        if (b) overrides.set(name, b);
+      }
       M.fastPaths = ex.install_fast_paths();
       const t1 = entry('runner/title1.rgb565');
       if (t1) title1 = new Uint16Array(pack.slice(t1[0], t1[0] + t1[1]).buffer);
