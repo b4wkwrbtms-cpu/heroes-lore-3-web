@@ -567,7 +567,7 @@ const Boss = {
 
 // ------------------------------------------------------------------ audio (Web Audio; iOS needs a tap to unlock)
 const Audio = {
-  ctx: null, buffers: {}, loading: {}, lastPlay: {}, active: 0, bgm: null, bgmName: '', bgmTicket: 0, bgmGain: null, sfxGain: null, volB: 1, volS: 1,
+  ctx: null, buffers: {}, loading: {}, lastPlay: {}, ends: [], stat: { played: 0, failed: 0, err: '', rebuilt: 0 }, bgm: null, bgmName: '', bgmTicket: 0, bgmGain: null, sfxGain: null, volB: 1, volS: 1,
   unlock() { if (!this.ctx) this.build(); },
   build() {
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
@@ -593,7 +593,7 @@ const Audio = {
     const name = this.bgmName, old = this.ctx;
     this.stopBgm();
     if (old) { try { old.close(); } catch (e) {} }
-    this.ctx = null; this.active = 0;
+    this.ctx = null; this.ends = []; this.stat.rebuilt++;
     this.build();
     if (name) this.play(name, 1);
   },
@@ -617,7 +617,7 @@ const Audio = {
           const buf = await r.arrayBuffer();
           const ab = await new Promise((res, rej) => this.ctx.decodeAudioData(buf, res, rej));
           this.buffers[name] = ab; return ab;
-        } catch (e) {}
+        } catch (e) { this.stat.err = (e && (e.name || e.message)) || String(e); }
       }
       delete this.loading[name]; // not there or not decoded: try again the next time it is asked for
       return null;
@@ -637,13 +637,18 @@ const Audio = {
       if (!b) { this.bgmName = ''; return; }
       const s = this.ctx.createBufferSource(); s.buffer = b; s.loop = true; s.connect(this.bgmGain); s.start(0); this.bgm = s;
     } else {
-      // 같은 효과음이 한 틱에 수십 번 겹치는 경우(보스전 스킬 연타) 소리가 뭉개지고 버벅임 → 같은 소리 80ms 간격, 동시에 최대 10개
+      // 같은 효과음이 한 틱에 수십 번 겹치는 경우(보스전 스킬 연타) 소리가 뭉개지고 버벅임 → 같은 소리 80ms 간격, 동시에 최대 10개.
+      // 동시에 나는 수는 소리가 끝났다는 알림(onended) 대신 소리 길이로 셈: 아이폰은 소리가 끊긴 뒤 그 알림을 주지 않기도 해서
+      // 열 자리가 찬 채로 남아 효과음만 영영 안 나던 것
       const now = performance.now();
-      if (now - (this.lastPlay[name] || 0) < 80 || this.active >= 10) return;
+      this.ends = this.ends.filter((t) => t > now);
+      if (now - (this.lastPlay[name] || 0) < 80 || this.ends.length >= 10) return;
       this.lastPlay[name] = now;
-      const b = await this.load(name); if (!b) return;
-      const s = this.ctx.createBufferSource(); s.buffer = b; s.connect(this.sfxGain);
-      this.active++; s.onended = () => { this.active--; }; s.start(0);
+      const b = await this.load(name); if (!b) { this.stat.failed++; return; }
+      try {
+        const s = this.ctx.createBufferSource(); s.buffer = b; s.connect(this.sfxGain); s.start(0);
+        this.ends.push(performance.now() + b.duration * 1000); this.stat.played++;
+      } catch (e) { this.stat.failed++; this.stat.err = (e && (e.name || e.message)) || String(e); }
     }
   },
   stopBgm() { this.bgmTicket++; if (this.bgm) { try { this.bgm.stop(); } catch (e) {} } this.bgm = null; this.bgmName = ''; },

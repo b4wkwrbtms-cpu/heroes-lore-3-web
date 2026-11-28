@@ -298,8 +298,17 @@ function openMenu() {
     row(b, '저장 가져오기 (.dwsave, 기존 다크월드)', '›', () => fileInput.click());
     row(b, '화면 업스케일 (xBR)', s.xbr ? '적용' : '미적용', (r) => { s.xbr ^= 1; I().saveSettings(); I().Runner.queue.push(0x5a00 + s.xbr); r.querySelector('.v').textContent = s.xbr ? '적용' : '미적용'; });
     row(b, '소리', s.mute ? '끔' : '켬', (r) => { s.mute ^= 1; I().saveSettings(); I().Audio.applyMute(); r.querySelector('.v').textContent = s.mute ? '끔' : '켬'; });
+    // a computer's browser: the page over the whole screen (Esc or the button again leaves it); not on the iPhone,
+    // where the home screen app is already the whole screen
+    if (document.fullscreenEnabled || document.webkitFullscreenEnabled) {
+      const fs = () => (document.fullscreenElement || document.webkitFullscreenElement ? '켬' : '끔');
+      row(b, '전체 화면', fs(), (r) => { toggleFullscreen(); setTimeout(() => { r.querySelector('.v').textContent = fs(); }, 300); });
+    }
     // the iPhone can keep the sound silent while it says it plays: a new one, made from this touch
     row(b, '소리가 안 나면', '다시 켜기', () => { I().Audio.rebuild(); I().toast('소리를 다시 켰어요'); });
+    // what the sound is doing, for a screenshot when it goes quiet
+    const A = I().Audio, st = A.stat, STATE = { running: '켜짐', suspended: '멈춤', interrupted: '끊김', closed: '닫힘' };
+    row(b, '소리 상태', `${A.ctx ? STATE[A.ctx.state] || A.ctx.state : '시작 전'} · 효과음 ${st.played}번 나옴 ${st.failed}번 실패 · 다시 만듦 ${st.rebuilt}번` + (st.err ? ` · ${st.err}` : ''));
     row(b, '화면 버튼 표시', s.buttons === 0 ? '숨김' : '표시', (r) => { toggleButtons(); r.querySelector('.v').textContent = s.buttons === 0 ? '숨김' : '표시'; });
     row(b, '패드 UI (스킬 하단 배치)', s.padui ? '켬' : '끔', (r) => { togglePadUi(); r.querySelector('.v').textContent = s.padui ? '켬' : '끔'; });
     // this site's additions
@@ -447,7 +456,7 @@ function openHelp() {
     row(b, '이동', `${keys(0)} / ${keys(1)} / ${keys(2)} / ${keys(3)}`);
     for (let a = 4; a < IN().ACTIONS.length; a++) row(b, IN().ACTIONS[a], keys(a) + '   ·   패드 ' + padNames(a));
     const lines = [['F1', '조작법'], ['F2', '화면 버튼 표시/숨김'], ['F3', '설정 메뉴 (⚙)'], ['F4', '소리 켜기/끄기'], ['F6', '패드 UI 켜기/끄기'], ['F7 / F8', '저장 가져오기 / 내보내기'],
-      ['F9', '키 설정'], ['F10', '성능 표시'], ['F11', '전체화면 (브라우저 기능)']];
+      ['F9', '키 설정'], ['F10', '성능 표시'], ['F11', '전체 화면 (⚙ 설정의 전체 화면도 같음)']];
     for (const [k, v] of lines) row(b, k, v);
     b.appendChild(el('div', 'note', '화면 버튼 터치도 함께 쓸 수 있습니다.\n새로고침 대신 게임 안에서 저장한 뒤 닫아 주세요.'));
     buttons(b, [['키 설정', () => openKeys()], ['닫기', close]]);
