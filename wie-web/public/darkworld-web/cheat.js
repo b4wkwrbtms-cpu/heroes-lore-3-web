@@ -298,6 +298,8 @@ function openMenu() {
     row(b, '저장 가져오기 (.dwsave, 기존 다크월드)', '›', () => fileInput.click());
     row(b, '화면 업스케일 (xBR)', s.xbr ? '적용' : '미적용', (r) => { s.xbr ^= 1; I().saveSettings(); I().Runner.queue.push(0x5a00 + s.xbr); r.querySelector('.v').textContent = s.xbr ? '적용' : '미적용'; });
     row(b, '소리', s.mute ? '끔' : '켬', (r) => { s.mute ^= 1; I().saveSettings(); I().Audio.applyMute(); r.querySelector('.v').textContent = s.mute ? '끔' : '켬'; });
+    // the iPhone can keep the sound silent while it says it plays: a new one, made from this touch
+    row(b, '소리가 안 나면', '다시 켜기', () => { I().Audio.rebuild(); I().toast('소리를 다시 켰어요'); });
     row(b, '화면 버튼 표시', s.buttons === 0 ? '숨김' : '표시', (r) => { toggleButtons(); r.querySelector('.v').textContent = s.buttons === 0 ? '숨김' : '표시'; });
     row(b, '패드 UI (스킬 하단 배치)', s.padui ? '켬' : '끔', (r) => { togglePadUi(); r.querySelector('.v').textContent = s.padui ? '켬' : '끔'; });
     // this site's additions

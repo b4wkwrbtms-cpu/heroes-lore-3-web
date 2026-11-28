@@ -566,8 +566,8 @@ const Boss = {
 // ------------------------------------------------------------------ audio (Web Audio; iOS needs a tap to unlock)
 const Audio = {
   ctx: null, buffers: {}, loading: {}, lastPlay: {}, active: 0, bgm: null, bgmName: '', bgmTicket: 0, bgmGain: null, sfxGain: null, volB: 1, volS: 1,
-  unlock() {
-    if (this.ctx) return;
+  unlock() { if (!this.ctx) this.build(); },
+  build() {
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
     // iPhone: play like a game (heard with the silent switch on); the game's own '소리' setting mutes it
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
@@ -575,10 +575,34 @@ const Audio = {
     this.bgmGain.connect(this.ctx.destination); this.sfxGain.connect(this.ctx.destination);
     const b = this.ctx.createBuffer(1, 1, 22050), s = this.ctx.createBufferSource(); s.buffer = b; s.connect(this.ctx.destination); s.start(0);
     this.applyMute();
+    this.stuck = false; this.lastTime = -1; this.wakeAt = 0;
   },
   // after another app, a call, a notification or the lock screen, iOS leaves the sound stopped ('suspended' or
   // 'interrupted') and lets it start again only from a touch or a key: every one tries
-  wake() { if (this.ctx && this.ctx.state !== 'running' && !document.hidden) this.ctx.resume().catch(() => {}); },
+  wake() {
+    if (!this.ctx || this.ctx.state === 'running' || document.hidden) return;
+    if (!this.wakeAt) this.wakeAt = performance.now();
+    this.ctx.resume().then(() => { this.wakeAt = 0; }, () => {});
+  },
+  // iOS 26 home screen apps: after the app comes back, the sound can stay stopped for good (resume never ends) or its
+  // clock stops. Then the next touch or key makes a new one (only a touch or a key may start sound) and the music goes
+  // on in it; the decoded sounds are kept
+  rebuild() {
+    const name = this.bgmName, old = this.ctx;
+    this.stopBgm();
+    if (old) { try { old.close(); } catch (e) {} }
+    this.ctx = null; this.active = 0;
+    this.build();
+    if (name) this.play(name, 1);
+  },
+  check() {
+    if (!this.ctx || document.hidden) { this.lastTime = -1; return; }
+    const t = this.ctx.currentTime, running = this.ctx.state === 'running';
+    if (running && t === this.lastTime) this.stuck = true;
+    if (!running && this.wakeAt && performance.now() - this.wakeAt > 1500) this.stuck = true;
+    this.lastTime = running ? t : -1;
+  },
+  touched() { if (this.stuck) this.rebuild(); else this.wake(); },
   applyMute() { if (!this.ctx) return; this.bgmGain.gain.value = settings.mute ? 0 : this.volB; this.sfxGain.gain.value = settings.mute ? 0 : this.volS; },
   async load(name) {
     if (this.buffers[name]) return this.buffers[name];
@@ -627,7 +651,8 @@ document.addEventListener('visibilitychange', () => {
   if (!Audio.ctx) return;
   if (document.hidden) Audio.ctx.suspend(); else { Audio.wake(); nextTick = performance.now(); }
 });
-for (const ev of ['pointerdown', 'pointerup', 'touchend', 'keydown']) document.addEventListener(ev, () => Audio.wake(), true);
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'keydown']) document.addEventListener(ev, () => Audio.touched(), true);
+setInterval(() => Audio.check(), 1000);
 
 // ------------------------------------------------------------------ runner protocol (cheats, beast, volume, upscale, arena)
 const Runner = {
