@@ -19,7 +19,9 @@ window.Layout = {
     // can give the window a turn late or short (852 x 393 reported as 734 long: the landscape size inside its side margins)
     const full = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
     const type = full && screen.orientation && screen.orientation.type;
-    const rotated = type ? type.startsWith('portrait') : vh > vw;
+    // a computer (mouse, no touch) never turns the game: a window taller than wide keeps the game wide, in the middle
+    const computer = matchMedia('(pointer: fine)').matches && !matchMedia('(any-pointer: coarse)').matches;
+    const rotated = type ? type.startsWith('portrait') : vh > vw && !computer;
     const sl = full ? Math.max(screen.width, screen.height) : 0, ss = full ? Math.min(screen.width, screen.height) : 0;
     const fw = Math.max(rotated ? vh : vw, sl), fh = Math.max(rotated ? vw : vh, ss);
     // the game uses the whole screen, as the build itself does, unless the setting 화면 여백 leaves the camera side (1)
@@ -32,7 +34,8 @@ window.Layout = {
     const l = sides >= 2 || (sides === 1 && camLeft) ? inset : 0;
     const r = sides >= 2 || (sides === 1 && !camLeft) ? inset : 0;
     // 제노니아처럼: a black border all round, both sides as 양쪽 비우기 and 7.5% at the top and the bottom
-    const t = sides === 3 ? Math.round(fh * 0.075) : 0, b = t;
+    let t = sides === 3 ? Math.round(fh * 0.075) : 0, b = t;
+    if (computer && !rotated && fh - t - b > (fw - l - r) / 1.5) { const extra = fh - t - b - (fw - l - r) / 1.5; t += Math.floor(extra / 2); b += Math.ceil(extra / 2); }
     const key = [fw, fh, rotated, l, r, t, b].join();
     if (key === this.key) return;
     this.key = key;

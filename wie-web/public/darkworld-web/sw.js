@@ -1,6 +1,6 @@
 // Offline copy of this page's program files. The game data the player put in (data.js) lives in its own
 // cache, 'dwweb-data', which is never cleared here; other pages of this site keep their caches too.
-const VERSION = 'dwweb-app-24';
+const VERSION = 'dwweb-app-25';
 const FILES = ['./', './index.html', './dw.js', './input.js', './cheat.js', './data.js', './core.js', './plus.js', './core.wasm', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
